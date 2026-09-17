@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
+import { getWalletCustody, deterministicIdempotencyKey, CirclePaymasterPolicyError } from "@/lib/custody";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -260,7 +260,7 @@ export async function POST(request: Request) {
         /* Transfers settle one-by-one and are irreversible once mined. If a later one fails we must
            NOT report a blanket failure — that hides the transfers already sent and invites a retry
            that double-pays them. Stop at the first failure and return exactly what settled. */
-        let failure: { index: number; receiverAddress: string; amountUsdc: string; error: string } | null = null;
+        let failure: { index: number; receiverAddress: string; amountUsdc: string; error: string; code?: string } | null = null;
         /* Tracked per settled transfer rather than derived from `failure.index`, so the release
            below reflects what actually left the wallet even if the loop exits some other way. */
         let settledMicros = BigInt(0);
@@ -298,6 +298,7 @@ export async function POST(request: Request) {
                     receiverAddress: item.receiver,
                     amountUsdc: formatAmount(item.amountMicros),
                     error: err?.message || "Transfer failed",
+                    code: err instanceof CirclePaymasterPolicyError ? err.code : undefined,
                 };
                 break;
             }
@@ -380,15 +381,20 @@ export async function POST(request: Request) {
         if (failure) {
             const sent = txs.length;
             const total = parsedRecipients.length;
+            const isPaymasterError = failure.code === "CIRCLE_PAYMASTER_POLICY_REQUIRED"
+                || failure.error.includes("CIRCLE_PAYMASTER_POLICY_REQUIRED")
+                || failure.error.includes("Circle Gas Station")
+                || failure.error.includes("gas sponsorship");
             return NextResponse.json({
                 success: false,
                 partial: sent > 0,
                 transfers: txs,
                 failedRecipient: failure,
+                code: isPaymasterError ? "CIRCLE_PAYMASTER_POLICY_REQUIRED" : failure.code,
                 error: sent > 0
                     ? `Sent ${sent} of ${total} transfers, then recipient ${failure.index + 1} failed: ${failure.error}. The ${sent} completed transfer(s) were already settled on-chain — do not resend them; retry only the remaining recipients.`
                     : `Transfer to recipient ${failure.index + 1} failed: ${failure.error}`,
-            }, { status: sent > 0 ? 207 : 400 });
+            }, { status: sent > 0 ? 207 : (isPaymasterError ? 503 : 400) });
         }
 
         return NextResponse.json({
@@ -426,6 +432,9 @@ export async function POST(request: Request) {
         }
         if (error instanceof AccountHaltError) {
             return NextResponse.json({ error: error.message }, { status: 403 });
+        }
+        if (error instanceof CirclePaymasterPolicyError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: 503 });
         }
         return NextResponse.json({ error: error.message || "Failed to send USDC" }, { status: 500 });
     }
