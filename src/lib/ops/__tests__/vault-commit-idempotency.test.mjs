@@ -8,6 +8,7 @@ function source(path) {
 
 const route = source("src/app/api/user/vault/commit/route.ts");
 const client = source("src/app/dashboard/user/page.tsx");
+const onchain = source("src/lib/vault/onchain.ts");
 const migration = source("supabase/migrations/20260717040000_vault_commit_intents.sql");
 const schema = source("prisma/schema.prisma");
 
@@ -33,6 +34,28 @@ test("the intent is persisted BEFORE submission and binds the full identity", ()
     const commitAt = route.indexOf("await commitFromEmbedded");
     assert.ok(createAt !== -1 && createAt < sponsorAt && sponsorAt < commitAt,
         "intent persists before sponsorship and custody submission");
+});
+
+test("an over-balance commit stops before intent, sponsorship, or custody submission", () => {
+    const balanceAt = route.indexOf("await readUsdcBalance(normalizedWallet)");
+    const rejectAt = route.indexOf('code: "INSUFFICIENT_WALLET_BALANCE"');
+    const createAt = route.indexOf("prisma.vaultCommitIntent.create");
+    const sponsorAt = route.indexOf("await requireSponsoredGas");
+    const commitAt = route.indexOf("await commitFromEmbedded");
+
+    assert.ok(balanceAt !== -1 && balanceAt < rejectAt && rejectAt < createAt);
+    assert.ok(createAt < sponsorAt && sponsorAt < commitAt);
+    assert.match(client, /vaultActionMode === "commit"[\s\S]{0,100}usdcBalance !== undefined[\s\S]{0,100}Number\(vaultActionAmount\) > walletBalance/);
+    const submitStart = client.indexOf('const endpoint = vaultActionMode === "commit"');
+    const submitEnd = client.indexOf("// External/browser wallet", submitStart);
+    const embeddedSubmit = client.slice(submitStart, submitEnd);
+    assert.match(embeddedSubmit, /const data = await res\.json\(\)\.catch\(\(\) => null\)/);
+    assert.doesNotMatch(embeddedSubmit, /const data = await res\.json\(\);/);
+});
+
+test("the allowance transaction shares the commit attempt's durable identity", () => {
+    assert.match(onchain, /deterministicIdempotencyKey\(`\$\{idempotencyKey\}:approve`\)/);
+    assert.match(onchain, /ensureUsdcAllowance\([\s\S]{0,260}idempotencyKey \? deterministicIdempotencyKey/);
 });
 
 test("a reused request id must match the original commit exactly or be refused", () => {
@@ -88,4 +111,6 @@ test("definitive sponsor failures close the intent while ambiguous outcomes rema
     assert.match(route, /isSponsoredGasError\(sponsorError\) && sponsorError\.kind === "definitive"/);
     assert.match(route, /status: "FAILED"/);
     assert.match(route, /Ambiguous sponsor hashes and unknown infrastructure[\s\S]{0,80}stay PENDING/);
+    assert.match(route, /commitError instanceof CirclePaymasterPolicyError/);
+    assert.match(route, /code: commitError\.code/);
 });

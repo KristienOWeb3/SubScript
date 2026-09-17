@@ -52,10 +52,15 @@ export async function GET(request: Request) {
         // 1. Resolve alias to address
         if (queryAlias) {
             const normalizedAlias = queryAlias.toLowerCase().trim();
+            /* Exact registered names never contain SQL LIKE wildcards. Reject anything outside
+               the public alias grammar before using ILIKE so `%`/`_` cannot broaden a lookup. */
+            if (!USER_ALIAS_REGEX.test(normalizedAlias) && !ENTERPRISE_ALIAS_REGEX.test(normalizedAlias)) {
+                return NextResponse.json({ success: true, address: null, alias: normalizedAlias });
+            }
             const { data, error } = await supabaseAdmin
                 .from("address_aliases")
                 .select("address, alias, is_anonymous")
-                .eq("alias", normalizedAlias)
+                .ilike("alias", normalizedAlias)
                 .maybeSingle();
 
             if (error) {

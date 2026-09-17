@@ -56,3 +56,24 @@ test("the user mobile bottom nav and its skeleton keep the five-percent height i
     assert.match(dashboard, /h-\[52\.5px\]/);
     assert.match(dashboard, /w-\[52\.5px\]/);
 });
+
+test("the mobile dashboard skeleton mirrors profile, tier, and notification controls", () => {
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+    const headerStart = dashboard.indexOf('aria-label="Loading profile"');
+    const headerEnd = dashboard.indexOf("<main", headerStart);
+    const mobileSkeleton = dashboard.slice(headerStart, headerEnd);
+
+    assert.ok(headerStart !== -1, "loading profile skeleton exists");
+    assert.match(mobileSkeleton, /h-12 w-12[^\n]*rounded-full/);
+    assert.match(mobileSkeleton, /aria-label="Loading account controls"/);
+    assert.equal((mobileSkeleton.match(/h-9 w-9 subscript-skeleton rounded-full/g) || []).length, 2);
+    assert.doesNotMatch(mobileSkeleton, /h-3 w-20/);
+});
+
+test("balance routing no longer claims Arc transfers are free", () => {
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+
+    assert.doesNotMatch(dashboard, /Straight from your balance/);
+    assert.doesNotMatch(dashboard, /there&apos;s no fee/);
+    assert.match(dashboard, /if \(numericAmount <= walletBalance\) return null/);
+});

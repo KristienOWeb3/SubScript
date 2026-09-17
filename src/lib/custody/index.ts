@@ -89,6 +89,45 @@ export interface ContractExecution {
    go through the 4337 pipeline, so confirmation can take a bit longer than a raw EOA send. */
 const CIRCLE_TX_CONFIRM_TIMEOUT_MS = Number(process.env.CIRCLE_TX_CONFIRM_TIMEOUT_MS) || 110_000;
 const CIRCLE_TX_POLL_INTERVAL_MS = Number(process.env.CIRCLE_TX_POLL_INTERVAL_MS) || 800;
+const CIRCLE_FIRST_TX_QUEUE_RETRY_DELAYS_MS = [500, 1_000, 1_500, 2_000] as const;
+
+const CIRCLE_FIRST_TX_QUEUE_CODE = 155505;
+const CIRCLE_PAYMASTER_POLICY_CODE = 155509;
+
+function circleErrorCode(error: unknown): number | null {
+    if (!error || typeof error !== "object") return null;
+    const code = "code" in error ? Number((error as { code?: unknown }).code) : Number.NaN;
+    return Number.isFinite(code) ? code : null;
+}
+
+function circleErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error || "Circle transaction failed");
+}
+
+function isCircleFirstTxQueueError(error: unknown): boolean {
+    return circleErrorCode(error) === CIRCLE_FIRST_TX_QUEUE_CODE
+        || /wait for first-time transaction to be queued/i.test(circleErrorMessage(error));
+}
+
+function isCirclePaymasterPolicyError(error: unknown): boolean {
+    return circleErrorCode(error) === CIRCLE_PAYMASTER_POLICY_CODE
+        || /setup paymaster policy/i.test(circleErrorMessage(error));
+}
+
+function wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export class CirclePaymasterPolicyError extends Error {
+    readonly name = "CirclePaymasterPolicyError";
+    readonly code = "CIRCLE_PAYMASTER_POLICY_REQUIRED";
+
+    constructor() {
+        super(
+            "Arc transactions are temporarily unavailable because mainnet gas sponsorship is not configured. No funds were moved. Please try again after service is restored.",
+        );
+    }
+}
 
 export interface WalletCustody {
     readonly address: string;
@@ -121,16 +160,35 @@ class CircleCustody implements WalletCustody {
         const iface = new ethers.Interface(call.abi);
         const callData = iface.encodeFunctionData(call.functionName, [...(call.args ?? [])]) as `0x${string}`;
 
-        const created = await client.createContractExecutionTransaction({
+        /* Keep one idempotency key across queue retries. Circle returns 155505 while a brand-new
+           SCA's first operation is still entering its queue; retrying with a new key could create
+           two logical operations once the queue opens. A missing mainnet paymaster policy is an
+           operational configuration failure (155509), so it is never retried. */
+        const idempotencyKey = call.idempotencyKey
+            ? circleIdempotencyKey(call.idempotencyKey)
+            : randomUUID();
+        const createRequest = {
             walletId: this.circleWalletId,
             contractAddress: call.contractAddress,
             callData,
             fee: { type: "level", config: { feeLevel: "MEDIUM" } },
-            /* Durable when the caller supplies a stable key (retries dedupe at Circle); random
-               otherwise, preserving prior behavior for operations without a natural key. Coerced to
-               the UUID shape Circle demands — see circleIdempotencyKey. */
-            idempotencyKey: call.idempotencyKey ? circleIdempotencyKey(call.idempotencyKey) : randomUUID(),
-        });
+            idempotencyKey,
+        } as const;
+
+        let created;
+        for (let attempt = 0; ; attempt++) {
+            try {
+                created = await client.createContractExecutionTransaction(createRequest);
+                break;
+            } catch (error: unknown) {
+                if (isCirclePaymasterPolicyError(error)) {
+                    throw new CirclePaymasterPolicyError();
+                }
+                const retryDelay = CIRCLE_FIRST_TX_QUEUE_RETRY_DELAYS_MS[attempt];
+                if (!isCircleFirstTxQueueError(error) || retryDelay === undefined) throw error;
+                await wait(retryDelay);
+            }
+        }
         const txId = created.data?.id;
         if (!txId) {
             throw new Error("Circle contract execution returned no transaction id.");

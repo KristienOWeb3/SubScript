@@ -55,8 +55,20 @@ test("the custody boundary coerces a non-UUID key rather than forwarding it to C
     /* A well-formed UUID must pass through untouched, or a retry stops deduping at Circle. */
     assert.match(custody, /UUID_PATTERN\.test\(key\) \? key\.toLowerCase\(\) : deterministicIdempotencyKey\(key\)/);
     /* The submission itself goes through the coercion, not the raw field. */
-    assert.match(custody, /idempotencyKey: call\.idempotencyKey \? circleIdempotencyKey\(call\.idempotencyKey\) : randomUUID\(\)/);
+    assert.match(custody, /const idempotencyKey = call\.idempotencyKey\s*\? circleIdempotencyKey\(call\.idempotencyKey\)\s*:\s*randomUUID\(\)/);
+    assert.match(custody, /createRequest[\s\S]*idempotencyKey/);
     assert.doesNotMatch(custody, /idempotencyKey: call\.idempotencyKey \|\| randomUUID\(\)/);
+});
+
+test("Circle retries only the first-SCA queue condition with the same idempotency key", () => {
+    const custody = source("src/lib/custody/index.ts");
+
+    assert.match(custody, /CIRCLE_FIRST_TX_QUEUE_CODE = 155505/);
+    assert.match(custody, /CIRCLE_FIRST_TX_QUEUE_RETRY_DELAYS_MS/);
+    assert.match(custody, /createContractExecutionTransaction\(createRequest\)/);
+    assert.match(custody, /if \(!isCircleFirstTxQueueError\(error\) \|\| retryDelay === undefined\) throw error/);
+    assert.match(custody, /CIRCLE_PAYMASTER_POLICY_CODE = 155509/);
+    assert.match(custody, /throw new CirclePaymasterPolicyError\(\)/);
 });
 
 test("resume seeds its custody key through deterministicIdempotencyKey", () => {
