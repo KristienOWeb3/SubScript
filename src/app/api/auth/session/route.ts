@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getVerifiedSessionToken } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/authCookies";
-import { getAccountRole } from "@/lib/accounts/roles";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import { isConnectionError, getOfflineUserEmbeddedWalletByAddress } from "@/lib/offlineDb";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { getWalletCustody, isCustodialWallet, type WalletCustody } from "@/lib/auth/walletCustody";
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
             }
         }
 
-        const role = await getAccountRole(wallet);
+        const role = await resolveAccountRoleWithBackfill(wallet);
         /* Rendering hint only — it decides whether the dashboard shows an Admin button.
            Every real boundary (the /admin layout and each /api/admin handler) re-derives
            admin status server-side, so a client that forges this gains nothing. */

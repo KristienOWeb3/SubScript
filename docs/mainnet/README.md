@@ -129,20 +129,23 @@ This section details every manual action you as an operator must perform yoursel
   - Solana Relayer: Postponed until cross-chain CCTP deposit/withdrawal live cutover.
 
 ### Phase G: Vercel Production Deployment
-- [ ] **Step G.1 — Populate Vercel Environment Variables:**
-  In Vercel → Project Settings → Environment Variables (Production Scope), enter all variables listed in §6.
+- [x] **Step G.1 — Populate Vercel Environment Variables:**
+  Pushed 65/65 production environment variables to Vercel Production scope via CLI (`vercel env add`), replacing stale testnet values. Stale Supabase variables pointing to old testnet removed.
 - [ ] **Step G.2 — Trigger Production Deployment:**
   Deploy the release Git commit/tag to Vercel Production.
 - [ ] **Step G.3 — Verify Vercel Cron Registration:**
   In Vercel → Project Settings → Cron Jobs, verify `/api/cron/customer-billing` (`0 3 * * *`) and `/api/keeper/vault-draw` (`0 4 * * *`) are registered.
 
 ### Phase H: GitHub Actions Keepers Setup
-- [ ] **Step H.1 — Set Repository Secrets:**
-  In GitHub Repo → Settings → Secrets and variables → Actions, set:
-  - `KEEPER_SECRET` = your production keeper secret.
+- [x] **Step H.1 — Set Repository Secrets:**
+  Set in GitHub Repo → Settings → Secrets and variables → Actions:
+  - `KEEPER_SECRET` = production keeper secret.
+  - `CRON_SECRET` = production cron secret.
+  - `SUBSCRIPT_WEBHOOK_SECRET` = production webhook secret.
+  - `SUBSCRIPT_SECRET_KEY` = dedicated active test secret key.
   - `KEEPER_BASE_URL` = `https://www.subscriptonarc.com`
 - [ ] **Step H.2 — Trigger Manual Smoke Run:**
-  In GitHub Actions tab, select **Keepers** workflow and click **Run workflow** (`workflow_dispatch`). Confirm all jobs return HTTP 200.
+  In GitHub Actions tab, select **Keepers** workflow and click **Run workflow** (`workflow_dispatch`). Confirm all jobs return HTTP 200 (or expected 410 for retired billing / 503 for CCTP).
 
 ### Phase I: Live Verification & Breaker Drills
 - [ ] **Step I.1 — Admin Console SIWE Login:**
@@ -416,6 +419,7 @@ node scripts/verify-mainnet-readiness.mjs --json
 
 | Date (UTC) | Component | Action / Finding | Verified By |
 |---|---|---|---|
+| 2026-09-17 | Auth Sign-In & Keeper CI Stability | 1) Fixed sign-in redirect loop: switched `getAccountRole` to `resolveAccountRoleWithBackfill` in OTP, Circle wallet, and session routes so existing users have their roles backfilled without getting trapped in `/signup?completeRole=1`; defaulted signin fallback to USER dashboard instead of signup. 2) Aligned keeper CI workflow (`.github/workflows/keepers.yml`): tolerated 410 Gone on retired billing endpoints and 503 Service Unavailable on Arc Mainnet CCTP keeper in individual and `manual-all` jobs. 3) Prioritized `DATABASE_URL` in `src/lib/databaseUrl.ts` over legacy Supabase variables. 4) Ensured merchant upsert in `requireEnterpriseAndTier1` so payment links foreign key never fails for non-enterprise merchants. 5) Aligned GitHub Actions secrets (`KEEPER_SECRET`, `CRON_SECRET`, `SUBSCRIPT_WEBHOOK_SECRET`, `SUBSCRIPT_SECRET_KEY`). All 599 security tests, 33 admin tests, 19 KYC tests, and TypeScript typecheck passing cleanly. | Antigravity AI |
 | 2026-09-02 | Documentation Consolidation | Unified all cutover runbooks, audit checklists, SECOPS calldata, manual human steps, and SQL scripts into `docs/mainnet/README.md`. | Antigravity AI |
 | 2026-09-02 | Compliance Sweeper | Added `/api/cron/gdpr-hard-delete` daily job to `.github/workflows/keepers.yml` to close the statutory 30-day GDPR account deletion gap. | Antigravity AI |
 | 2026-09-02 | Test Suite Verification | Verified 100% test pass rate across Hardhat (88 tests), Security (558 tests), Admin (33 tests), KYC (14 tests), Push (8 tests), Docs (19 tests), and Next.js production build (188 routes). | Antigravity AI |

@@ -144,18 +144,12 @@ function SignInContent() {
   }, [safeNext]);
 
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
-    if (safeNext && data.role === "USER") {
+    const role = (data.role || "USER") as "USER" | "ENTERPRISE";
+    if (safeNext && role === "USER") {
       window.location.href = safeNext;
       return;
     }
-    if (data.role) {
-      window.location.href = getDashboardUrl(data.role as any, "/dashboard");
-    } else {
-      const params = new URLSearchParams();
-      params.set("completeRole", "1");
-      if (safeNext) params.set("next", safeNext);
-      window.location.href = `/signup?${params.toString()}`;
-    }
+    window.location.href = getDashboardUrl(role, "/dashboard");
   }, [safeNext]);
 
   const handleSendOtp = async (e?: React.FormEvent) => {

@@ -1,7 +1,7 @@
 import { isGoogleSigninEnabled } from "@/lib/platform/flags";
 import { NextResponse } from "next/server";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import { provisionEmbeddedWallet } from "@/lib/custody/provision";
-import { getAccountRole } from "@/lib/accounts/roles";
 import { setSessionCookie } from "@/lib/authCookies";
 import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 import { withPgClient, pgMaybeOne } from "@/lib/serverPg";
@@ -168,7 +168,7 @@ export async function POST(request: Request) {
 
         await ensureDefaultAliasFromEmail(walletAddress, emailVal);
 
-        const role = await getAccountRole(walletAddress);
+        const role = await resolveAccountRoleWithBackfill(walletAddress);
 
         const response = NextResponse.json({
             success: true,

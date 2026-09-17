@@ -292,7 +292,9 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
                 } else {
                     const destination = event.data.data.role
                         ? getDashboardUrl(event.data.data.role as any, "/dashboard")
-                        : `/signup?email=${encodeURIComponent(event.data.data.email || "")}`;
+                        : (getAuthIntent() === "signin"
+                            ? getDashboardUrl("USER", "/dashboard")
+                            : `/signup?email=${encodeURIComponent(event.data.data.email || "")}`);
                     window.location.href = destination;
                 }
             } else if (event.data?.type === "GOOGLE_AUTH_ERROR") {
@@ -333,7 +335,9 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
 
         const destination = completed.role
             ? getDashboardUrl(completed.role as any, "/dashboard")
-            : `/signup?email=${encodeURIComponent(completed.email || "")}`;
+            : (getAuthIntent() === "signin"
+                ? getDashboardUrl("USER", "/dashboard")
+                : `/signup?email=${encodeURIComponent(completed.email || "")}`);
 
         window.location.href = destination;
     };
@@ -378,7 +382,9 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
             }
             const destination = data.role
                 ? getDashboardUrl(data.role as any, "/dashboard")
-                : `/signup?email=${encodeURIComponent(data.email || "")}`;
+                : (getAuthIntent() === "signin"
+                    ? getDashboardUrl("USER", "/dashboard")
+                    : `/signup?email=${encodeURIComponent(data.email || "")}`);
             window.location.href = destination;
         } catch (err: any) {
             failWith(err.message || "Dev login failed.");

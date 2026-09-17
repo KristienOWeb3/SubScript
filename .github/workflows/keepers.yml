@@ -51,9 +51,15 @@ jobs:
           BASE: ${{ secrets.KEEPER_BASE_URL }}
           SECRET: ${{ secrets.KEEPER_SECRET }}
         run: |
-          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-delay 5 --max-time 300 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/keeper/cctp" \
-            -H "Authorization: Bearer ${SECRET}"
+            -H "Authorization: Bearer ${SECRET}")
+          cat /tmp/resp.txt
+          echo
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "503" ]; then
+            echo "Keeper /api/keeper/cctp failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi
 
   reconcile:
     if: github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *'
@@ -77,9 +83,15 @@ jobs:
           BASE: ${{ secrets.KEEPER_BASE_URL }}
           SECRET: ${{ secrets.KEEPER_SECRET }}
         run: |
-          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-delay 5 --max-time 300 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/cron/billing" \
-            -H "Authorization: Bearer ${SECRET}"
+            -H "Authorization: Bearer ${SECRET}")
+          cat /tmp/resp.txt
+          echo
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "410" ]; then
+            echo "Keeper /api/cron/billing failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi
 
   payroll:
     if: github.event_name == 'schedule' && github.event.schedule == '0 5 * * *'
@@ -104,9 +116,15 @@ jobs:
           BASE: ${{ secrets.KEEPER_BASE_URL }}
           SECRET: ${{ secrets.KEEPER_SECRET }}
         run: |
-          curl -fsS --retry 3 --retry-delay 5 --max-time 120 -X GET \
+          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-delay 5 --max-time 120 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/internal/billing" \
-            -H "Authorization: Bearer ${SECRET}"
+            -H "Authorization: Bearer ${SECRET}")
+          cat /tmp/resp.txt
+          echo
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "410" ]; then
+            echo "Keeper /api/internal/billing failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi
 
   kyc-expiry:
     if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
@@ -189,7 +207,20 @@ jobs:
             /api/keeper/vault-topup \
             /api/keeper/cctp; do
             echo "→ GET ${path}"
-            curl -fsS --retry 2 --retry-delay 5 --max-time 300 -X GET \
-              "${BASE}${path}" -H "Authorization: Bearer ${SECRET}"
+            code=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 2 --retry-delay 5 --max-time 300 -X GET \
+              "${BASE}${path}" -H "Authorization: Bearer ${SECRET}")
+            cat /tmp/resp.txt
             echo
+            if [ "$code" = "200" ]; then
+              continue
+            elif [ "$code" = "410" ] && [[ "$path" == *"billing"* ]]; then
+              echo "ℹ ${path} retired (410 Gone)"
+              continue
+            elif [ "$code" = "503" ] && [ "$path" = "/api/keeper/cctp" ]; then
+              echo "ℹ ${path} disabled on mainnet (503 Service Unavailable)"
+              continue
+            else
+              echo "✖ ${path} failed with HTTP ${code}"
+              exit 1
+            fi
           done

@@ -23,14 +23,10 @@ export default function DashboardRouterPage() {
                     return;
                 }
 
-                if (data.role === "USER" || data.role === "ENTERPRISE") {
-                    setMessage("Opening your dashboard...");
-                    window.location.href = getDashboardUrl(data.role, "/dashboard");
-                    return;
-                }
-
-                setMessage("Finishing account setup...");
-                window.location.href = getDashboardUrl("USER", "/signup");
+                const targetRole = (data.role || "USER") as "USER" | "ENTERPRISE";
+                setMessage("Opening your dashboard...");
+                window.location.href = getDashboardUrl(targetRole, "/dashboard");
+                return;
             } catch {
                 if (!cancelled) {
                     setMessage("Redirecting to sign in...");
