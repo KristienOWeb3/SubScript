@@ -7,9 +7,9 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
-import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
+import { commitFromEmbedded, readUsdcBalance, syncVaultMirror } from "@/lib/vault/onchain";
 import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
-import { deterministicIdempotencyKey } from "@/lib/custody";
+import { CirclePaymasterPolicyError, deterministicIdempotencyKey } from "@/lib/custody";
 import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
@@ -109,6 +109,20 @@ export async function POST(request: Request) {
 
         const normalizedWallet = wallet.toLowerCase();
         const normalizedMerchant = merchantAddress.toLowerCase();
+
+        /* Reject an impossible commit before creating a durable intent, reserving sponsor budget,
+           or submitting an allowance transaction. Without this preflight, Circle can poll until
+           the route times out and an edge proxy may return HTML to the JSON client. */
+        const availableBalance = await readUsdcBalance(normalizedWallet);
+        if (availableBalance < amount) {
+            return NextResponse.json({
+                error: `Insufficient Arc balance. This wallet has ${formatUsdcMicros(availableBalance)} USDC available.`,
+                code: "INSUFFICIENT_WALLET_BALANCE",
+                availableBalanceUsdcMicros: availableBalance.toString(),
+                requiredBalanceUsdcMicros: amount.toString(),
+            }, { status: 422 });
+        }
+
         const sponsorRequestKey = `vault-commit:${requestId}:${normalizedWallet}:${normalizedMerchant}:${amount.toString()}`;
         const custodyIdempotencyKey = deterministicIdempotencyKey(
             `req:${requestId}:vault-commit:${normalizedWallet}:${normalizedMerchant}:${amount.toString()}`);
@@ -196,6 +210,19 @@ export async function POST(request: Request) {
         try {
             txHash = await commitFromEmbedded(wallet, merchantAddress, amount, custodyIdempotencyKey);
         } catch (commitError: any) {
+            /* Circle rejects this before accepting a transaction, so unlike polling timeouts it is
+               definitive: close the intent and tell the client no funds moved. */
+            if (commitError instanceof CirclePaymasterPolicyError) {
+                await prisma.vaultCommitIntent.update({
+                    where: { requestId },
+                    data: { status: "FAILED", lastError: commitError.message.slice(0, 500) },
+                }).catch(() => {});
+                return NextResponse.json({
+                    error: commitError.message,
+                    code: commitError.code,
+                    requestId,
+                }, { status: 503 });
+            }
             /* A custody error after submission started is AMBIGUOUS — Circle may have accepted
                the transaction. Record the error but keep the intent open; the client must retry
                with the SAME request id (deduped by the idempotency key), never a fresh one. */
@@ -289,6 +316,12 @@ export async function POST(request: Request) {
         console.error("Vault commit failed:", error);
         return NextResponse.json({ error: error.message || "Failed to commit to vault" }, { status: 500 });
     }
+}
+
+function formatUsdcMicros(amount: bigint): string {
+    const whole = amount / BigInt(1_000_000);
+    const fraction = (amount % BigInt(1_000_000)).toString().padStart(6, "0").replace(/0+$/, "");
+    return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
 /* Resolve a prior commit intent for the authenticated user. The browser calls this on reload

@@ -2197,6 +2197,14 @@ export default function UserDashboard() {
       setVaultActionError("Enter a valid amount.");
       return;
     }
+    if (vaultActionMode === "commit"
+        && usdcBalance !== undefined
+        && Number(vaultActionAmount) > walletBalance) {
+      setVaultActionError(
+        `Insufficient Arc balance. You have ${walletBalance.toFixed(2)} USDC available.`,
+      );
+      return;
+    }
     const acknowledgedUnverified = opts?.acknowledgedUnverified === true;
     setVaultActionBusy(true);
     try {
@@ -2279,11 +2287,14 @@ export default function UserDashboard() {
           },
           body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount, acknowledgeUnverified: acknowledgedUnverified || undefined }),
         });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) {
           /* An ambiguous commit stays persisted — the retry reuses the same request id and
              dedupes at Circle instead of escrowing twice. */
-          throw new Error(data.error || "Vault action failed.");
+          throw new Error(
+            data?.error
+              || `Vault action failed${res.status ? ` (HTTP ${res.status})` : ""}. Please try again.`,
+          );
         }
         if (vaultActionMode === "commit") {
           vaultCommitRequestKey.current = null;
@@ -3313,11 +3324,14 @@ export default function UserDashboard() {
         <div className="relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 overflow-hidden">
           <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
             <div className="flex w-full max-w-md items-center justify-between px-1 py-2 pointer-events-auto">
-              <div className="flex items-center gap-2 rounded-full border border-black/15 bg-white/95 px-3 py-1.5 shadow-sm">
-                <div className="h-7 w-7 subscript-skeleton rounded-full shrink-0" />
-                <div className="h-3 w-20 subscript-skeleton rounded-full" />
+              <div
+                aria-label="Loading profile"
+                className="h-12 w-12 subscript-skeleton rounded-full shrink-0 shadow-sm"
+              />
+              <div className="flex items-center gap-2" aria-label="Loading account controls">
+                <div className="h-9 w-9 subscript-skeleton rounded-full shrink-0" />
+                <div className="h-9 w-9 subscript-skeleton rounded-full shrink-0" />
               </div>
-              <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
             </div>
           </div>
 
@@ -10294,19 +10308,7 @@ function BalanceRoutingNotice({
 
   const combinedBalance = walletBalance + reachableElsewhere;
 
-  if (numericAmount <= walletBalance) {
-    return (
-      <div className="bg-[#ccff00]/5 border border-[#ccff00]/25 rounded-2xl p-4 text-xs text-white/80 space-y-1">
-        <p className="font-bold text-[#ccff00] uppercase tracking-wider text-[9px] flex items-center gap-1.5">
-          Straight from your balance
-          <span className="h-1.5 w-1.5 rounded-full bg-[#ccff00] animate-pulse" />
-        </p>
-        <p className="text-[11px] leading-relaxed text-white/60">
-          This one stays on Arc, so it lands in seconds and there&apos;s no fee.
-        </p>
-      </div>
-    );
-  }
+  if (numericAmount <= walletBalance) return null;
 
   if (numericAmount <= combinedBalance) {
     return (

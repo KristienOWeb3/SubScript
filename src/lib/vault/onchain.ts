@@ -3,7 +3,7 @@
    provider (legacy AES key or Circle MPC — see src/lib/custody). */
 import { ethers } from "ethers";
 import { prisma } from "@/lib/prisma";
-import { getWalletCustody, type WalletCustody } from "@/lib/custody";
+import { deterministicIdempotencyKey, getWalletCustody, type WalletCustody } from "@/lib/custody";
 import {
     SUBSCRIPT_VAULT_ADDRESS,
     SUBSCRIPT_VAULT_CHAIN_ID,
@@ -151,7 +151,12 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
 
 /** Raise the wallet's USDC allowance to `spender` if it's below `amount`. Reads via RPC,
     writes through the custody provider so both legacy and Circle wallets work. */
-export async function ensureUsdcAllowance(custody: WalletCustody, spender: string, amount: bigint) {
+export async function ensureUsdcAllowance(
+    custody: WalletCustody,
+    spender: string,
+    amount: bigint,
+    idempotencyKey?: string,
+) {
     const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, readProvider());
     const allowance: bigint = await usdc.allowance(custody.address, spender);
     if (allowance < amount) {
@@ -160,6 +165,7 @@ export async function ensureUsdcAllowance(custody: WalletCustody, spender: strin
             abi: USDC_ABI,
             functionName: "approve",
             args: [spender, amount],
+            ...(idempotencyKey ? { idempotencyKey } : {}),
         });
     }
 }
@@ -211,7 +217,12 @@ export const VAULT_ALLOWANCE_RUNWAY = BigInt(50_000_000); // 50 USDC runway for 
 export async function commitFromEmbedded(walletAddress: string, merchant: string, amount: bigint, idempotencyKey?: string) {
     const custody = await getWalletCustody(walletAddress);
     const targetAllowance = amount > VAULT_ALLOWANCE_RUNWAY ? amount : VAULT_ALLOWANCE_RUNWAY;
-    await ensureUsdcAllowance(custody, SUBSCRIPT_VAULT_ADDRESS, targetAllowance);
+    await ensureUsdcAllowance(
+        custody,
+        SUBSCRIPT_VAULT_ADDRESS,
+        targetAllowance,
+        idempotencyKey ? deterministicIdempotencyKey(`${idempotencyKey}:approve`) : undefined,
+    );
     const { txHash } = await custody.executeContract({
         contractAddress: SUBSCRIPT_VAULT_ADDRESS,
         abi: VAULT_ABI,

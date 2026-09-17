@@ -27,6 +27,7 @@ import {
     finalizeSpendingLimitOperation,
     releaseSpendingLimitOperation,
 } from "@/lib/spendingLimits";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 
 export const maxDuration = 120;
 
@@ -266,6 +267,15 @@ export async function POST(request: Request) {
         for (let i = 0; i < parsedRecipients.length; i++) {
             const item = parsedRecipients[i];
             try {
+                /* Wallet sends previously bypassed the sponsorship policy entirely, so disabling
+                   sponsorship leaked a raw Circle paymaster error after budget reservation. Gate
+                   each irreversible transfer with a recipient-stable key before submission. */
+                await requireSponsoredGas({
+                    wallet: fundingWallet,
+                    action: "wallet_send",
+                    requestKey: `wallet-send:${normalizedSender}:${requestId}:${item.receiver}:${item.amountMicros.toString()}`,
+                    principalRequiredWei: 0n,
+                });
                 const { txHash } = await custody.executeContract({
                     contractAddress: USDC_NATIVE_GAS_ADDRESS,
                     abi: USDC_ERC20_ABI,
