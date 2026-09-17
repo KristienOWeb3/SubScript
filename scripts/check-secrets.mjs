@@ -51,6 +51,14 @@ const detectors = [
     name: "assigned_circle_entity_secret",
     pattern: /CIRCLE_ENTITY_SECRET\s*[:=]\s*["'][^"'\r\n]{20,}["']/giu,
   },
+  {
+    name: "resend_api_key",
+    pattern: /\bre_[0-9a-zA-Z_]{20,}\b/gu,
+  },
+  {
+    name: "live_subscript_secret_key",
+    pattern: /\bsk_live_[0-9a-zA-Z]{20,}\b/gu,
+  },
 ];
 
 function repositoryFiles() {

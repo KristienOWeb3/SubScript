@@ -29,12 +29,20 @@ const securityHeaders = [
     // camera=(self) so the in-app QR scanner can use the device camera; everything else stays denied.
     value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)",
   },
+  {
+    key: "Content-Security-Policy",
+    /* Proxy middleware replaces this with the request-nonce policy for application routes. This
+       compatible baseline still protects responses that bypass middleware without imposing a
+       second script/style policy that would invalidate the runtime nonce. */
+    value: "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'",
+  },
 ];
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
   outputFileTracingRoot: projectRoot,
+  reactCompiler: true,
   async headers() {
     return [
       {

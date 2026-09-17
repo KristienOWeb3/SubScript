@@ -38,7 +38,7 @@ import {
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, CheckCircle, AlertTriangle,
-    PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine, LogOut,
+    PlugZap, Loader2, Award, Crown, ExternalLink, LogOut,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, ChevronRight, User, Share2,
     ShieldCheck, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search, ChevronLeft, ArrowLeft
@@ -819,13 +819,6 @@ export default function DashboardPage() {
         if (userSettings) setPayoutDestinationDraft(savedPayoutDestination);
     }, [savedPayoutDestination, userSettings]);
     const [churnQuestionDraft, setChurnQuestionDraft] = useState("");
-    const [merchantWalletBackupLoading, setMerchantWalletBackupLoading] = useState(false);
-    const [merchantWalletBackupError, setMerchantWalletBackupError] = useState<string | null>(null);
-    const [merchantExportOtpStage, setMerchantExportOtpStage] = useState(false);
-    const [merchantExportOtpCode, setMerchantExportOtpCode] = useState("");
-    const [merchantExportOtpSending, setMerchantExportOtpSending] = useState(false);
-    const [merchantExportedPrivateKey, setMerchantExportedPrivateKey] = useState<string | null>(null);
-    const [merchantPrivateKeyVisible, setMerchantPrivateKeyVisible] = useState(false);
 
     const fetchSettings = useCallback(async () => {
         if (!address) return;
@@ -855,81 +848,6 @@ export default function DashboardPage() {
             fetchSettings();
         }
     }, [address, fetchSettings]);
-
-    const requestMerchantExportOtp = async () => {
-        const email = userSettings?.walletBackup?.email || embeddedWallet?.email;
-        if (!email) {
-            setMerchantWalletBackupError("No verified email is linked to this merchant wallet.");
-            return;
-        }
-        setMerchantExportOtpSending(true);
-        setMerchantWalletBackupError(null);
-        setMerchantExportedPrivateKey(null);
-        setMerchantPrivateKeyVisible(false);
-        try {
-            const res = await fetch("/api/auth/otp/send", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || "Could not send a verification code.");
-            }
-            setMerchantExportOtpStage(true);
-            setMerchantExportOtpCode("");
-            setToastMessage(`Verification code sent to ${email}`);
-            setShowToast(true);
-            setTimeout(() => setShowToast(false), 3000);
-        } catch (error: any) {
-            setMerchantWalletBackupError(error.message || "Could not send a verification code.");
-        } finally {
-            setMerchantExportOtpSending(false);
-        }
-    };
-
-    const handleMerchantWalletExport = async () => {
-        setMerchantWalletBackupLoading(true);
-        setMerchantWalletBackupError(null);
-        try {
-            const res = await fetch("/api/user/wallet/export", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ otpCode: merchantExportOtpCode.trim() }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || "Could not export this merchant wallet.");
-            }
-            setMerchantExportedPrivateKey(data.privateKey);
-            setMerchantPrivateKeyVisible(true);
-            setMerchantExportOtpStage(false);
-            setMerchantExportOtpCode("");
-        } catch (error: any) {
-            setMerchantWalletBackupError(error.message || "Could not export this merchant wallet.");
-        } finally {
-            setMerchantWalletBackupLoading(false);
-        }
-    };
-
-    const downloadMerchantWalletBackup = () => {
-        if (!merchantExportedPrivateKey || !address) return;
-        const blob = new Blob([[
-            "SubScript merchant wallet private key backup",
-            `Wallet: ${address.toLowerCase()}`,
-            `Created: ${new Date().toISOString()}`,
-            "",
-            merchantExportedPrivateKey,
-            "",
-            "Store this offline. Anyone with this key can control this wallet.",
-        ].join("\n")], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `subscript-merchant-wallet-${address.slice(2, 8).toLowerCase()}.txt`;
-        link.click();
-        URL.revokeObjectURL(url);
-    };
 
     const handleToggleSetting = async (field: string, currentValue: boolean) => {
         if (comingSoonMerchantSettings.has(field)) return;
@@ -3351,7 +3269,7 @@ Please complete the following implementation tasks:
                                     </div>
                                     <div>
                                         <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Security &amp; Wallet Recovery</span>
-                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Export merchant private key and multi-sig</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">MPC custody and multi-sig controls</span>
                                     </div>
                                 </div>
                                 <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
@@ -4010,122 +3928,27 @@ Please complete the following implementation tasks:
                 {/* 9. SECURITY & BACKUP SUBVIEW */}
                 {merchantSubView === "security" && (
                     <div className="space-y-6">
-                        {renderBackHeader("Security & Wallet Recovery", "Merchant wallet key export and multi-sig authorization.")}
+                        {renderBackHeader("Security & Wallet Recovery", "MPC custody and multi-sig authorization.")}
 
                         <div className="space-y-6">
-                            {/* Wallet Recovery & Backup */}
-                            {userSettings.walletBackup?.available && (
-                                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-5 shadow-sm">
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                        <div>
-                                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                                                <Lock className="w-4 h-4 text-[#082824]" />
-                                                Wallet Recovery &amp; Backup
-                                            </h2>
-                                            <p className="text-[11px] text-black/60 font-sans leading-relaxed max-w-xl">
-                                                Export the private key for your email-created merchant wallet after email verification.
-                                                Importing this key into a wallet app lets you use <strong className="text-black/80">Sign in with Wallet</strong> and
-                                                opens this same merchant account.
-                                            </p>
-                                        </div>
-                                        <span className="self-start rounded-full border border-black/10 bg-[#D4E3E8] px-3 py-1 text-[9px] font-semibold text-[#082824]">
-                                            Exportable
-                                        </span>
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black shadow-sm">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-black">
+                                            <Lock className="h-4 w-4 text-[#082824]" />
+                                            MPC Security
+                                        </h2>
+                                        <p className="max-w-xl font-sans text-[11px] leading-relaxed text-black/65">
+                                            Embedded merchant wallets are secured with distributed MPC custody. Raw private keys are
+                                            never viewable, copyable, downloadable, or extractable from SubScript. External wallets
+                                            remain self-custodied by their owners.
+                                        </p>
                                     </div>
-
-                                    {merchantExportedPrivateKey && (
-                                        <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
-                                            <p className="text-[10px] font-bold text-amber-900">
-                                                Keep this secret offline. SubScript will never ask you to paste it into the app.
-                                            </p>
-                                            <div className="flex items-center gap-2 rounded-xl border border-black/15 bg-white px-3 py-2.5">
-                                                <code className="min-w-0 flex-1 truncate text-[10px] text-black/80">
-                                                    {merchantPrivateKeyVisible ? merchantExportedPrivateKey : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"}
-                                                </code>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setMerchantPrivateKeyVisible((visible) => !visible)}
-                                                    className="p-1.5 text-black/40 hover:text-black"
-                                                    aria-label={merchantPrivateKeyVisible ? "Hide private key" : "Show private key"}
-                                                >
-                                                    {merchantPrivateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleCopy(merchantExportedPrivateKey, "Merchant Wallet Private Key")}
-                                                    className="p-1.5 text-black/40 hover:text-black"
-                                                    aria-label="Copy private key"
-                                                >
-                                                    {copiedText === "Merchant Wallet Private Key"
-                                                        ? <Check className="h-4 w-4 text-[#082824]" />
-                                                        : <Copy className="h-4 w-4" />}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={downloadMerchantWalletBackup}
-                                                    className="p-1.5 text-black/40 hover:text-black"
-                                                    aria-label="Download private key backup"
-                                                >
-                                                    <ArrowDownToLine className="h-4 w-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {merchantWalletBackupError && (
-                                        <p className="text-[11px] text-red-500">{merchantWalletBackupError}</p>
-                                    )}
-
-                                    {merchantExportOtpStage ? (
-                                        <div className="space-y-3">
-                                            <p className="text-[10px] text-black/60">
-                                                Enter the 6-digit code sent to {userSettings.walletBackup.email}.
-                                            </p>
-                                            <input
-                                                type="text"
-                                                inputMode="numeric"
-                                                autoComplete="one-time-code"
-                                                maxLength={6}
-                                                value={merchantExportOtpCode}
-                                                onChange={(event) => setMerchantExportOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                                                placeholder="000000"
-                                                className="w-full rounded-2xl border border-black/15 bg-white px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-black placeholder:text-black/30 focus:border-[#8AB4DB] focus:outline-none"
-                                            />
-                                            <div className="grid gap-2 sm:grid-cols-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={handleMerchantWalletExport}
-                                                    disabled={merchantWalletBackupLoading || merchantExportOtpCode.length !== 6}
-                                                    className="w-full rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] py-3 text-xs font-semibold text-[#082824] transition disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    {merchantWalletBackupLoading ? "Unlocking…" : "Confirm & Reveal"}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setMerchantExportOtpStage(false);
-                                                        setMerchantExportOtpCode("");
-                                                        setMerchantWalletBackupError(null);
-                                                    }}
-                                                    disabled={merchantWalletBackupLoading}
-                                                    className="w-full rounded-full border border-black/15 bg-white hover:bg-black/5 py-3 text-xs font-semibold text-black/70 transition disabled:opacity-50"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <button
-                                            type="button"
-                                            onClick={requestMerchantExportOtp}
-                                            disabled={merchantExportOtpSending}
-                                            className="w-full rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] py-3.5 text-xs font-semibold text-[#082824] transition disabled:cursor-not-allowed disabled:opacity-50"
-                                        >
-                                            {merchantExportOtpSending ? "Sending verification code…" : "Verify email & export wallet"}
-                                        </button>
-                                    )}
+                                    <span className="self-start rounded-full border border-emerald-700/20 bg-emerald-100 px-3 py-1 text-[9px] font-semibold text-emerald-900">
+                                        Non-extractable
+                                    </span>
                                 </div>
-                            )}
+                            </div>
 
                             {/* Security Toggles */}
                             <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">

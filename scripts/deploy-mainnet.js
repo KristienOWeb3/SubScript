@@ -93,14 +93,30 @@ async function main() {
     }
   }
 
-  // Fallbacks for mainnet / testnet if owner or treasury not explicitly provided
-  if (!owner) {
-    owner = deployer.address;
-    console.log(`[WARNING] No MULTISIG_ADDRESS configured. Defaulting owner to deployer (${owner}).`);
-  }
-  if (!treasury) {
-    treasury = owner;
-    console.log(`[WARNING] No TREASURY_ADDRESS configured. Defaulting treasury to owner (${treasury}).`);
+  // On arcMainnet, strictly require MULTISIG_ADDRESS and TREASURY_ADDRESS — no EOA fallback allowed.
+  if (network === "arcMainnet") {
+    if (!owner) {
+      throw new Error(
+        "CRITICAL: MULTISIG_ADDRESS is required for Arc Mainnet deployment. " +
+        "Deployer EOA fallback is prohibited on mainnet. Set MULTISIG_ADDRESS to your Safe multisig."
+      );
+    }
+    if (!treasury) {
+      throw new Error(
+        "CRITICAL: TREASURY_ADDRESS is required for Arc Mainnet deployment. " +
+        "Deployer EOA fallback is prohibited on mainnet. Set TREASURY_ADDRESS to the protocol treasury."
+      );
+    }
+  } else {
+    // Testnet/local fallback to deployer is acceptable
+    if (!owner) {
+      owner = deployer.address;
+      console.log(`[WARNING] No MULTISIG_ADDRESS configured. Defaulting owner to deployer (${owner}).`);
+    }
+    if (!treasury) {
+      treasury = owner;
+      console.log(`[WARNING] No TREASURY_ADDRESS configured. Defaulting treasury to owner (${treasury}).`);
+    }
   }
 
   /* Safety check: Owner cannot be exposed key */
@@ -314,9 +330,32 @@ async function main() {
   const confidentialAddress = await confidential.getAddress();
   const confidentialTx = confidential.deploymentTransaction()?.hash || "";
   console.log(`  -> SubScriptConfidential: ${confidentialAddress} (tx: ${confidentialTx})`);
-  console.log(`     Configured with owner=${owner}\n`);
+  /* 5. Verify Post-Deployment Ownership Invariants */
+  console.log("Step 5: Verifying Post-Deployment Ownership Invariants...");
+  const routerContract = RouterFactory.attach(routerProxyAddress);
+  const routerOwner = await routerContract.owner();
+  if (routerOwner.toLowerCase() !== owner.toLowerCase()) {
+    throw new Error(`CRITICAL: SubScriptRouter owner mismatch: expected ${owner}, got ${routerOwner}`);
+  }
+
+  const vaultContract = VaultFactory.attach(vaultProxyAddress);
+  const vaultOwner = await vaultContract.owner();
+  if (vaultOwner.toLowerCase() !== owner.toLowerCase()) {
+    throw new Error(`CRITICAL: SubScriptVault owner mismatch: expected ${owner}, got ${vaultOwner}`);
+  }
+
+  const confidentialContract = ConfidentialFactory.attach(confidentialAddress);
+  const confidentialOwner = await confidentialContract.owner();
+  if (confidentialOwner.toLowerCase() !== owner.toLowerCase()) {
+    throw new Error(`CRITICAL: SubScriptConfidential owner mismatch: expected ${owner}, got ${confidentialOwner}`);
+  }
+  console.log(`  -> SubScriptRouter owner:       ${routerOwner} [OK]`);
+  console.log(`  -> SubScriptVault owner:        ${vaultOwner} [OK]`);
+  console.log(`  -> SubScriptConfidential owner: ${confidentialOwner} [OK]`);
+  console.log("  -> All contract ownerships strictly verified against multisig/target owner.\n");
 
   /* ──────────────────────── Build Deployment Receipt ────────────────────────── */
+
   const receipt = {
     network,
     chainId: Number(chainId),

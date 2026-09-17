@@ -1,14 +1,26 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, Loader2, Plus, Shield, User, X, Check, ArrowUpRight } from "@/components/icons";
-import { parseUsdcToMicros } from "@/components/SubUserManager";
 
 /* Same 6-decimal micro-USDC wire convention: decimal strings so BigInt survives
    JSON, parsed with BigInt rather than Number so large caps stay exact. */
 const MICROS_PER_USDC = 1_000_000n;
+
+function parseUsdcToMicros(input: string): { micros: string } | { error: string } {
+    const trimmed = input.trim();
+    if (!trimmed) return { error: "Enter an amount" };
+    if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) {
+        if (/^\d+\.\d{7,}$/.test(trimmed)) return { error: "USDC supports at most 6 decimal places" };
+        return { error: "Enter a positive amount" };
+    }
+    const [whole, fraction = ""] = trimmed.split(".");
+    const micros = BigInt(whole) * MICROS_PER_USDC + BigInt(fraction.padEnd(6, "0"));
+    return { micros: micros.toString() };
+}
 
 function formatUsdc(micros: string | null): string {
     if (micros === null) return "Uncapped";
@@ -198,9 +210,9 @@ export default function VaultShareManager({
                 }),
             });
             const json = await res.json();
-            if (!res.ok) throw new Error(json.error || "Could not create delegated commit");
+            if (!res.ok) throw new Error(json.error || "Could not create shared commit key");
 
-            setSuccessMsg(`User added! Delegated commit ID generated.`);
+            setSuccessMsg(`User added! Shared commit ID generated.`);
             setName("");
             setCap("");
             await load();
@@ -231,7 +243,7 @@ export default function VaultShareManager({
 
         if (action === "rotate") {
             setConfirmModal({
-                title: "Rotate Delegated Key",
+                title: "Rotate Commit Key",
                 message: "This will issue a new commit key for this user. The previous key will stop working immediately, but their usage history and cap will be preserved.",
                 confirmText: "Issue New Key",
                 onConfirm: async () => {
@@ -322,7 +334,7 @@ export default function VaultShareManager({
                 <div className="flex items-center gap-2">
                     <Shield className="h-4 w-4 text-[#2775CA]" />
                     <h3 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white">
-                        Shared Access & Delegated Users
+                        Shared Vault Access & Team Members
                     </h3>
                 </div>
                 {data && (
@@ -391,7 +403,7 @@ export default function VaultShareManager({
                                 >
                                     <div className="mb-1 flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/10 text-xs font-black text-[#2775CA] shrink-0 shadow-inner group-hover:scale-105 transition-transform">
                                         {share.profilePic ? (
-                                            <img src={share.profilePic} alt={share.displayName || "User"} className="h-full w-full object-cover" />
+                                            <Image src={share.profilePic} alt={share.displayName || "User"} width={40} height={40} unoptimized className="h-full w-full object-cover" />
                                         ) : (
                                             initial
                                         )}
@@ -489,7 +501,7 @@ export default function VaultShareManager({
                                                             className="flex items-center gap-1.5 rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 px-2.5 py-1 text-[10px] text-black dark:text-white hover:border-[#2775CA] hover:bg-[#2775CA]/10 transition shadow-sm"
                                                         >
                                                             {c.profilePic ? (
-                                                                <img src={c.profilePic} alt={c.displayName} className="h-3.5 w-3.5 rounded-full object-cover shrink-0" />
+                                                                <Image src={c.profilePic} alt={c.displayName} width={14} height={14} unoptimized className="h-3.5 w-3.5 rounded-full object-cover shrink-0" />
                                                             ) : (
                                                                 <User className="h-3 w-3 text-black/40 dark:text-white/40 shrink-0" />
                                                             )}
@@ -588,7 +600,7 @@ export default function VaultShareManager({
                                             <div className="flex items-center gap-3">
                                                 <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/10 text-sm font-black text-[#2775CA] shrink-0">
                                                     {selectedShare.profilePic ? (
-                                                        <img src={selectedShare.profilePic} alt={selectedShare.displayName || "User"} className="h-full w-full object-cover" />
+                                                        <Image src={selectedShare.profilePic} alt={selectedShare.displayName || "User"} width={44} height={44} unoptimized className="h-full w-full object-cover" />
                                                     ) : (
                                                         selectedShare.displayName ? selectedShare.displayName[0].toUpperCase() : "U"
                                                     )}
@@ -613,14 +625,14 @@ export default function VaultShareManager({
 
                                         {/* Scoped Commit ID */}
                                         <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-white/[0.06] p-3 space-y-1 shadow-sm">
-                                            <span className="text-[9px] font-black uppercase tracking-wider text-black/50 dark:text-white/50">Delegated Commit Key</span>
+                                            <span className="text-[9px] font-black uppercase tracking-wider text-black/50 dark:text-white/50">Shared Commit Key</span>
                                             <div className="flex items-center justify-between gap-2">
                                                 <code className="truncate font-mono text-xs text-black/80 dark:text-white/90">{secretId(selectedShare.commitId)}</code>
                                                 <button
                                                     type="button"
                                                     onClick={() => copyId(selectedShare.commitId)}
                                                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/15 transition shadow-sm"
-                                                    title="Copy Delegated Key"
+                                                    title="Copy Shared Commit Key"
                                                 >
                                                     {copiedId === selectedShare.commitId ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                                                 </button>

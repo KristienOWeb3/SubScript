@@ -654,6 +654,10 @@ contract SubScriptPSA is ReentrancyGuard {
                 revert InsufficientSwapOutput(_amount, amountReceived);
             }
 
+            /* Zero-after: revoke any residual allowance the router did not consume.
+               Prevents stale-allowance accumulation (ERC-20 approval race vector). */
+            IERC20(_paymentToken).forceApprove(address(stableFXRouter), 0);
+
             _distributeSettlement(_subId, _merchant, settlementToken, _amount);
 
             // Refund any unspent payment token instead of excess settlement token

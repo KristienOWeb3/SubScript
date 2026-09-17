@@ -71,10 +71,14 @@ async function withRetry(fn, retries = 5, delay = 1000) {
 
 async function main() {
     const isMainnet = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
-    const rpc = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
+    const rpc = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || (isMainnet ? null : "https://rpc.testnet.arc.network");
+    if (!rpc) {
+        console.error("FATAL: Mainnet mode requires ARC_RPC_PRIMARY or RPC_URL to be set. Refusing to fall back to testnet RPC.");
+        process.exit(2);
+    }
     // Setting staticNetwork avoids an extra eth_chainId request on startup that can trigger rate limits
     const provider = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true });
-    console.log(`Checking deployed contracts against ${rpc}\n`);
+    console.log(`Checking deployed contracts against ${rpc}${isMainnet ? " (MAINNET)" : ""}\n`);
 
     let healthy = true;
     for (const spec of EXPECTED) {

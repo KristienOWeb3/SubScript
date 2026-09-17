@@ -307,7 +307,7 @@ export function AdminSystemHealthCard() {
             Emergency Platform Kill Switches & Runtime Controls
           </h3>
           <p className="text-xs text-[#64748b]">
-            Direct runtime toggles stored in platform flags and mirrored to edge Redis. Changes take effect across instances within 10s.
+            Server-enforced controls stored in system settings. A saved change is re-read from persistent storage before this panel confirms it.
           </p>
         </div>
 
@@ -332,35 +332,61 @@ export function AdminSystemHealthCard() {
                "off" apart from "we don't know". */
             const known = typeof value === "boolean";
             const alarming = known && (entry.dangerousWhenOn ? value : !value);
+            const stateLabel = busy
+              ? "Saving"
+              : !known
+                ? "Unknown"
+                : value
+                  ? entry.onLabel
+                  : entry.offLabel;
 
             return (
               <div key={entry.field} className="flex items-center justify-between gap-4 py-3">
-                <div>
-                  <p className="font-bold text-gray-900">{entry.title}</p>
-                  <p className="text-gray-500 text-[11px]">
+                <div className="min-w-0">
+                  <p id={`${entry.field}-label`} className="font-bold text-gray-900">{entry.title}</p>
+                  <p id={`${entry.field}-description`} className="text-gray-500 text-[11px]">
                     {settingsData?.enforcement?.[entry.field] ?? "Loading what this stops…"}
                   </p>
                 </div>
                 <button
+                  type="button"
+                  role="switch"
+                  aria-checked={known ? value : false}
+                  aria-labelledby={`${entry.field}-label ${entry.field}-state`}
+                  aria-describedby={`${entry.field}-description`}
+                  aria-disabled={busy || !known}
                   onClick={() => known && handleToggleSetting(entry.field, value)}
                   disabled={busy || !known}
-                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-60 ${
-                    !known
-                      ? "bg-gray-100 text-gray-500"
-                      : alarming
-                        ? "bg-red-600 text-white hover:bg-red-700"
-                        : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                  }`}
+                  className="group flex w-[106px] shrink-0 items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775ca] focus-visible:ring-offset-2 disabled:cursor-not-allowed"
                 >
-                  {busy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : !known ? (
-                    "Unknown"
-                  ) : value ? (
-                    entry.onLabel
-                  ) : (
-                    entry.offLabel
-                  )}
+                  <span
+                    data-switch-track
+                    aria-hidden="true"
+                    className={`relative h-6 w-11 shrink-0 rounded-full border shadow-inner transition-colors ${
+                      !known
+                        ? "border-gray-300 bg-gray-200"
+                        : alarming
+                          ? "border-red-700 bg-red-600 group-hover:bg-red-700"
+                          : "border-emerald-700 bg-emerald-600 group-hover:bg-emerald-700"
+                    }`}
+                  >
+                    <span
+                      data-switch-thumb
+                      className={`absolute top-0.5 grid h-4.5 w-4.5 place-items-center rounded-full bg-white shadow-sm transition-transform ${
+                        known && value ? "translate-x-[20px]" : "translate-x-0.5"
+                      }`}
+                    >
+                      {busy && <Loader2 className="h-3 w-3 animate-spin text-gray-600" />}
+                    </span>
+                  </span>
+                  <span
+                    id={`${entry.field}-state`}
+                    className={`min-w-0 flex-1 truncate text-right text-[10px] font-black ${
+                      !known ? "text-gray-600" : alarming ? "text-red-700" : "text-emerald-800"
+                    }`}
+                  >
+                    {stateLabel}
+                  </span>
                 </button>
               </div>
             );

@@ -41,6 +41,10 @@ async function runAudit() {
           await sleep(RETRY_DELAY_MS);
           continue;
         }
+        if (process.env.STRICT_AUDIT === "true" || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet") {
+          console.error("[audit:production] ✗ npm registry advisory service unavailable in STRICT_AUDIT/mainnet mode. Failing closed.");
+          process.exit(1);
+        }
         console.warn("[audit:production] ⚠ npm registry advisory service is experiencing an external outage (503 / timeout). Bypassing registry outage.");
         process.exit(0);
       }

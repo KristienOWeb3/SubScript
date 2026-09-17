@@ -7,4 +7,5 @@
  * package to `false`; Turbopack's resolveAlias takes a module path rather than a boolean, so the
  * "nothing" has to be a real file.
  */
-export default {};
+const emptyStub = {};
+export default emptyStub;

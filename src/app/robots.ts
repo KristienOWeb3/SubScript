@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
         rules: {
             userAgent: "*",
             allow: "/",
-            disallow: ["/dashboard/", "/merchant/", "/user/", "/api/"],
+            disallow: ["/dashboard/", "/merchant/", "/user/", "/admin/", "/api/"],
         },
         sitemap: "https://www.subscriptonarc.com/sitemap.xml",
         host: "https://www.subscriptonarc.com",

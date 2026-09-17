@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User, Globe, Shield, AlertCircle } from "@/components/icons";
 import NotificationBell from "@/components/dashboard/NotificationBell";
 
@@ -13,6 +14,7 @@ interface UserDashboardHeaderProps {
     activeTab: string;
     tier?: number;
     onTabChange: (tab: any) => void;
+    onTierDetails?: () => void;
     onLogout: () => void;
 }
 
@@ -24,11 +26,13 @@ export default function UserDashboardHeader({
     activeTab,
     tier = 1,
     onTabChange,
+    onTierDetails,
     onLogout,
 }: UserDashboardHeaderProps) {
     const [copiedAddress, setCopiedAddress] = useState(false);
     const [scrolled, setScrolled] = useState(false);
     const [balancesVisible, setBalancesVisible] = useState(true);
+    const [mobileTierExpanded, setMobileTierExpanded] = useState(false);
 
     useEffect(() => {
         const handleScroll = () => setScrolled(window.scrollY > 30);
@@ -46,6 +50,19 @@ export default function UserDashboardHeader({
         }
     };
 
+    const handleMobileTierClick = () => {
+        if (!mobileTierExpanded) {
+            setMobileTierExpanded(true);
+            return;
+        }
+
+        if (onTierDetails) {
+            onTierDetails();
+        } else {
+            onTabChange("dns");
+        }
+    };
+
     return (
         <>
             {/* Floating Minimal Dashboard Header */}
@@ -57,9 +74,11 @@ export default function UserDashboardHeader({
                         {/* Logo */}
                         <div className="flex items-center flex-shrink-0">
                             <Link href="/" className="flex items-center">
-                                <img 
+                                <Image
                                     src="/logo.png" 
                                     alt="SubScript Logo" 
+                                    width={28}
+                                    height={28}
                                     className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
                                 />
                             </Link>
@@ -69,17 +88,27 @@ export default function UserDashboardHeader({
                         {userWallet ? (
                             <div className="flex items-center gap-1 min-w-0">
                                 <NotificationBell audience="USER" accent="#ccff00" />
-                                {/* KYC Tier Badge */}
-                                <div
-                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase tracking-wider ${
+                                {/* KYC Tier Control: compact first, then reveals its destination. */}
+                                <button
+                                    type="button"
+                                    onClick={handleMobileTierClick}
+                                    aria-expanded={mobileTierExpanded}
+                                    aria-label={
+                                        mobileTierExpanded
+                                            ? `Tier ${tier}. Open verification details`
+                                            : `Tier ${tier}. Show tier label`
+                                    }
+                                    className={`flex h-9 shrink-0 items-center justify-center overflow-hidden rounded-full border text-[10px] font-black uppercase transition-[width,padding,background-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${
+                                        mobileTierExpanded ? "w-[58px] px-2 tracking-wide" : "w-9 px-0"
+                                    } ${
                                         tier >= 1
                                             ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                                             : "bg-amber-500/10 text-amber-400 border-amber-500/20"
                                     }`}
                                     title={tier >= 1 ? "Tier 1: Verified" : "Tier 0: Basic (Link email to unlock transactions)"}
                                 >
-                                    <span>{tier >= 1 ? "Tier 1" : "Tier 0"}</span>
-                                </div>
+                                    <span aria-hidden="true">{mobileTierExpanded ? `Tier ${tier}` : tier}</span>
+                                </button>
                                 {/* Address/Domain pill */}
                                 <button
                                     onClick={() => onTabChange("dns")}
@@ -99,7 +128,7 @@ export default function UserDashboardHeader({
                                     className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#ccff00]/20 to-purple-500/20 flex items-center justify-center text-[#ccff00] shrink-0 shadow-[0_0_8px_rgba(204,255,0,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
                                 >
                                     {profilePic ? (
-                                        <img src={profilePic} alt="PFP" className="w-full h-full object-cover" />
+                                        <Image src={profilePic} alt="PFP" width={28} height={28} unoptimized className="w-full h-full object-cover" />
                                     ) : (
                                         <User className="w-3.5 h-3.5 text-[#ccff00]" />
                                     )}
@@ -112,9 +141,11 @@ export default function UserDashboardHeader({
                     <div className="hidden lg:flex items-center justify-between w-full">
                         {/* Logo */}
                         <Link href="/" className="flex items-center gap-2.5 group flex-shrink-0">
-                            <img 
+                            <Image
                                 src="/logo.png" 
                                 alt="SubScript Logo" 
+                                width={32}
+                                height={32}
                                 className="w-7 h-7 sm:w-8 sm:h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
                             />
                             <span className="text-xs font-bold uppercase tracking-[0.2em] text-white">SubScript <span className="text-[9px] text-[#ccff00] font-normal lowercase italic tracking-wide">user</span></span>
@@ -181,7 +212,7 @@ export default function UserDashboardHeader({
                                         className="w-8 h-8 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#ccff00]/20 to-purple-500/20 flex items-center justify-center text-[#ccff00] shrink-0 ml-1 shadow-[0_0_10px_rgba(204,255,0,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
                                     >
                                         {profilePic ? (
-                                            <img src={profilePic} alt="PFP" className="w-full h-full object-cover" />
+                                            <Image src={profilePic} alt="PFP" width={32} height={32} unoptimized className="w-full h-full object-cover" />
                                         ) : (
                                             <User className="w-4 h-4 text-[#ccff00]" />
                                         )}

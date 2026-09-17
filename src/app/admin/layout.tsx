@@ -18,11 +18,10 @@ import { getAdminSession } from "@/lib/admin/guard";
 export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+    let admin = null;
     try {
         const headerList = await headers();
-        const admin = await getAdminSession(headerList);
-        if (!admin) notFound();
-        return <>{children}</>;
+        admin = await getAdminSession(headerList);
     } catch (err: any) {
         if (err?.digest?.startsWith("NEXT_NOT_FOUND") || err?.message === "NEXT_NOT_FOUND") {
             throw err;
@@ -30,4 +29,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         console.error("[admin] AdminLayout gate error:", err);
         notFound();
     }
+    if (!admin) notFound();
+
+    return <>{children}</>;
 }

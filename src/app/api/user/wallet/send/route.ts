@@ -22,6 +22,11 @@ import { createClient } from "@supabase/supabase-js";
 import { bindTxToReceipt } from "@/lib/receipts/binding";
 import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
+import {
+    checkAndReserveSpendingLimit,
+    finalizeSpendingLimitOperation,
+    releaseSpendingLimitOperation,
+} from "@/lib/spendingLimits";
 
 export const maxDuration = 120;
 
@@ -62,6 +67,7 @@ export async function POST(request: Request) {
        stranded by a throw between the debit and the transfer loop (a custody lookup that fails,
        for instance). Cleared once the in-band release path has settled the accounting. */
     let strandedReservation: { commitId: string; micros: bigint } | null = null;
+    let spendingOperationId: string | null = null;
 
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -153,36 +159,29 @@ export async function POST(request: Request) {
             await assertNotBlocked(fundingWallet, recipient.receiver, "sending funds");
         }
 
-        // Spending limit enforcement (Finding 54)
-        /* Keyed to the funding wallet: these are the limits the *owner of the money* set on their
-           own outflow, so a delegated send must respect the parent's ceiling rather than the
-           sub-user's. They are time-windowed and self-imposed; the commit cap reserved below is
-           parent-imposed and cumulative. Both apply. */
-        const spendingCustomer = await prisma.customer.findFirst({
-            where: { walletAddress: fundingWallet },
-            select: { spendingLimitDaily: true, spendingLimitWeekly: true, spendingLimitMonthly: true },
-        });
-        if (spendingCustomer) {
-            const totalAmount = totalAmountMicros;
-            if (spendingCustomer.spendingLimitDaily !== null && totalAmount > spendingCustomer.spendingLimitDaily) {
-                return NextResponse.json({
-                    error: "Transfer exceeds your daily spending limit.",
-                    code: "SPENDING_LIMIT_EXCEEDED"
-                }, { status: 403 });
-            }
-            if (spendingCustomer.spendingLimitWeekly !== null && totalAmount > spendingCustomer.spendingLimitWeekly) {
-                return NextResponse.json({
-                    error: "Transfer exceeds your weekly spending limit.",
-                    code: "SPENDING_LIMIT_EXCEEDED"
-                }, { status: 403 });
-            }
-            if (spendingCustomer.spendingLimitMonthly !== null && totalAmount > spendingCustomer.spendingLimitMonthly) {
-                return NextResponse.json({
-                    error: "Transfer exceeds your monthly spending limit.",
-                    code: "SPENDING_LIMIT_EXCEEDED"
-                }, { status: 403 });
-            }
+        // Tier-based cumulative spending limit enforcement
+        /* Keyed to the funding wallet: limits are strictly derived from the account's KYC Tier.
+           Cumulative outflows across rolling 24h, 7d, and 30d windows are checked and reserved
+           atomically inside a PostgreSQL advisory-locked transaction. */
+        spendingOperationId = null;
+        const spendingReservation = await checkAndReserveSpendingLimit(
+            fundingWallet,
+            totalAmountMicros,
+            parsedRecipients.length > 1 ? "BATCH_SEND" : "DIRECT_SEND",
+        );
+        if (!spendingReservation.allowed) {
+            return NextResponse.json({
+                error: spendingReservation.reason,
+                code: spendingReservation.code || "SPENDING_LIMIT_EXCEEDED",
+                tier: spendingReservation.tier,
+                tierLabel: spendingReservation.tierLabel,
+                limitPeriod: spendingReservation.limitPeriod,
+                currentSpentUsdc: spendingReservation.currentSpentUsdc,
+                limitUsdc: spendingReservation.limitUsdc,
+                remainingUsdc: spendingReservation.remainingUsdc,
+            }, { status: 403 });
         }
+        spendingOperationId = spendingReservation.operationId || null;
 
         /* Reserve the delegation budget BEFORE anything moves. A cap checked after the transfer is
            not a cap, and recordSubUserSpend's conditional UPDATE is what serialises concurrent
@@ -192,6 +191,14 @@ export async function POST(request: Request) {
         if (authority.delegated) {
             const reservation = await recordSubUserSpend(authority.commitId, totalAmountMicros);
             if (!reservation.allowed) {
+                /* The account-tier reservation is acquired first because it serializes all
+                   outflows from the funding wallet. If the narrower delegated allowance then
+                   rejects the request, nothing can settle and that first reservation must be
+                   released immediately instead of consuming headroom for its 15-minute TTL. */
+                if (spendingOperationId) {
+                    await releaseSpendingLimitOperation(spendingOperationId);
+                    spendingOperationId = null;
+                }
                 return NextResponse.json({
                     error: reservation.reason,
                     code: "COMMIT_LIMIT_EXCEEDED",
@@ -223,6 +230,10 @@ export async function POST(request: Request) {
             if (authority.delegated && reservedMicros > BigInt(0)) {
                 await releaseSubUserSpend(authority.commitId, reservedMicros);
                 strandedReservation = null;
+            }
+            if (spendingOperationId) {
+                await releaseSpendingLimitOperation(spendingOperationId).catch(() => {});
+                spendingOperationId = null;
             }
             return NextResponse.json({
                 error: authority.delegated
@@ -305,6 +316,20 @@ export async function POST(request: Request) {
             strandedReservation = null;
         }
 
+        // Finalize or release spending limit reservation based on settled amount
+        if (spendingOperationId) {
+            if (settledMicros > BigInt(0)) {
+                await finalizeSpendingLimitOperation(spendingOperationId, settledMicros).catch((err) => {
+                    console.error("Failed to finalize spending limit operation:", err);
+                });
+            } else {
+                await releaseSpendingLimitOperation(spendingOperationId).catch((err) => {
+                    console.error("Failed to release spending limit operation:", err);
+                });
+            }
+            spendingOperationId = null;
+        }
+
         /*
          * Receipts for whatever actually settled, to both sides, whether the batch finished or
          * stopped early. Wallet-to-wallet sends were the last settlement path that mailed nobody:
@@ -375,12 +400,22 @@ export async function POST(request: Request) {
                 );
             }
         }
+        if (spendingOperationId) {
+            try {
+                await releaseSpendingLimitOperation(spendingOperationId);
+            } catch (releaseError) {
+                console.error("Failed to release stranded spending limit operation:", releaseError);
+            }
+        }
         console.error("Embedded wallet send failed:", error);
-        if (error instanceof CommitAccessError) {
         if (error instanceof WithdrawalHeldError) {
             return NextResponse.json({ error: error.message }, { status: error.status });
         }
+        if (error instanceof CommitAccessError) {
             return NextResponse.json({ error: error.message }, { status: error.httpStatus });
+        }
+        if (error instanceof AccountHaltError) {
+            return NextResponse.json({ error: error.message }, { status: 403 });
         }
         return NextResponse.json({ error: error.message || "Failed to send USDC" }, { status: 500 });
     }

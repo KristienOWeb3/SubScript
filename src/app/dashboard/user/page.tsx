@@ -51,7 +51,6 @@ import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
-import SubUserManager from "@/components/SubUserManager";
 import AccountHoldModal from "@/components/dashboard/AccountHoldModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { compressAvatarImage } from "@/utils/imageCompression";
@@ -827,10 +826,6 @@ export default function UserDashboard() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [userSettings, setUserSettings] = useState<any>(null);
-  const mustBackupWallet = Boolean(
-    userSettings?.walletBackup?.available && 
-    !userSettings?.walletBackup?.completedAt
-  );
   const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
   const [settingsTxCategory, setSettingsTxCategory] = useState<string>("all");
   const [settingsTxStatus, setSettingsTxStatus] = useState<string>("all");
@@ -881,14 +876,6 @@ export default function UserDashboard() {
   useEffect(() => () => settingsTxObserverRef.current?.disconnect(), []);
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
-  const [walletBackupLoading, setWalletBackupLoading] = useState(false);
-  const [walletBackupError, setWalletBackupError] = useState<string | null>(null);
-  const [exportedPrivateKey, setExportedPrivateKey] = useState<string | null>(null);
-  const [privateKeyVisible, setPrivateKeyVisible] = useState(false);
-  /* Step-up verification state for private key export. */
-  const [exportOtpStage, setExportOtpStage] = useState(false);
-  const [exportOtpCode, setExportOtpCode] = useState("");
-  const [exportOtpSending, setExportOtpSending] = useState(false);
 
   // Prepaid Metered Vault States
   const [vaults, setVaults] = useState<any[]>([]);
@@ -1067,93 +1054,6 @@ export default function UserDashboard() {
     } finally {
       setSavingSettingsField(null);
     }
-  };
-
-  /* Step 1: exporting a private key is the single most destructive action available, so it
-     requires a fresh email verification code before the key is disclosed. */
-  const requestExportOtp = async () => {
-    const email = userSettings?.walletBackup?.email || userEmail;
-    if (!email) {
-      setWalletBackupError("No verified email is linked to this wallet, so the key cannot be exported here.");
-      return;
-    }
-    setExportOtpSending(true);
-    setWalletBackupError(null);
-    setExportedPrivateKey(null);
-    setPrivateKeyVisible(false);
-    try {
-      const res = await fetch("/api/auth/otp/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Could not send a verification code. Try again.");
-      }
-      setExportOtpStage(true);
-      setExportOtpCode("");
-      triggerToast(`Verification code sent to ${email}.`);
-    } catch (err: any) {
-      setWalletBackupError(err.message || "Could not send a verification code.");
-    } finally {
-      setExportOtpSending(false);
-    }
-  };
-
-  /* Step 2: confirm the code and reveal the key. */
-  const handleExportWallet = async () => {
-    setWalletBackupLoading(true);
-    setWalletBackupError(null);
-    setExportedPrivateKey(null);
-    setPrivateKeyVisible(false);
-    try {
-      const res = await fetch("/api/user/wallet/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ otpCode: exportOtpCode.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Could not export this wallet key.");
-      }
-      setExportedPrivateKey(data.privateKey);
-      setPrivateKeyVisible(true);
-      setExportOtpStage(false);
-      setExportOtpCode("");
-      triggerToast("Private key unlocked. Store it somewhere safe.");
-    } catch (err: any) {
-      setWalletBackupError(err.message || "Could not export this wallet key.");
-    } finally {
-      setWalletBackupLoading(false);
-    }
-  };
-
-  const handleCopyPrivateKey = async () => {
-    if (!exportedPrivateKey) return;
-    await navigator.clipboard.writeText(exportedPrivateKey);
-    triggerToast("Private key copied.");
-  };
-
-  const handleDownloadPrivateKey = () => {
-    if (!exportedPrivateKey || !userWallet) return;
-    const blob = new Blob([
-      [
-        "SubScript generated wallet private key backup",
-        `Wallet: ${userWallet}`,
-        `Created: ${new Date().toISOString()}`,
-        "",
-        exportedPrivateKey,
-        "",
-        "Store this offline. Anyone with this key can control this wallet.",
-      ].join("\n"),
-    ], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `subscript-wallet-${userWallet.slice(2, 10)}-backup.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   const [batchRows, setBatchRows] = useState([{ address: "", amount: "" }]);
@@ -3528,12 +3428,12 @@ export default function UserDashboard() {
 
         {/* Mobile Bottom Bar Skeleton */}
         <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2 md:hidden">
-          <div className="flex h-[50px] flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
+          <div className="flex h-[52.5px] flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
             ))}
           </div>
-          <div className="h-[50px] w-[50px] shrink-0 rounded-full subscript-skeleton" />
+          <div className="h-[52.5px] w-[52.5px] shrink-0 rounded-full subscript-skeleton" />
         </div>
       </div>
     );
@@ -3822,9 +3722,6 @@ export default function UserDashboard() {
     .filter((tx) => !tx.incoming && tx.status !== "FAILED" && tx.time >= thirtyDaysAgoMs)
     .reduce((sum, tx) => sum + tx.amountUsdc, 0);
 
-
-
-
   return (
     <div className={`user-dashboard-redesign relative overflow-x-hidden bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black md:h-[100dvh] md:overflow-hidden ${
       isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"
@@ -3834,129 +3731,8 @@ export default function UserDashboard() {
       <div className={`relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0 ${
         isActiveMobileDm ? "h-full overflow-hidden" : ""
       }`}>
-        {mustBackupWallet ? (
-          <div className="flex-1 flex items-center justify-center p-6 md:h-full overflow-y-auto">
-            <div className="max-w-xl w-full space-y-6 py-12">
-              <div className="liquid-glass border border-red-500/20 bg-red-500/5 backdrop-blur-xl rounded-[28px] p-6 text-center shadow-2xl space-y-4">
-                <div className="mx-auto w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20">
-                  <Lock className="h-6 w-6 text-red-400" />
-                </div>
-                <h2 className="text-xl font-bold uppercase tracking-tight text-white">Private Key Backup Required</h2>
-                <p className="text-sm text-white/60 leading-relaxed font-sans">
-                  Your SubScript wallet has been generated, but its private key is not backed up yet.
-                  This wallet type supports key export, so download your recovery key now to ensure you never lose access to your funds.
-                </p>
-                <p className="text-xs text-[#ccff00]/80 font-bold uppercase tracking-wide">
-                  The dashboard remains locked until backup is completed.
-                </p>
-              </div>
-
-              <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-6 sm:p-8 space-y-5 shadow-2xl">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-2">
-                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <Lock className="h-4 w-4 text-[#ccff00]" /> Export & Verify Wallet Backup
-                    </h3>
-                    <p className="text-[10px] text-white/40 leading-relaxed">
-                      Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
-                    <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings?.walletBackup?.email || userEmail || "Not linked"}</span>
-                  </div>
-                </div>
-
-                {exportedPrivateKey && (
-                  <div className="space-y-3">
-                    <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
-                      <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
-                        {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
-                        {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
-                      </button>
-                      <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
-                        <Copy className="h-4 w-4" /> Copy
-                      </button>
-                      <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
-                        <Download className="h-4 w-4" /> Download
-                      </button>
-                    </div>
-                    
-                    <button
-                      type="button"
-                      onClick={loadUserSettings}
-                      className="w-full mt-4 rounded-2xl bg-[#ccff00] hover:bg-[#ccff00]/90 text-black py-4 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
-                    >
-                      I have saved my key, Proceed to Dashboard
-                    </button>
-                  </div>
-                )}
-
-                {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
-
-                {!exportedPrivateKey && (
-                  exportOtpStage ? (
-                    <div className="space-y-3">
-                      <p className="text-[10px] text-white/50 leading-relaxed text-center">
-                        Enter the 6-digit verification code sent to your email to reveal your private key.
-                      </p>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={exportOtpCode}
-                        onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                        placeholder="000000"
-                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white focus:border-[#ccff00]/50 focus:outline-none"
-                      />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={handleExportWallet}
-                          disabled={walletBackupLoading || exportOtpCode.length !== 6}
-                          className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
-                        >
-                          {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                          Confirm & Reveal
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
-                          className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={requestExportOtp}
-                      disabled={exportOtpSending}
-                      className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
-                    >
-                      {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                      Export Private Key to Unlock
-                    </button>
-                  )
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            {!isMobile && (
+        {!isMobile && (
           <DashboardSidebar
-            /* Built inline rather than memoised: DashboardSidebar is not memoised either, so a
-               stable array buys nothing, and hoisting these into consts would put them below the
-               early returns above. */
             items={[
               ...userDesktopTabs.map((tab) => ({
                 id: tab.id,
@@ -3964,9 +3740,6 @@ export default function UserDashboard() {
                 icon: tab.icon,
                 badgeCount: tab.id === "inbox" ? pendingDmCount : undefined,
               })),
-              /* Separate from the tab list because it navigates out to /admin rather than switching
-                 a tab, so it cannot be a UserTab. Visibility is cosmetic: the /admin layout and
-                 every /api/admin route re-check admin status server-side. */
               ...(isAdmin ? [{ id: "admin", label: "Admin", icon: Shield, href: "/admin" }] : []),
             ]}
             footerItems={[
@@ -4036,6 +3809,10 @@ export default function UserDashboard() {
                   userWallet={userWallet}
                   isTier1={Boolean(userEmail) || isEmbeddedWalletSession}
                   onDns={() => setActiveTab("dns")}
+                  onTierDetails={() => {
+                    setActiveTab("dns");
+                    setAccountSubView("kyc");
+                  }}
                   onLogout={handleLogout}
                 />
               )}
@@ -4530,10 +4307,6 @@ export default function UserDashboard() {
                     </>
                   )}
                 </section>
-
-                <div className="pt-2">
-                  <SubUserManager balanceVisible={balanceVisible} />
-                </div>
               </section>
             )}
 
@@ -5702,7 +5475,7 @@ export default function UserDashboard() {
                         <div>
                           <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-black/50">Email Address</label>
                           <span className="block font-sans text-xs text-black/70 mt-1">
-                            {userSettings?.walletBackup?.email || userEmail || "Not linked"}
+                            {userSettings?.walletSecurity?.email || userSettings?.walletBackup?.email || userEmail || "Not linked"}
                           </span>
                         </div>
                         <Lock className="h-4 w-4 text-black/30 shrink-0" />
@@ -6946,8 +6719,8 @@ export default function UserDashboard() {
                             <div className="space-y-0.5">
                               <p className="text-black font-bold">Email Receipts</p>
                               <p className="text-[10px] text-black/50">
-                                {userSettings?.walletBackup?.email || userEmail
-                                  ? `Send payment receipts and confirmations to ${userSettings?.walletBackup?.email || userEmail}`
+                                {userSettings?.walletSecurity?.email || userSettings?.walletBackup?.email || userEmail
+                                  ? `Send payment receipts and confirmations to ${userSettings?.walletSecurity?.email || userSettings?.walletBackup?.email || userEmail}`
                                   : "Send transaction receipts and payment confirmations by email"}
                               </p>
                             </div>
@@ -7023,7 +6796,7 @@ export default function UserDashboard() {
                         <Wallet className="h-4 w-4 text-[#2775CA]" /> Wallet Security &amp; Compatibility
                       </h3>
                       
-                      {userSettings?.walletBackup ? (
+                      {isEmbeddedWalletSession || (userSettings?.walletSecurity && userSettings.walletSecurity.provider !== "external") || userSettings?.walletBackup ? (
                         <div className="space-y-3">
                           <div className="rounded-2xl border border-emerald-500/30 bg-emerald-50 px-4 py-3 flex items-start gap-3">
                             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
@@ -7094,113 +6867,33 @@ export default function UserDashboard() {
                       </div>
                     </div>
 
-                    {/* Key export exists only for wallet providers that expose a recoverable key. */}
-                    {userSettings?.walletBackup?.available && (
-                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="space-y-2">
-                            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
-                              <Lock className="h-4 w-4 text-[#2775CA]" /> Wallet Backup
-                            </h3>
-                            <p className="text-[10px] text-black/50 leading-relaxed">
-                              Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
-                            </p>
-                          </div>
-                          <span className="rounded-full border border-[#2775CA]/30 bg-[#2775CA]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#2775CA]">
-                            Exportable
-                          </span>
+                    {/* Non-Custodial MPC Security Architecture */}
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-2">
+                          <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                            <Shield className="h-4 w-4 text-[#2775CA]" /> Non-Custodial Wallet Security
+                          </h3>
+                          <p className="text-[10px] text-black/50 leading-relaxed max-w-xl">
+                            SubScript email accounts are protected by non-custodial multi-party computation (MPC) and verified email authentication. Monolithic raw private keys are never generated, stored in plaintext, or exposed.
+                          </p>
                         </div>
-
-                        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4 space-y-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50">Account Email</span>
-                            <span className="min-w-0 truncate text-right text-[11px] font-mono text-black/80">{userSettings.walletBackup.email || userEmail || "Not linked"}</span>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50">Provider</span>
-                            <span className="text-[11px] font-mono text-black/80">{userSettings.walletBackup.provider || "embedded"}</span>
-                          </div>
-                        </div>
-
-                        {exportedPrivateKey && (
-                          <div className="space-y-3">
-                            <div className="rounded-2xl border border-red-500/30 bg-red-50 p-3">
-                              <p className="break-all font-mono text-[11px] leading-relaxed text-red-900">
-                                {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
-                              </p>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                              <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-black/10 bg-white hover:bg-black/5 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-black transition flex items-center justify-center gap-2 shadow-sm">
-                                {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
-                              </button>
-                              <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 hover:bg-[#2775CA]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#2775CA] transition flex items-center justify-center gap-2">
-                                <Copy className="h-4 w-4" /> Copy
-                              </button>
-                              <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 hover:bg-[#2775CA]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#2775CA] transition flex items-center justify-center gap-2">
-                                <Download className="h-4 w-4" /> Download
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {walletBackupError && <p className="text-[11px] text-red-600">{walletBackupError}</p>}
-
-                        {exportOtpStage ? (
-                          <div className="space-y-3">
-                            <p className="text-[10px] text-black/60 leading-relaxed">
-                              For your security, enter the 6-digit verification code we emailed you to reveal your private key.
-                            </p>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              autoComplete="one-time-code"
-                              maxLength={6}
-                              value={exportOtpCode}
-                              onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                              placeholder="000000"
-                              className="w-full rounded-2xl border border-black/15 bg-white px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-black placeholder:text-black/30 focus:border-[#2775CA] focus:outline-none"
-                            />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <button
-                                type="button"
-                                onClick={handleExportWallet}
-                                disabled={walletBackupLoading || exportOtpCode.length !== 6}
-                                className="w-full rounded-2xl bg-[#353935] hover:bg-black text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
-                              >
-                                {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                                Confirm & Reveal
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
-                                disabled={walletBackupLoading}
-                                className="w-full rounded-2xl border border-black/10 bg-white hover:bg-black/5 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-black/70 transition"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={requestExportOtp}
-                              disabled={exportOtpSending}
-                              className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#2775CA] hover:underline transition disabled:opacity-50"
-                            >
-                              {exportOtpSending ? <>Resending<LoadingDots /></> : "Resend code"}
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={requestExportOtp}
-                            disabled={exportOtpSending}
-                            className="w-full rounded-2xl bg-[#353935] hover:bg-black text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
-                          >
-                            {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                            Export Private Key
-                          </button>
-                        )}
+                        <span className="rounded-full border border-[#2775CA]/30 bg-[#2775CA]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#2775CA]">
+                          MPC Protected
+                        </span>
                       </div>
-                    )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4">
+                          <div className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50 mb-1">Account Email</div>
+                          <div className="font-mono text-[11px] text-black/80 truncate">{userSettings?.walletSecurity?.email || userEmail || "Not linked"}</div>
+                        </div>
+                        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4">
+                          <div className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50 mb-1">Key Exposure Surface</div>
+                          <div className="font-semibold text-emerald-700">Zero Raw Key Exposure</div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -7412,12 +7105,10 @@ export default function UserDashboard() {
         </div>
       </main>
         </div>
-          </>
-        )}
       </div>
 
       {/* Mobile-only Floating Bottom Navigation Bar */}
-      {isMobile && userWallet && !isActiveMobileDm && !mustBackupWallet && (
+      {isMobile && userWallet && !isActiveMobileDm && (
         <MobileFloatingNav
           tabs={userBottomTabs}
           activeTab={activeTab}
@@ -8277,6 +7968,7 @@ function HomeHeader({
   userWallet,
   isTier1 = false,
   onDns,
+  onTierDetails,
   onLogout,
 }: {
   registeredDomain: string | null;
@@ -8284,10 +7976,13 @@ function HomeHeader({
   userWallet: string | null;
   isTier1?: boolean;
   onDns: () => void;
+  onTierDetails: () => void;
   onLogout: () => void;
 }) {
   const [profileExpanded, setProfileExpanded] = useState(false);
+  const [tierExpanded, setTierExpanded] = useState(false);
   const profileLabel = registeredDomain || formatAddress(userWallet) || "Profile";
+  const tier = isTier1 ? 1 : 0;
 
   const handleProfileClick = () => {
     if (!profileExpanded) {
@@ -8296,6 +7991,15 @@ function HomeHeader({
     }
     onDns();
     setProfileExpanded(false);
+  };
+
+  const handleTierClick = () => {
+    if (!tierExpanded) {
+      setTierExpanded(true);
+      return;
+    }
+    onTierDetails();
+    setTierExpanded(false);
   };
 
   return (
@@ -8308,18 +8012,23 @@ function HomeHeader({
           </button>
           {/* Actions (Right) */}
           <div className="flex items-center gap-1.5 ml-auto">
-            {/* KYC Tier Badge */}
-            <div
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider ${
+            {/* KYC tier: one tap identifies the control, the next opens verification details. */}
+            <button
+              type="button"
+              onClick={handleTierClick}
+              aria-expanded={tierExpanded}
+              aria-label={tierExpanded ? `Tier ${tier}. Open verification details` : `Tier ${tier}. Show tier label`}
+              className={`flex h-9 shrink-0 items-center justify-center overflow-hidden rounded-full border text-[10px] font-black uppercase transition-[width,padding,background-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                tierExpanded ? "w-[58px] px-2 tracking-wide" : "w-9 px-0"
+              } ${
                 isTier1
                   ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
                   : "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
               }`}
               title={isTier1 ? "Tier 1: Verified (Email Linked / MCP)" : "Tier 0: Basic (Link email to unlock transactions)"}
             >
-              <Shield className="w-2.5 h-2.5" />
-              <span>{isTier1 ? "Tier 1" : "Tier 0"}</span>
-            </div>
+              <span aria-hidden="true">{tierExpanded ? `Tier ${tier}` : tier}</span>
+            </button>
             {/* Mobile placement: the bell sits in the header bar. Same component the desktop title
                 renders, so the unread count and read state cannot diverge between form factors. */}
             <NotificationBell audience="USER" accent="#ccff00" />

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { isProd } from "@/lib/contracts/constants";
 
 /**
  * Hash a merchant secret API key for storage and lookup.
@@ -21,8 +22,7 @@ export type ApiKeyMode = "TEST" | "LIVE";
 
 /**
  * Resolve the environment of a presented secret key by its prefix.
- * This deployment is testnet-only: sk_test_ keys are the only valid credential, and
- * sk_live_ keys are rejected outright — never looked up, never able to touch a resource.
+ * In testnet mode, sk_test_ keys are used. In mainnet mode, sk_live_ keys authenticate.
  */
 export function resolveSecretKeyMode(secretKey: string): ApiKeyMode | null {
     if (typeof secretKey !== "string") return null;
@@ -31,7 +31,7 @@ export function resolveSecretKeyMode(secretKey: string): ApiKeyMode | null {
     return null;
 }
 
-/** True when live-mode credentials may authenticate. Testnet deployments keep this false. */
+/** True when live-mode credentials may authenticate. Enabled on verified mainnet deployments. */
 export function isLiveModeEnabled(): boolean {
-    return false;
+    return isProd;
 }
