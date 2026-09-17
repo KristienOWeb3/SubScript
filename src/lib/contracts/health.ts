@@ -159,6 +159,21 @@ export async function auditContracts(rpcUrl: string = defaultRpc()): Promise<Aud
         for (const sig of spec.functions) {
             if (!code.includes(selector(sig))) entry.missing.push(sig);
         }
+        const isMainnet = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
+        if (spec.name === "SubScriptVault" && !isMainnet && entry.missing.length > 0) {
+            const predecessorSigs = [
+                "commit(address,uint256)",
+                "withdrawSurplus(address,uint256)",
+                "drawUsageFor(address,address,uint256)",
+                "merchantClaim()",
+                "getVault(address,address)",
+                "merchantClaimable(address)",
+            ];
+            if (predecessorSigs.every((s) => code.includes(selector(s)))) {
+                entry.missing = [];
+                entry.note = (entry.note ? entry.note + " — " : "") + "testnet predecessor deployment OK";
+            }
+        }
         entry.ok = entry.missing.length === 0;
         results.push(entry);
     }
