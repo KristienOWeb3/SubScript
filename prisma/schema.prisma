@@ -178,6 +178,13 @@ model Merchant {
   createdAt               DateTime         @default(now()) @map("created_at")
   updatedAt               DateTime         @default(now()) @updatedAt @map("updated_at")
   closureStatus           String           @default("OPEN") @map("closure_status")
+  // Immutable public identity, decoupled from any .sub/.hq/.biz DNS handle. Generated once and
+  // never editable by anyone (a DB trigger enforces immutability). Not routable for P2P.
+  merchantId              String           @unique @default(dbgenerated("('merc_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))")) @map("merchant_id")
+  // Admin-governed business name shown on checkout, receipts, and user dashboards. Set once by a
+  // self-serve merchant (then locked) or supplied by an admin on invite; only admins change it after.
+  displayName             String           @default("") @map("display_name")
+  displayNameLocked       Boolean          @default(true) @map("display_name_locked")
   subscriptions           Subscription[]
   paymentSessions         PaymentSession[]
   meteredVaults           MeteredVault[]
@@ -1265,6 +1272,9 @@ model MerchantAccessGrant {
   revokedBy     String?   @map("revoked_by")
   revokeReason  String?   @map("revoke_reason")
   note          String?
+  // Admin-defined business display name assigned to the invited email; stamped onto the merchant
+  // (locked) when the grant is claimed at register-role.
+  displayName   String?   @map("display_name")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
 

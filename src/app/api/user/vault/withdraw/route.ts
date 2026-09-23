@@ -8,7 +8,7 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { withdrawFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
-import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { estimateArcNetworkFeeMicros, chargeNetworkFee } from "@/lib/sponsor/userPaidTransfer";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
@@ -36,10 +36,9 @@ export async function POST(request: Request) {
             );
         }
 
-        /* Admin withdrawal hold, checked before anything is parsed, reserved, or signed. This
-           is an on-chain transfer out of escrow: once withdrawFromEmbedded broadcasts there is
-           nothing to reverse, so the freeze has to sit ahead of both requireSponsoredGas (which
-           spends platform gas budget) and the burn itself. */
+        /* Admin withdrawal hold, checked before anything is parsed or signed. This is an on-chain
+           transfer out of escrow: once withdrawFromEmbedded broadcasts there is nothing to reverse,
+           so the freeze has to sit ahead of the withdrawal itself. */
         await assertWithdrawalAllowed(wallet, "USER");
 
         const body = sanitizeInput(await request.json().catch(() => null));
@@ -53,16 +52,16 @@ export async function POST(request: Request) {
         }
 
         const reqId = request.headers.get("x-request-id")?.trim() || requestId || crypto.randomUUID();
-        const sponsorRequestKey = `vault-withdraw:${reqId}:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}:${amount.toString()}`;
 
-        await requireSponsoredGas({
-            wallet: wallet.toLowerCase(),
-            action: "vault_withdraw",
-            requestKey: sponsorRequestKey,
-            principalRequiredWei: 0n,
-        });
-
+        /* User withdrawal of their own escrow — user-paid. No gas sponsorship is requested; the Arc
+           network fee is recovered from the wallet after the withdrawal settles (the withdrawn funds
+           land in the wallet, so the fee is always covered). */
         const txHash = await withdrawFromEmbedded(wallet, merchantAddress, amount);
+        await chargeNetworkFee({
+            wallet: wallet.toLowerCase(),
+            feeMicros: (await estimateArcNetworkFeeMicros(1)).feeMicros,
+            requestKey: `vault-withdraw-fee:${reqId}:${wallet.toLowerCase()}`,
+        });
         const v = await syncVaultMirror(wallet, merchantAddress);
 
         const environment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";

@@ -3,6 +3,10 @@ export interface ConfigTemplateOptions {
   mode: "standard" | "privacy-routed";
   tier: number;
   chainId: number;
+  networkName: string;
+  rpcUrl: string;
+  explorerUrl: string;
+  nativeCurrencyDecimals: number;
   routerAddress: string;
   standardAddress: string;
   usdcAddress: string;
@@ -27,6 +31,14 @@ export const subscriptConfig = {
   mode: "${opts.mode}",
   tier: ${opts.tier},
   chainId: ${opts.chainId},
+  networkName: "${opts.networkName}",
+  rpcUrl: "${opts.rpcUrl}",
+  explorerUrl: "${opts.explorerUrl}",
+  nativeCurrency: {
+    name: "USDC",
+    symbol: "USDC",
+    decimals: ${opts.nativeCurrencyDecimals},
+  },
   routerAddress: "${opts.routerAddress}",
   standardAddress: "${opts.standardAddress}",
   usdcAddress: "${opts.usdcAddress}",

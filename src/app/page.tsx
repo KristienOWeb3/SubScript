@@ -245,7 +245,7 @@ function LandingHeader() {
                         }`}
                     >
                         <Link href="/" className="group flex items-center gap-2.5" aria-label="SubScript home">
-                            <Image src="/logo-transparent.png" alt="" width={30} height={30} priority className="h-7 w-7 object-contain" />
+                            <Image src="/logo-colored.png" alt="SubScript" width={32} height={32} priority className="h-7 w-7 rounded-lg object-contain" />
                             <span className="text-lg font-black tracking-tight text-[#0b1220]">SubScript</span>
                         </Link>
 
@@ -380,7 +380,7 @@ function LandingHeader() {
                     >
                         <div className="flex items-center justify-between border-b border-[#0b1220]/10 px-5 py-4">
                             <Link href="/" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5" aria-label="SubScript home">
-                                <Image src="/logo-transparent.png" alt="" width={30} height={30} className="h-7 w-7 object-contain" />
+                                <Image src="/logo-colored.png" alt="SubScript" width={32} height={32} className="h-7 w-7 rounded-lg object-contain" />
                                 <span className="text-lg font-black tracking-tight text-[#0b1220]">SubScript</span>
                             </Link>
                             <button
@@ -892,7 +892,7 @@ export default function Home() {
                             <div className="grid grid-cols-2 gap-10 md:grid-cols-5">
                                 <div className="col-span-2">
                                     <Link href="/" className="flex items-center gap-2.5" aria-label="SubScript home">
-                                        <Image src="/logo-transparent.png" alt="" width={32} height={32} className="h-8 w-8 object-contain" />
+                                        <Image src="/logo-colored.png" alt="SubScript" width={32} height={32} className="h-8 w-8 rounded-lg object-contain" />
                                         <span className="text-base font-black tracking-tight text-[#0b1220]">SubScript</span>
                                     </Link>
                                     <p className="mt-4 max-w-xs text-xs leading-relaxed text-[#475569]">

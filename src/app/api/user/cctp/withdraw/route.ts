@@ -6,6 +6,7 @@ import { pgQuery } from "@/lib/serverPg";
 import { validateBridgeRequest, formatMicros } from "@/lib/cctp/feeEngine";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { notifyWithdrawalStarted } from "@/lib/cctp/notifications";
+import { checkCctpRouteAvailability } from "@/lib/cctp/routeAvailability";
 import {
   addressToBytes32,
   ANY_DESTINATION_CALLER,
@@ -90,6 +91,21 @@ export async function POST(req: NextRequest) {
       userWallet,
       recipientAddress: recipient,
     });
+
+    /* Fail closed if the destination relayer can't mint. The burn is irreversible, so refuse before
+       the row is written or any USDC moves — otherwise a depleted relayer leaves the user debited on
+       Arc with nothing arriving on the far side. Runs after validateBridgeRequest so feeInfo.chainId
+       is known, and only reaches here on testnet (mainnet already 503'd at the top). */
+    const routeGas = await checkCctpRouteAvailability("outbound_withdrawal", feeInfo.chainId || feeInfo.domain);
+    if (!routeGas.available) {
+      return NextResponse.json(
+        {
+          error:
+            "Withdrawals to this network are temporarily paused while relayer gas is replenished. Your funds have not been burned.",
+        },
+        { status: 503 },
+      );
+    }
 
     /* Server-held custody only. External wallets sign their own burn in the browser and register it
        through /api/user/cctp/withdraw/register instead. Checking before the balance read keeps the

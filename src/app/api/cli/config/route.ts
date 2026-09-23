@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import {
@@ -6,7 +8,12 @@ import {
   STANDARD_CONTRACT_ADDRESS,
   USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
-import { ACTIVE_ARC_CHAIN_ID } from "@/lib/network/registry";
+import {
+  ACTIVE_ARC_CHAIN,
+  ACTIVE_ARC_CHAIN_ID,
+  ACTIVE_NETWORK,
+  ACTIVE_EXPLORER_URL,
+} from "@/lib/network/registry";
 
 export async function GET() {
   /* Sign with the dedicated CLI-config key if provided, otherwise the protocol owner key
@@ -25,8 +32,23 @@ export async function GET() {
     /* adminAddress is derived from the actual signing key so the signed payload is always
        self-consistent — the CLI verifies the recovered signer against its own pinned owner
        address, so a stale hardcoded value here can never mask a wrong server key. */
+    const rpcUrl =
+      process.env.NEXT_PUBLIC_ARC_RPC_PRIMARY ||
+      process.env.NEXT_PUBLIC_ARC_RPC_URL ||
+      ACTIVE_ARC_CHAIN.rpcUrls.default.http[0];
+
     const config = {
       chainId: ACTIVE_ARC_CHAIN_ID,
+      network: ACTIVE_ARC_CHAIN.name,
+      networkName: ACTIVE_ARC_CHAIN.name,
+      environment: ACTIVE_NETWORK,
+      rpcUrl,
+      explorerUrl: ACTIVE_EXPLORER_URL,
+      nativeCurrency: {
+        name: ACTIVE_ARC_CHAIN.nativeCurrency.name,
+        symbol: ACTIVE_ARC_CHAIN.nativeCurrency.symbol,
+        decimals: ACTIVE_ARC_CHAIN.nativeCurrency.decimals,
+      },
       routerAddress: SUBSCRIPT_ROUTER_ADDRESS,
       standardAddress: STANDARD_CONTRACT_ADDRESS,
       usdcAddress: USDC_NATIVE_GAS_ADDRESS,
@@ -50,3 +72,4 @@ export async function GET() {
     );
   }
 }
+

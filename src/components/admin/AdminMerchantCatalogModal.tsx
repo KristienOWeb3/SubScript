@@ -18,6 +18,9 @@ import { SkeletonCard, SkeletonRows } from "@/components/ui/skeletons";
 type MerchantDetail = {
   merchant: {
     walletAddress: string;
+    merchantId: string;
+    displayName: string;
+    displayNameLocked: boolean;
     tier: string;
     verified: boolean;
     availableBalanceUsdc: string;
@@ -87,6 +90,9 @@ export function AdminMerchantCatalogModal({
   const [actionBusy, setActionBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   const loadMerchantData = useCallback(async () => {
     if (!merchantAddress) return;
@@ -138,6 +144,29 @@ export function AdminMerchantCatalogModal({
     }
   };
 
+  const saveDisplayName = async () => {
+    const next = nameDraft.trim();
+    if (!next) return;
+    setSavingName(true);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/admin/merchants/${merchantAddress}/display-name`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: next }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update display name");
+      setNotice("Display name updated.");
+      setEditingName(false);
+      loadMerchantData();
+    } catch (err: any) {
+      setNotice(`Update failed: ${err.message}`);
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-2xl border border-gray-200 space-y-5">
@@ -177,6 +206,71 @@ export function AdminMerchantCatalogModal({
           </div>
         ) : data ? (
           <div className="space-y-6 text-xs">
+            {/* Immutable identity + admin-governed display name */}
+            <div>
+              <h4 className="font-bold text-[#0f172a] text-xs mb-2 flex items-center gap-1.5">
+                <Building2 className="h-4 w-4 text-[#2775ca]" />
+                Identity
+              </h4>
+              <div className="space-y-2 border border-gray-200 rounded-lg p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold">Merchant ID</p>
+                    <p className="font-mono text-gray-900">{data.merchant.merchantId}</p>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-700">Permanent</span>
+                </div>
+                <div className="flex items-start justify-between gap-2 border-t border-gray-100 pt-2">
+                  <div className="flex-1">
+                    <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold">Display name</p>
+                    {editingName ? (
+                      <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          type="text"
+                          value={nameDraft}
+                          onChange={(e) => setNameDraft(e.target.value)}
+                          maxLength={60}
+                          placeholder="Business display name"
+                          className="flex-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-900"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={saveDisplayName}
+                            disabled={savingName || !nameDraft.trim()}
+                            className="rounded bg-[#2775ca] text-white px-3 py-1 text-[10px] font-bold hover:bg-[#1d5fb0] disabled:opacity-40"
+                          >
+                            {savingName ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            onClick={() => setEditingName(false)}
+                            disabled={savingName}
+                            className="rounded border border-gray-300 bg-white px-3 py-1 text-[10px] font-bold text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-gray-900">
+                        {data.merchant.displayName || <span className="text-gray-400">Not set</span>}
+                      </p>
+                    )}
+                  </div>
+                  {!editingName && (
+                    <button
+                      onClick={() => {
+                        setNameDraft(data.merchant.displayName || "");
+                        setEditingName(true);
+                      }}
+                      className="rounded bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 text-[10px] font-bold hover:bg-gray-200"
+                    >
+                      Edit display name
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Live Plans Catalog */}
             <div>
               <h4 className="font-bold text-[#0f172a] text-xs mb-2 flex items-center gap-1.5">

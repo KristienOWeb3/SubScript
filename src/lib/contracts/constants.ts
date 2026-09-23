@@ -324,8 +324,9 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
     };
 
 /* Solana, CCTP domain 5.
-   Outbound withdrawals from Arc to Solana are enabled via the backend Solana relayer, which
-   relays Circle attestations to MessageTransmitterV2 on Solana. */
+   Outbound withdrawals to Solana are OFF by default and must be explicitly opted in with
+   NEXT_PUBLIC_SOLANA_CCTP_WITHDRAWALS_ENABLED=true. They need a mainnet-beta Solana RPC (SOLANA_RPC_URL
+   must NOT be devnet) and a funded mainnet relayer first; until then the route reads "Coming soon". */
 export const SOLANA_CCTP_CONFIG = {
   domain: 5,
   name: "Solana",
@@ -333,7 +334,7 @@ export const SOLANA_CCTP_CONFIG = {
   feeBps: 50,
   nativeTokenSymbol: "SOL",
   allowDeposits: false,
-  allowWithdrawals: process.env.NEXT_PUBLIC_SOLANA_CCTP_WITHDRAWALS_ENABLED !== "false",
+  allowWithdrawals: process.env.NEXT_PUBLIC_SOLANA_CCTP_WITHDRAWALS_ENABLED === "true",
   /* Canonical Circle CCTP V2 Program IDs (identical on devnet and mainnet-beta). */
   tokenMessengerMinterProgramId: "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
   messageTransmitterProgramId: "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC",
@@ -344,11 +345,16 @@ export const SOLANA_CCTP_CONFIG = {
     (isProd ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com"),
 } as const;
 
-/* Circle currently publishes domain 26 for Arc Testnet only. Keep every production CCTP entry
-   point disabled until Circle publishes and we verify Arc Mainnet domain and contract details. */
-export const ARC_CCTP_ENABLED = !isProd;
+/* Circle lists Arc as a supported CCTP chain (domain 26; mainnet CCTP V2 contracts pinned in
+   CCTP_V2_* below, verified 2026-09-20 against developers.circle.com/cctp/evm-smart-contracts).
+   Mainnet CCTP is intentionally ENABLED. The safety net is per-route rather than a blanket gate:
+   withdrawals fail closed when the destination relayer is out of gas (lib/cctp/routeAvailability + the
+   /api/user/cctp/withdraw guard), and CCTP_CONFIG still switches on isProd so only mainnet USDC and
+   contract addresses ever load in prod. */
+export const ARC_CCTP_ENABLED = true;
 
-/* Arc Testnet CCTP domain ID. Do not use this value for Arc Mainnet. */
+/* Arc's CCTP domain, 26. Circle assigns one domain per chain across both networks, so this is Arc's
+   domain on Testnet and Mainnet alike (developers.circle.com/cctp/cctp-supported-blockchains). */
 export const ARC_CCTP_DOMAIN_ID = 26 as const;
 
 /* Arc's own TokenMessengerV2, used for outbound burns when withdrawing off Arc. Env-overridable for
@@ -364,6 +370,16 @@ export const ARC_TOKEN_MESSENGER_ADDRESS = optionalEnvAddress(
    treasury so a missing env var can never send fees to the zero address. */
 export const BRIDGE_FEE_TREASURY_ADDRESS = optionalEnvAddress(
   process.env.NEXT_PUBLIC_BRIDGE_FEE_TREASURY_ADDRESS || process.env.BRIDGE_FEE_TREASURY_ADDRESS,
+  MERCHANT_ADDRESS,
+);
+
+/* Where the user-paid Arc network-fee reimbursement lands for peer sends and user withdrawals
+   (fee-recovery; see @/lib/sponsor/userPaidTransfer). Deliberately separate from the 1% merchant
+   protocol fee and the CCTP bridge fee so gas reimbursement is accounted distinctly. Falls back to
+   the protocol treasury, then the merchant treasury, so a missing env var never sends to the zero
+   address. */
+export const GAS_FEE_TREASURY_ADDRESS = optionalEnvAddress(
+  process.env.GAS_FEE_TREASURY_ADDRESS || process.env.TREASURY_ADDRESS,
   MERCHANT_ADDRESS,
 );
 

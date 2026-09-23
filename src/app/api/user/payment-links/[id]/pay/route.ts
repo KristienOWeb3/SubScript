@@ -19,6 +19,8 @@ import { isReceiptId } from "@/lib/arc/memo";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
+import { estimateArcNetworkFeeMicros, chargeNetworkFee } from "@/lib/sponsor/userPaidTransfer";
+import { readUsdcBalance } from "@/lib/vault/onchain";
 import { getAccountKycTier } from "@/lib/kyc/tier";
 import { enqueuePaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -108,6 +110,24 @@ export async function POST(request: Request, { params }: RouteContext) {
         }
 
         const settlesDirectlyToUser = isPeerRequestLink(link);
+
+        /* Peer (user-to-user) settlement is user-paid: the payer covers the Arc network fee via
+           fee-recovery after the transfer settles. Require the wallet to hold the payment amount
+           PLUS that fee up front, so the recipient receives the exact amount and the post-settlement
+           fee charge can't fail for lack of funds. Merchant checkouts are platform-sponsored and skip
+           this. Mirrors the guard in /api/user/wallet/send and execute-tx's transferUsdc path. */
+        let peerFee: { feeMicros: bigint; feeUsdc: string } | null = null;
+        if (settlesDirectlyToUser) {
+            const est = await estimateArcNetworkFeeMicros(1);
+            peerFee = { feeMicros: est.feeMicros, feeUsdc: est.feeUsdc };
+            const bal = await readUsdcBalance(payer).catch(() => null);
+            if (bal !== null && bal < amountMicros + est.feeMicros) {
+                return NextResponse.json({
+                    error: `Not enough USDC to cover this payment plus the ~${est.feeUsdc} USDC Arc network fee.`,
+                    code: "INSUFFICIENT_BALANCE_FOR_FEE",
+                }, { status: 422 });
+            }
+        }
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Payment service is unavailable" }, { status: 503 });
@@ -238,6 +258,23 @@ export async function POST(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: message }, { status });
         }
 
+        /* Peer (user-to-user) link: recover the Arc network fee from the payer after the transfer
+           settled. Merchant checkouts stay platform-sponsored (nothing charged here). Best-effort and
+           logged-not-thrown — the transfer is irreversible, and the fee's idempotency key dedupes on
+           retry so a resumed attempt never double-charges. */
+        let networkFeeUsdc = "0";
+        if (settlesDirectlyToUser) {
+            /* Reuse the estimate taken for the up-front balance guard so the amount we required the
+               wallet to hold is exactly the amount we charge. */
+            const fee = peerFee ?? (await estimateArcNetworkFeeMicros(1));
+            networkFeeUsdc = fee.feeUsdc;
+            await chargeNetworkFee({
+                wallet: payer,
+                feeMicros: fee.feeMicros,
+                requestKey: `embedded-peer-fee:${clientIntentId}`,
+            });
+        }
+
         /* Durably bind the hash and create the verification job server-side, before responding.
            The browser also calls /api/payment-links/verify, but if the tab closes right here the
            payment must still settle from durable state — never depend on the client returning. */
@@ -295,6 +332,7 @@ export async function POST(request: Request, { params }: RouteContext) {
             txHash,
             receiptId: receiptToken,
             settlesDirectlyToUser,
+            networkFeeUsdc,
         }, { status: 200 });
     } catch (error: any) {
         console.error("Embedded payment-link pay failed:", error);

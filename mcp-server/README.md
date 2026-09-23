@@ -6,7 +6,7 @@ An MCP server designed for developers integrating the **SubScript recurring Web3
 
 ## Exposed Tools
 
-1. **`get_subscript_config`**: Returns the Arc network testnet configuration, router addresses, native tokens, and periods.
+1. **`get_subscript_config`**: Returns the active Arc network configuration, chain ID, router addresses, native tokens, and periods.
 2. **`get_subscript_abi`**: Returns the full JSON ABI for the SubScript Router contract, enabling seamless generation of Wagmi/Viem transaction hooks.
 
 ---

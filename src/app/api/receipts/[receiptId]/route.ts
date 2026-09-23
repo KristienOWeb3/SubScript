@@ -3,6 +3,7 @@ import { isReceiptId } from "@/lib/arc/memo";
 import { getSessionWallet } from "@/lib/auth";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
 type RouteContext = {
     params: Promise<{ receiptId: string }>;
@@ -51,6 +52,14 @@ export async function GET(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "Private Receipt: Unauthorized viewer." }, { status: 403 });
         }
 
+        /* Historical snapshots predate governed names and may contain caller-supplied branding.
+           The current governed merchant identity is the only trusted receipt payee name. */
+        const merchantRecord = await prisma.merchant.findUnique({
+            where: { walletAddress: merchant },
+            select: { displayName: true, merchantId: true },
+        }).catch(() => null);
+        const merchantNameSource = merchantRecord?.displayName?.trim() || null;
+
         // Return the receipt. Convert BigInt amount/block to string for JSON compatibility.
         const serializedReceipt = {
             receipt_id: receipt.receiptId,
@@ -62,6 +71,11 @@ export async function GET(request: Request, { params }: RouteContext) {
             payer_address: receipt.payerAddress,
             beneficiary_address: receipt.beneficiaryAddress || receipt.payerAddress,
             merchant_address: receipt.merchantAddress,
+            merchant_display_name: resolveMerchantDisplayName(merchantNameSource),
+            /* Immutable public merchant id (merc_…) when the payee is a registered merchant; null for
+               peer / treasury receipts. Shown on the receipt as the verifiable, non-spoofable identity
+               beside the (mutable, admin-governed) display name. */
+            merchant_id: merchantRecord?.merchantId ?? null,
             amount_usdc: receipt.amountUsdc.toString(),
             /* What the payment was for. The page leads with this; the receipt id is never its
                headline. May be null for rows written before the column existed. */

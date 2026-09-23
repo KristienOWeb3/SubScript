@@ -51,9 +51,9 @@ export default function AuthSplitLayout({
         <div className="relative z-10 shrink-0">
           <Link href="/" className="inline-flex items-center gap-2.5 group">
             <img
-              src="/logo-transparent.png"
+              src="/logo-colored.png"
               alt="SubScript Logo"
-              className="w-8 h-8 object-contain brightness-0 invert group-hover:scale-105 transition-transform"
+              className="w-8 h-8 rounded-lg object-contain shadow-xs group-hover:scale-105 transition-transform"
             />
             <span className="text-lg font-black tracking-tight text-white">
               SubScript

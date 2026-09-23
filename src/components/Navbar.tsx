@@ -182,16 +182,14 @@ export default function Navbar() {
                 >
                     {/* Logo - Icon + Text */}
                     <Link href="/" className="flex items-center gap-2.5 group" aria-label="SubScript Home">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2775CA] p-1.5 shadow-sm">
-                            <Image
-                                src="/logo-transparent.png"
-                                alt="SubScript logo"
-                                width={32}
-                                height={32}
-                                priority
-                                className="w-full h-full object-contain brightness-0 invert group-hover:scale-105 transition-transform"
-                            />
-                        </div>
+                        <Image
+                            src="/logo-colored.png"
+                            alt="SubScript logo"
+                            width={32}
+                            height={32}
+                            priority
+                            className="h-8 w-8 rounded-lg object-contain shadow-xs group-hover:scale-105 transition-transform"
+                        />
                         <span className="text-base font-black text-[#111827] tracking-tight">
                             SubScript
                         </span>
@@ -281,16 +279,14 @@ export default function Navbar() {
                         <div className="flex items-center justify-between px-6 py-5 border-b border-black/10">
                             {/* Logo */}
                             <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileMenuOpen(false)} aria-label="SubScript Home">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2775CA] p-1.5 shadow-sm">
-                                    <Image
-                                        src="/logo-transparent.png"
-                                        alt="SubScript logo"
-                                        width={32}
-                                        height={32}
-                                        priority
-                                        className="w-full h-full object-contain brightness-0 invert"
-                                    />
-                                </div>
+                                <Image
+                                    src="/logo-colored.png"
+                                    alt="SubScript logo"
+                                    width={32}
+                                    height={32}
+                                    priority
+                                    className="h-8 w-8 rounded-lg object-contain shadow-xs"
+                                />
                                 <span className="text-xl font-black text-[#111827] tracking-tight">
                                     SubScript
                                 </span>

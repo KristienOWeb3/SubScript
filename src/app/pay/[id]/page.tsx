@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
-import { merchantDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import { headers } from "next/headers";
 import { getCurrencyForCountry } from "@/lib/currencyMap";
 import { fetchExchangeRate } from "@/lib/fx";
@@ -74,14 +74,14 @@ async function getPaymentLink(id: string) {
 
     const beneficiaryAddress = link.beneficiary_address ? String(link.beneficiary_address).toLowerCase() : null;
     const [
-        { data: alias },
+        { data: merchant },
         { data: paymentSettings, error: paymentSettingsError },
         { data: beneficiaryAlias },
     ] = await Promise.all([
         supabase
-            .from("address_aliases")
-            .select("alias")
-            .eq("address", String(link.merchant_address).toLowerCase())
+            .from("merchants")
+            .select("display_name")
+            .eq("wallet_address", String(link.merchant_address).toLowerCase())
             .maybeSingle(),
         supabase
             .from("system_settings")
@@ -98,7 +98,7 @@ async function getPaymentLink(id: string) {
 
     return {
         ...link,
-        merchant_display_name: merchantDisplayName(alias?.alias),
+        merchant_display_name: resolveMerchantDisplayName(merchant?.display_name),
         beneficiary_display_name: beneficiaryAlias?.alias && !beneficiaryAlias?.is_anonymous
             ? `@${beneficiaryAlias.alias}`
             : null,

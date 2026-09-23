@@ -9,6 +9,7 @@ import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)"
@@ -75,13 +76,13 @@ export async function triggerExitSurvey(
             ? merchantPrefResult.data.churn_survey_question.trim()
             : "";
 
-        // Fetch the merchant name / alias for the DM description
-        const merchantAliasResult = await db
-            .from("address_aliases")
-            .select("alias")
-            .eq("address", merchantAddress.toLowerCase())
+        // Fetch the merchant's governed display name for the DM description (not the .sub handle).
+        const merchantRecord = await db
+            .from("merchants")
+            .select("display_name")
+            .eq("wallet_address", merchantAddress.toLowerCase())
             .maybeSingle();
-        const merchantName = merchantAliasResult?.data?.alias || merchantAddress;
+        const merchantName = resolveMerchantDisplayName(merchantRecord?.data?.display_name);
 
         // Insert CHURN_SURVEY system-DM in subscript_dms. Use the merchant's custom question when
         // set (SUB-501), otherwise the default prompt. Stored as plain text; the DM description is

@@ -44,6 +44,10 @@ export async function GET(request: Request) {
             id: k.id,
             walletAddress: k.wallet_address,
             publishableKey: k.publishable_key,
+            /* Authoritative mode from the DB. Without this the dashboard fell back to guessing
+               LIVE/TEST from the pk_ prefix, so a stored mode that ever disagreed with the prefix
+               would render the wrong badge. */
+            mode: k.mode,
             secretKeyPlain: k.secret_key_hint || redactSecretKey(k.secret_key_plain),
             secretKeyAvailable: false,
             createdAt: k.created_at,

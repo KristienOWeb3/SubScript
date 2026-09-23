@@ -237,6 +237,11 @@ export default function DepositModal({
     >("idle");
     const [bridgeError, setBridgeError] = useState<string | null>(null);
 
+    /* Live, gas-aware route availability, polled while the modal is open. Cross-chain deposit routes
+       are still "Coming soon" (below), so today this only confirms the Arc route; it activates the
+       "Unavailable ⛽" badge automatically once a cross-chain deposit route is enabled. */
+    const [routeGasStatus, setRouteGasStatus] = useState<Record<string, { available: boolean; status: string }> | null>(null);
+
     /* The address shown depends on whether the user selected Arc (own address) or a CCTP chain
        (server-derived deposit address). */
     const displayAddress = selectedChain.isArc ? depositAddress : (derivedAddress || depositAddress);
@@ -412,6 +417,39 @@ export default function DepositModal({
         }
     }, [isOpen, selectedChain, fetchOriginBalance]);
 
+    /* Poll live route availability while open. Gated on ARC_CCTP_ENABLED so it never probes on
+       mainnet, where every cross-chain deposit route is switched off. Best-effort: a miss keeps the
+       last-known status. */
+    useEffect(() => {
+        if (!isOpen || !ARC_CCTP_ENABLED) return;
+        let cancelled = false;
+        const fetchStatus = async () => {
+            try {
+                const res = await fetch("/api/cctp/routes-status?direction=inbound_deposit", {
+                    signal: AbortSignal.timeout(5000),
+                });
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                if (cancelled || !Array.isArray(data?.routes)) return;
+                const next: Record<string, { available: boolean; status: string }> = {};
+                for (const route of data.routes) {
+                    if (route && typeof route.id === "string") {
+                        next[route.id] = { available: Boolean(route.available), status: String(route.status ?? "") };
+                    }
+                }
+                setRouteGasStatus(next);
+            } catch {
+                /* Keep the last-known status; the next tick retries. */
+            }
+        };
+        fetchStatus();
+        const interval = setInterval(fetchStatus, 30_000);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [isOpen]);
+
     const handleCopy = async () => {
         await navigator.clipboard.writeText(displayAddress);
         setCopied(true);
@@ -521,6 +559,9 @@ export default function DepositModal({
                                         <div className="space-y-2">
                                             {supportedChains.map((chain) => {
                                                 const isArc = chain.isArc;
+                                                const routeId = isArc ? "arc" : chain.chainId === 501 ? "solana" : String(chain.chainId);
+                                                const gasStatus = routeGasStatus?.[routeId] ?? null;
+                                                const gasDepleted = !isArc && !chain.disabled && gasStatus !== null && !gasStatus.available;
                                                 if (chain.disabled) {
                                                     return (
                                                         <div
@@ -551,9 +592,9 @@ export default function DepositModal({
                                                     <button
                                                         key={chain.chainId}
                                                         type="button"
-                                                        disabled={!isTier1}
+                                                        disabled={!isTier1 || gasDepleted}
                                                         onClick={() => {
-                                                            if (!isTier1) return;
+                                                            if (!isTier1 || gasDepleted) return;
                                                             setSelectedChainId(chain.chainId);
                                                             setStep("address");
                                                             if (!chain.isArc) {
@@ -561,7 +602,7 @@ export default function DepositModal({
                                                             }
                                                         }}
                                                         className={`flex w-full items-center justify-between rounded-2xl border p-3.5 text-left transition shadow-sm group ${
-                                                            !isTier1
+                                                            !isTier1 || gasDepleted
                                                                 ? "border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] opacity-50 cursor-not-allowed"
                                                                 : "border-black/15 dark:border-white/15 bg-white dark:bg-[#222327] hover:border-[#2775CA] hover:bg-[#2775CA]/[0.02] dark:hover:bg-[#2775CA]/10"
                                                         }`}
@@ -582,8 +623,12 @@ export default function DepositModal({
                                                         </div>
 
                                                         <div className="flex items-center gap-2 shrink-0 ml-2">
-                                                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20">
-                                                                {chain.badge}
+                                                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                                                gasDepleted
+                                                                    ? "bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/20"
+                                                                    : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20"
+                                                            }`}>
+                                                                {gasDepleted ? "Unavailable ⛽" : chain.badge}
                                                             </span>
                                                             <ArrowRight className="h-3.5 w-3.5 text-[#082824]/30 dark:text-white/40 group-hover:text-[#082824] dark:group-hover:text-white group-hover:translate-x-0.5 transition" />
                                                         </div>
@@ -737,11 +782,13 @@ export default function DepositModal({
                                                         bgColor="#ffffff"
                                                         fgColor="#000000"
                                                         qrStyle="dots"
-                                                        logoImage="/logo.png"
-                                                        logoWidth={26}
-                                                        logoHeight={26}
+                                                        logoImage="/logo-colored.png"
+                                                        logoWidth={28}
+                                                        logoHeight={28}
+                                                        logoOpacity={1}
                                                         removeQrCodeBehindLogo={true}
                                                         logoPadding={2}
+                                                        logoPaddingStyle="square"
                                                     />
                                                 </div>
                                             </div>

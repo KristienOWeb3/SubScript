@@ -201,7 +201,7 @@ export default function ProtocolPage() {
 
           <div className="rounded-lg border border-[#2775CA]/20 bg-[#2775CA]/[0.06] p-6">
             <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="SubScript" className="h-10 w-10 object-contain drop-shadow-sm" />
+              <img src="/logo-colored.png" alt="SubScript" className="h-10 w-10 rounded-lg object-contain shadow-xs" />
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#2775CA]">
                   Protocol status

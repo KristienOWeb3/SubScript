@@ -38,6 +38,8 @@ export async function payMerchantLinkFromEmbedded(
         abi: ROUTER_DEPOSIT_ABI,
         functionName: "depositForMerchant",
         args: [merchant.toLowerCase(), amountMicros, receiptToken],
+        /* Merchant checkout: platform-sponsored commerce. */
+        gasPayer: "platform",
         idempotencyKey,
     });
     return txHash;
@@ -59,6 +61,8 @@ export async function payPeerLinkFromEmbedded(
         abi: USDC_TRANSFER_ABI,
         functionName: "transfer",
         args: [recipient.toLowerCase(), amountMicros],
+        /* Peer (user-to-user) settlement: the payer bears Arc gas via fee-recovery at the route. */
+        gasPayer: "wallet",
         idempotencyKey,
     });
     return txHash;

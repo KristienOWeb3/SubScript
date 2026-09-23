@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, X, CheckCircle, RefreshCw, ShieldAlert, Sparkles, CreditCard, ArrowRightLeft } from "@/components/icons";
+import { Bell, X, CheckCircle, RefreshCw, ShieldAlert, CreditCard, ArrowRightLeft } from "@/components/icons";
 
 type Notification = {
     id: string;
@@ -41,11 +41,10 @@ function relativeTime(iso: string): string {
 function getSourceIcon(source: string) {
     switch (source?.toUpperCase()) {
         case "ADMIN":
-            return <Sparkles className="h-4 w-4 text-purple-400" />;
+        case "SYSTEM":
+            return <img src="/logo-colored.png" alt="SubScript" className="h-4 w-4 rounded-sm object-contain" />;
         case "SECURITY":
             return <ShieldAlert className="h-4 w-4 text-amber-400" />;
-        case "SYSTEM":
-            return <Sparkles className="h-4 w-4 text-cyan-400" />;
         case "BRIDGE":
             return <ArrowRightLeft className="h-4 w-4 text-[#2775CA]" />;
         default:

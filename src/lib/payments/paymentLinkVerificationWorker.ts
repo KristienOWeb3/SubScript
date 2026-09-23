@@ -364,17 +364,18 @@ async function runPostSettlementEffects(
             .limit(1)
             .maybeSingle();
         if (!existingReceipt) {
-            /* Receipt identity is database-owned. Checkout-supplied merchant_name_snapshot is
-               branding metadata and must not be allowed to impersonate another payee. */
-            const { data: merchantAlias, error: merchantAliasError } = await supabase
-                .from("address_aliases")
-                .select("alias")
-                .eq("address", job.merchant_address)
+            /* Receipt identity is database-owned: the merchant's admin-governed display_name, not
+               the checkout-supplied merchant_name_snapshot (branding metadata that must not be able
+               to impersonate another payee) and not the .sub handle. */
+            const { data: merchantRecord, error: merchantRecordError } = await supabase
+                .from("merchants")
+                .select("display_name")
+                .eq("wallet_address", job.merchant_address)
                 .maybeSingle();
-            if (merchantAliasError) {
-                console.error("[verify-worker] Failed to resolve receipt merchant alias:", merchantAliasError.message);
+            if (merchantRecordError) {
+                console.error("[verify-worker] Failed to resolve receipt merchant display name:", merchantRecordError.message);
             }
-            const merchantLabel = safeReceiptPayeeLabel(merchantAlias?.alias, job.merchant_address);
+            const merchantLabel = safeReceiptPayeeLabel(merchantRecord?.display_name, job.merchant_address);
             /* Reads as something a person would say. It used to be "Receipt: <title>", which is
                a label, not a sentence — and the title can be empty, so it could arrive as a
                bare "Receipt:". */

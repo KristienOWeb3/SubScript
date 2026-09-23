@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import SubscribeClient from "./SubscribeClient";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
-import { merchantDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
 type PageProps = {
     params: Promise<{ planId: string }>;
@@ -72,13 +72,13 @@ async function getPlan(planId: string) {
         } as typeof plan & { checkout_session_id: string };
     }
 
-    const { data: alias } = await supabase
-        .from("address_aliases")
-        .select("alias")
-        .eq("address", String(resolvedPlan.merchant_address).toLowerCase())
+    const { data: merchant } = await supabase
+        .from("merchants")
+        .select("display_name")
+        .eq("wallet_address", String(resolvedPlan.merchant_address).toLowerCase())
         .maybeSingle();
 
-    return { ...resolvedPlan, merchant_alias: alias?.alias || null };
+    return { ...resolvedPlan, merchant_display_name: merchant?.display_name || null };
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -93,7 +93,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     }
 
     const amountFormatted = (Number(plan.amount_usdc) / 1_000_000).toFixed(2);
-    const merchantName = merchantDisplayName(plan.merchant_alias);
+    const merchantName = resolveMerchantDisplayName(plan.merchant_display_name);
 
     const title = `Subscribe to ${plan.name} — ${amountFormatted} USDC`;
     const description = (plan.description && String(plan.description).trim())
@@ -144,8 +144,8 @@ export default async function PublicSubscribePage({ params }: PageProps) {
             cancelUrl: "cancel_url" in plan && plan.cancel_url ? String(plan.cancel_url) : undefined,
             merchant: {
                 address: String(plan.merchant_address).toLowerCase(),
-                name: merchantDisplayName(plan.merchant_alias),
-                alias: plan.merchant_alias,
+                name: resolveMerchantDisplayName(plan.merchant_display_name),
+                alias: null,
             },
         }
         : null;

@@ -3,8 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
-import { ARC_TESTNET_CHAIN_ID, SUBSCRIPT_PROTOCOL_FEE_BPS } from "@/lib/contracts/constants";
-import { activeArcChain } from "@/lib/wagmi";
+import { SUBSCRIPT_PROTOCOL_FEE_BPS } from "@/lib/contracts/constants";
 import {
     buildOverviewMonths,
     buildOverviewSeries,

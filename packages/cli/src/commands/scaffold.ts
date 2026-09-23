@@ -13,12 +13,7 @@ import { generateCheckoutRouteTemplate } from "../templates/checkoutRouteTemplat
 import { generateEscrowStatusTemplate } from "../templates/EscrowStatus.js";
 import { generateWebhookTemplate } from "../templates/webhookTemplate.js";
 import { log, warn, recordFile } from "../utils/output.js";
-
-const ARC_TESTNET_CHAIN_ID = 5042002;
-const SUBSCRIPT_ROUTER_ADDRESS = "0x6946B7746c2968B195BD15319D25F67E587CAe3C";
-const STANDARD_CONTRACT_ADDRESS = "0x6C574a62F174b7Dc29060200Ab22afc9933FD502";
-const USDC_NATIVE_GAS_ADDRESS = "0x3600000000000000000000000000000000000000";
-const SUBSCRIPT_PROTOCOL_FEE_BPS = 100;
+import { fetchConfigAndVerify } from "../utils/api.js";
 
 export interface ScaffoldOptions {
     secretKey: string;
@@ -158,15 +153,61 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
         /* The config, wagmi Provider, and EscrowStatusTracker read confidential on-chain state and are
            only required for Privacy Premium mode. Standard hosted checkout needs none of them. */
         if (opts.mode === "privacy-routed") {
+            let onChainConfig: {
+                chainId: number;
+                networkName: string;
+                rpcUrl: string;
+                explorerUrl: string;
+                nativeCurrencyDecimals: number;
+                routerAddress: string;
+                standardAddress: string;
+                usdcAddress: string;
+                feeBps: number;
+            };
+
+            if (opts.offline) {
+                // Offline mode: emit clear placeholder values with explicit instructions.
+                // Never bake real testnet addresses into offline templates.
+                onChainConfig = {
+                    chainId: 0,
+                    networkName: "Arc Network (Placeholder — configure chainId before production)",
+                    rpcUrl: "https://rpc.your-arc-node.placeholder",
+                    explorerUrl: "https://explorer.placeholder",
+                    nativeCurrencyDecimals: 18,
+                    routerAddress: "0x0000000000000000000000000000000000000000",
+                    standardAddress: "0x0000000000000000000000000000000000000000",
+                    usdcAddress: "0x3600000000000000000000000000000000000000",
+                    feeBps: 100,
+                };
+            } else {
+                log("[INFO] Fetching signed protocol configuration for on-chain routing...");
+                const remote = await fetchConfigAndVerify();
+                onChainConfig = {
+                    chainId: remote.chainId,
+                    networkName: remote.network || remote.networkName || "Arc",
+                    rpcUrl: remote.rpcUrl,
+                    explorerUrl: remote.explorerUrl,
+                    nativeCurrencyDecimals: remote.nativeCurrency?.decimals ?? 18,
+                    routerAddress: remote.routerAddress,
+                    standardAddress: remote.standardAddress,
+                    usdcAddress: remote.usdcAddress || "0x3600000000000000000000000000000000000000",
+                    feeBps: remote.feeBps ?? 100,
+                };
+            }
+
             const configContent = generateConfigTemplate({
                 merchantAddress: opts.merchantWalletAddress,
                 mode: opts.mode,
                 tier: 1,
-                chainId: ARC_TESTNET_CHAIN_ID,
-                routerAddress: SUBSCRIPT_ROUTER_ADDRESS,
-                standardAddress: STANDARD_CONTRACT_ADDRESS,
-                usdcAddress: USDC_NATIVE_GAS_ADDRESS,
-                feeBps: SUBSCRIPT_PROTOCOL_FEE_BPS,
+                chainId: onChainConfig.chainId,
+                networkName: onChainConfig.networkName,
+                rpcUrl: onChainConfig.rpcUrl,
+                explorerUrl: onChainConfig.explorerUrl,
+                nativeCurrencyDecimals: onChainConfig.nativeCurrencyDecimals,
+                routerAddress: onChainConfig.routerAddress,
+                standardAddress: onChainConfig.standardAddress,
+                usdcAddress: onChainConfig.usdcAddress,
+                feeBps: onChainConfig.feeBps,
                 cliVersion: CLI_VERSION,
                 templateVersion: TEMPLATE_VERSION,
                 requestId,

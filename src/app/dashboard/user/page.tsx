@@ -125,7 +125,8 @@ import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { humanStatus, humanSubscriptionStatus, normalizeReceiptStatus } from "@/lib/transactionLabels";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
-import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
+import { accountDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName, isMerchantId } from "@/lib/merchants/identity";
 import { recordOptimisticTx } from "@/lib/optimisticTx";
 
 const comingSoonUserSettings = new Set(["securityShieldEnabled", "securityMultiSigEnabled"]);
@@ -2526,6 +2527,11 @@ export default function UserDashboard() {
     if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
       return trimmed;
     }
+    // Merchant IDs (merc_...) are a business identity, never a P2P destination. Reject them so a
+    // user can't send funds to one — payments to a merchant go through their checkout/link only.
+    if (isMerchantId(trimmed)) {
+      return null;
+    }
     const lower = trimmed.toLowerCase();
     // Merchant (.hq/.biz) names are intentionally NOT resolvable for users — a user can only pay a
     // merchant via their payment link/request, or an on-chain address they looked up themselves.
@@ -3409,14 +3415,21 @@ export default function UserDashboard() {
               </div>
 
               {/* Recent Transactions */}
-              <div className="rounded-3xl border border-black/10 bg-white/80 p-5 shadow-sm">
+              <div className="dashboard-blue-panel min-h-[390px] rounded-[20px] border border-black/35 p-5 text-black">
                 <div className="flex items-center justify-between">
                   <div className="h-3 w-36 subscript-skeleton rounded-full" />
                   <div className="h-4 w-16 subscript-skeleton rounded-full" />
                 </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {["All", "Subscriptions", "One Time", "Transfers", "Withdrawals", "Deposits"].map((tab) => (
-                    <div key={tab} className="h-7 w-20 subscript-skeleton rounded-full" />
+                <div className="dashboard-filter-scroll mt-4 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {[
+                    { label: "All", width: "w-14" },
+                    { label: "Subscriptions", width: "w-28" },
+                    { label: "One Time", width: "w-20" },
+                    { label: "Transfers", width: "w-20" },
+                    { label: "Withdrawals", width: "w-24" },
+                    { label: "Deposits", width: "w-20" },
+                  ].map((tab) => (
+                    <div key={tab.label} className={`h-7 ${tab.width} shrink-0 subscript-skeleton rounded-full`} />
                   ))}
                 </div>
                 <div className="mt-4 divide-y divide-black/5">
@@ -3442,12 +3455,12 @@ export default function UserDashboard() {
 
         {/* Mobile Bottom Bar Skeleton */}
         <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2 md:hidden">
-          <div className="flex h-[55.125px] flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
+          <div className="flex h-[60.6375px] flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
             ))}
           </div>
-          <div className="h-[55.125px] w-[55.125px] shrink-0 rounded-full subscript-skeleton" />
+          <div className="h-[60.6375px] w-[60.6375px] shrink-0 rounded-full subscript-skeleton" />
         </div>
       </div>
     );
@@ -3569,7 +3582,7 @@ export default function UserDashboard() {
       return {
         id: `sub-${s.subscriptionId}`,
         kind: "recurring" as const,
-        name: merchantDisplayName(s.merchantName),
+        name: resolveMerchantDisplayName(s.merchantName),
         pic: s.merchantProfilePic,
         detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
         amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
@@ -4841,11 +4854,13 @@ export default function UserDashboard() {
                               [10, 10, 10, 0],
                               [10, 0, 10, 10]
                             ]}
-                            logoImage="/logo.png"
+                            logoImage="/logo-colored.png"
                             logoWidth={40}
                             logoHeight={40}
+                            logoOpacity={1}
                             removeQrCodeBehindLogo={true}
                             logoPadding={2}
+                            logoPaddingStyle="square"
                           />
                         </div>
                         <p className="text-[11px] leading-relaxed text-center text-black/60">
@@ -7553,7 +7568,7 @@ export default function UserDashboard() {
               <Field label="Merchant">
                 {vaultActionMerchantLocked ? (
                   <div className="subscript-input flex items-center bg-white border border-black/15 text-[#111827]">
-                    {merchantDisplayName(vaults.find((vault: any) => vault.merchantAddress?.toLowerCase() === vaultActionMerchant.toLowerCase())?.merchantName)}
+                    {resolveMerchantDisplayName(vaults.find((vault: any) => vault.merchantAddress?.toLowerCase() === vaultActionMerchant.toLowerCase())?.merchantName)}
                   </div>
                 ) : (
                   <input
@@ -7864,11 +7879,13 @@ export default function UserDashboard() {
                       [8, 8, 8, 0],
                       [8, 0, 8, 8],
                     ]}
-                    logoImage="/logo.png"
+                    logoImage="/logo-colored.png"
                     logoWidth={40}
                     logoHeight={40}
+                    logoOpacity={1}
                     removeQrCodeBehindLogo={true}
                     logoPadding={2}
+                    logoPaddingStyle="square"
                   />
                 </div>
               </div>
@@ -10968,7 +10985,7 @@ function TopupVaultModal({
               <div className="space-y-1">
                 <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Merchant Vault</span>
                 <div className="rounded-2xl border border-black/10 bg-black/5 px-4 py-3 text-xs font-mono text-black/80">
-                  {merchantDisplayName(vault.merchantName)}
+                  {resolveMerchantDisplayName(vault.merchantName)}
                 </div>
               </div>
 

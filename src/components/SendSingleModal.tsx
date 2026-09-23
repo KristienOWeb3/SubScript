@@ -70,6 +70,12 @@ export default function SendSingleModal({
     const [sendMethod, setSendMethod] = useState<"onchain" | "bank">("onchain");
     const [selectedNetwork, setSelectedNetwork] = useState<string>("arc");
     const [networkMenuOpen, setNetworkMenuOpen] = useState(false);
+    /* Estimated Arc network fee for a user-paid on-chain send. Fetched from the same estimator the
+       server charges with, so the quoted number matches what is billed. */
+    const [arcFeeUsdc, setArcFeeUsdc] = useState<number | null>(null);
+    /* Live, gas-aware availability per route, polled from /api/cctp/routes-status while the sheet is
+       open. Null until the first response; routes fall back to their static availability meanwhile. */
+    const [routeGasStatus, setRouteGasStatus] = useState<Record<string, { available: boolean; status: string }> | null>(null);
 
     const recipientInputRef = useRef<HTMLInputElement | null>(null);
     const triggerRef = useRef<HTMLElement | null>(null);
@@ -130,6 +136,57 @@ export default function SendSingleModal({
         return () => document.removeEventListener("mousedown", onPointerDown);
     }, [networkMenuOpen]);
 
+    /* Arc sends are user-paid: fetch the network-fee estimate while the sheet is open on the Arc
+       route so the sender sees it before confirming and "Send Max" can reserve it. Cross-chain
+       routes keep their own bridge-fee display and are unaffected. */
+    useEffect(() => {
+        if (!open || !isArcRoute) {
+            setArcFeeUsdc(null);
+            return;
+        }
+        let cancelled = false;
+        fetch("/api/user/wallet/estimate-fee?recipients=1")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => { if (!cancelled && d?.feeUsdc) setArcFeeUsdc(Number(d.feeUsdc)); })
+            .catch(() => { /* best-effort UI; the server enforces the real fee at send time */ });
+        return () => { cancelled = true; };
+    }, [open, isArcRoute]);
+
+    /* While the sheet is open, poll live route availability so a relayer running out of gas flips the
+       network to "Unavailable ⛽" (and back to "Live" on a top-up) without a reload. Only polls when
+       there is a live cross-chain route to check, which skips it entirely on mainnet. */
+    useEffect(() => {
+        if (!open) return;
+        const hasLiveCrossChainRoute = networkOptions.some((option) => option.id !== "arc" && option.available);
+        if (!hasLiveCrossChainRoute) return;
+        let cancelled = false;
+        const fetchStatus = async () => {
+            try {
+                const res = await fetch("/api/cctp/routes-status?direction=outbound_withdrawal", {
+                    signal: AbortSignal.timeout(5000),
+                });
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                if (cancelled || !Array.isArray(data?.routes)) return;
+                const next: Record<string, { available: boolean; status: string }> = {};
+                for (const route of data.routes) {
+                    if (route && typeof route.id === "string") {
+                        next[route.id] = { available: Boolean(route.available), status: String(route.status ?? "") };
+                    }
+                }
+                setRouteGasStatus(next);
+            } catch {
+                /* Keep the last-known status; the next tick retries. */
+            }
+        };
+        fetchStatus();
+        const interval = window.setInterval(fetchStatus, 30_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
+    }, [open, networkOptions]);
+
     const trimmedAmount = amount.trim();
     const isDecimalNumber = /^[0-9]+(\.[0-9]+)?$/.test(trimmedAmount);
     const numericAmount = isDecimalNumber ? parseFloat(trimmedAmount) : 0;
@@ -141,10 +198,15 @@ export default function SendSingleModal({
         trimmedAmount.endsWith(".sub") ||
         (trimmedAmount.length >= 30 && /[a-zA-Z]/.test(trimmedAmount));
 
+    /* On the user-paid Arc route the wallet must keep enough for the network fee, so the most that
+       can be sent is the balance minus that fee; cross-chain routes bill their fee out of the amount. */
+    const arcNetworkFee = isArcRoute && arcFeeUsdc ? arcFeeUsdc : 0;
+    const maxSendable = isArcRoute ? Math.max(0, walletBalance - arcNetworkFee) : walletBalance;
+
     /* Both routes debit the same Arc balance: a direct transfer moves it, a withdrawal burns it. So
-       anything above the Arc balance can only fail, and blocking here stops the user from firing an
-       unfundable transfer and waiting for a chain-level error to say so. */
-    const exceedsBalance = amountIsValid && balanceKnown && numericAmount > walletBalance;
+       anything above what the balance can cover (amount + Arc network fee, or the bridge amount) can
+       only fail, and blocking here stops the user from firing an unfundable transfer. */
+    const exceedsBalance = amountIsValid && balanceKnown && numericAmount > maxSendable;
 
     /* Fee comes off the top and the destination receives the remainder, because the fee is skimmed
        before the CCTP burn and CCTP mints exactly what was burned. */
@@ -158,6 +220,11 @@ export default function SendSingleModal({
     const routeUnavailable = !currentNetwork.available;
     const needsInAppWallet = !isArcRoute && !canWithdrawCrossChain;
 
+    /* Live gas signal for the selected route. A route can be listed as available (built at load time)
+       yet have its relayer out of gas right now, in which case the send is blocked until a top-up. */
+    const currentRouteGas = routeGasStatus?.[currentNetwork.id] ?? null;
+    const routeGasDepleted = currentNetwork.available && currentRouteGas !== null && !currentRouteGas.available;
+
     const submitBlocked =
         loading ||
         !resolved?.address ||
@@ -167,6 +234,7 @@ export default function SendSingleModal({
         exceedsBalance ||
         belowBridgeMinimum ||
         routeUnavailable ||
+        routeGasDepleted ||
         needsInAppWallet;
 
     const handleSubmit = (event: React.FormEvent) => {
@@ -296,6 +364,9 @@ export default function SendSingleModal({
                                             <div className="custom-scrollbar absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl">
                                                 {networkOptions.map((option) => {
                                                     const isSelected = selectedNetwork === option.id;
+                                                    const optionGas = routeGasStatus?.[option.id] ?? null;
+                                                    const optionGasDepleted =
+                                                        option.available && optionGas !== null && !optionGas.available;
                                                     return (
                                                         <button
                                                             key={option.id}
@@ -327,9 +398,22 @@ export default function SendSingleModal({
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            {isSelected && option.available && (
-                                                                <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2775CA]" />
-                                                            )}
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                {option.available &&
+                                                                    (optionGasDepleted ? (
+                                                                        <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                                                                            Unavailable ⛽
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">
+                                                                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                                                                            Live
+                                                                        </span>
+                                                                    ))}
+                                                                {isSelected && option.available && (
+                                                                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2775CA]" />
+                                                                )}
+                                                            </div>
                                                         </button>
                                                     );
                                                 })}
@@ -453,7 +537,7 @@ export default function SendSingleModal({
                                             type="button"
                                             disabled={loading}
                                             onClick={() => {
-                                                if (walletBalance > 0) onAmountChange(walletBalance.toString());
+                                                if (maxSendable > 0) onAmountChange(maxSendable.toString());
                                             }}
                                             className="absolute right-2.5 z-10 rounded-lg border border-black/10 bg-black/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-black transition hover:bg-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
@@ -482,8 +566,31 @@ export default function SendSingleModal({
                                     )}
                                 </Field>
 
-                                {/* What the other side actually gets, once the fee comes off. */}
-                                {amountIsValid && !belowBridgeMinimum && (
+                                {/* Arc route: the recipient gets the full amount and the sender also pays the Arc
+                                    network fee (user-paid). */}
+                                {amountIsValid && isArcRoute && (
+                                    <div className="space-y-1.5 rounded-2xl border border-black/10 bg-white/70 p-3.5 text-xs shadow-sm">
+                                        <div className="flex justify-between text-black/70">
+                                            <span>You send</span>
+                                            <span className="font-mono font-bold">{numericAmount.toFixed(2)} USDC</span>
+                                        </div>
+                                        <div className="flex justify-between text-black/70">
+                                            <span>Network fee (Arc gas)</span>
+                                            <span className="font-mono font-bold">{arcFeeUsdc !== null ? `+${arcFeeUsdc.toFixed(4)}` : "≈ …"} USDC</span>
+                                        </div>
+                                        <div className="flex justify-between border-t border-black/10 pt-1.5 font-bold text-[#111827]">
+                                            <span>Total debited</span>
+                                            <span className="font-mono text-[#2775CA]">{(numericAmount + arcNetworkFee).toFixed(4)} USDC</span>
+                                        </div>
+                                        <p className="pt-0.5 text-[10px] leading-relaxed text-black/50">
+                                            The recipient receives the full {numericAmount.toFixed(2)} USDC.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Cross-chain route: the bridge fee comes off the amount and the destination
+                                    receives the remainder. */}
+                                {amountIsValid && !isArcRoute && !belowBridgeMinimum && (
                                     <div className="space-y-1.5 rounded-2xl border border-black/10 bg-white/70 p-3.5 text-xs shadow-sm">
                                         <div className="flex justify-between text-black/70">
                                             <span>You send</span>
@@ -499,11 +606,9 @@ export default function SendSingleModal({
                                             <span>Destination address will receive</span>
                                             <span className="font-mono text-[#2775CA]">{netReceived.toFixed(4)} USDC</span>
                                         </div>
-                                        {!isArcRoute && (
-                                            <p className="pt-0.5 text-[10px] leading-relaxed text-black/50">
-                                                Arriving on {currentNetwork.name} in {currentNetwork.estimatedTime.toLowerCase()}.
-                                            </p>
-                                        )}
+                                        <p className="pt-0.5 text-[10px] leading-relaxed text-black/50">
+                                            Arriving on {currentNetwork.name} in {currentNetwork.estimatedTime.toLowerCase()}.
+                                        </p>
                                     </div>
                                 )}
 
@@ -517,6 +622,13 @@ export default function SendSingleModal({
                                 {routeUnavailable && (
                                     <p className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-900">
                                         {currentNetwork.name} isn&apos;t ready yet. Pick another network for now.
+                                    </p>
+                                )}
+
+                                {routeGasDepleted && (
+                                    <p className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-900">
+                                        Withdrawals to {currentNetwork.name} are temporarily paused while sponsor gas reserves are
+                                        replenished. Check back shortly.
                                     </p>
                                 )}
 

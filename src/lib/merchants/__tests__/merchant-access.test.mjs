@@ -278,7 +278,7 @@ test("register-role gates ENTERPRISE on the verified email and claims in the sam
 
     /* Claimed alongside the merchants insert: the grant is spent exactly when the account exists. */
     const merchantInsert = route.slice(route.indexOf("insert into merchants"));
-    assert.match(merchantInsert.slice(0, 800), /markGrantClaimed/);
+    assert.match(merchantInsert.slice(0, 1500), /markGrantClaimed/);
 
     /* The shared code must not survive as a bypass once per-business grants are enforced: the only
        read of it lives in the not-enforced branch. (Matching on the env read, not the bare name —

@@ -3,7 +3,9 @@ import {
     USDC_NATIVE_GAS_ADDRESS,
     ARC_TESTNET_CHAIN_ID,
     ARC_MAINNET_CHAIN_ID,
+    isProd,
 } from "@/lib/contracts/constants";
+import { getArcRpcUrl } from "@/lib/cctp/relayer";
 import { prisma } from "@/lib/prisma";
 
 export interface ArcDepositItem {
@@ -41,26 +43,44 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
     }
 
     const normalizedWallet = walletAddress.toLowerCase();
-    const isProd = process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_VERCEL_ENV === "production";
+    /* Mainnet vs testnet must follow the app-wide switch (NEXT_PUBLIC_ENVIRONMENT via `isProd`), NOT
+       NODE_ENV: a mainnet dev/preview server runs with NODE_ENV="development" yet must read the Arc
+       *mainnet* explorer — otherwise external deposits are queried on the wrong network and never show. */
     const chainId = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
     const networkName = isProd ? "Arc Mainnet" : "Arc Testnet";
-    const explorerBaseUrl = isProd ? "https://arcscan.app" : "https://testnet.arcscan.app";
-    const rpcUrl = isProd
-        ? (process.env.ARC_MAINNET_RPC_URL || "https://rpc.mainnet.arc.network")
-        : (process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network");
+    /* Arc is indexed by Etherscan's unified v2 API (chainid-scoped); the old arcscan.app host is dead.
+       A self-hosted/Blockscout explorer can override via ARC_EXPLORER_API_URL ({base}/api?…); otherwise
+       we use Etherscan v2, which needs ETHERSCAN_API_KEY. With neither, only the getLogs "just-now" net
+       below runs — historical deposits won't appear until a key (or custom explorer) is configured. */
+    const explorerApiKey = process.env.ETHERSCAN_API_KEY || process.env.NEXT_PUBLIC_ETHERSCAN_API_KEY || "";
+    const customExplorer = process.env.ARC_EXPLORER_API_URL || "";
+    const buildExplorerUrl = (params: Record<string, string>): string | null => {
+        const qs = new URLSearchParams(params);
+        if (customExplorer) return `${customExplorer.replace(/\/$/, "")}/api?${qs.toString()}`;
+        if (!explorerApiKey) return null;
+        qs.set("chainid", String(chainId));
+        qs.set("apikey", explorerApiKey);
+        return `https://api.etherscan.io/v2/api?${qs.toString()}`;
+    };
+    /* Reuse the app's canonical Arc RPC (ARC_RPC_URL / NEXT_PUBLIC_ARC_RPC_PRIMARY, arc.io defaults) so
+       the getLogs net hits a working endpoint instead of the stale rpc.mainnet.arc.network host. */
+    const rpcUrl = getArcRpcUrl();
 
     const targetContract = USDC_NATIVE_GAS_ADDRESS.toLowerCase();
+    /* On Arc, USDC is the native gas token: external sends are NATIVE value transfers whose ERC-20
+       Transfer event is emitted by the native precompile below, NOT by USDC_NATIVE_GAS_ADDRESS (0x36…).
+       The getLogs net must watch the precompile, and its Transfer `data` is 18-decimal (÷1e12 → micros). */
+    const NATIVE_TOKEN_EVENT_ADDRESS = "0x" + "f".repeat(39) + "e";
     const deposits: ArcDepositItem[] = [];
     let fetchSucceeded = false;
 
-    // Strategy 1: Arcscan Explorer API (Fast, indexed, historical)
+    // Strategy 1: Explorer API (Etherscan v2, indexed, full history — includes native value transfers)
+    const tokenTxUrl = buildExplorerUrl({ module: "account", action: "tokentx", address: normalizedWallet, contractaddress: targetContract, page: "1", offset: "50", sort: "desc" });
+    const txListUrl = buildExplorerUrl({ module: "account", action: "txlist", address: normalizedWallet, page: "1", offset: "50", sort: "desc" });
     try {
-        const tokenTxUrl = `${explorerBaseUrl}/api?module=account&action=tokentx&address=${normalizedWallet}&contractaddress=${targetContract}&page=1&offset=50&sort=desc`;
-        const txListUrl = `${explorerBaseUrl}/api?module=account&action=txlist&address=${normalizedWallet}&page=1&offset=50&sort=desc`;
-
         const [tokenRes, txListRes] = await Promise.allSettled([
-            fetch(tokenTxUrl, { signal: AbortSignal.timeout(6000), headers: { Accept: "application/json" } }),
-            fetch(txListUrl, { signal: AbortSignal.timeout(6000), headers: { Accept: "application/json" } }),
+            tokenTxUrl ? fetch(tokenTxUrl, { signal: AbortSignal.timeout(8000), headers: { Accept: "application/json" } }) : Promise.reject(new Error("no explorer configured")),
+            txListUrl ? fetch(txListUrl, { signal: AbortSignal.timeout(8000), headers: { Accept: "application/json" } }) : Promise.reject(new Error("no explorer configured")),
         ]);
 
         if (tokenRes.status === "fulfilled" && tokenRes.value.ok) {
@@ -95,7 +115,18 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
 
                     const timeMs = Number(item.timeStamp) * 1000 || Date.now();
                     const blockNum = Number(item.blockNumber) || 0;
-                    const microsBigInt = BigInt(itemValueStr);
+                    /* Normalize the token's smallest unit to 6-decimal USDC micros using the decimals
+                       Etherscan reports. Arc's USDC ERC-20 (USDC_NATIVE_GAS_ADDRESS) is 6-decimal, so
+                       this is a no-op there; keying off tokenDecimal keeps the amount correct even if
+                       the explorer denominates it at the 18-decimal native-gas scale, instead of
+                       silently inflating it 1e12×. */
+                    const rawValue = BigInt(itemValueStr);
+                    const rawDecimals = Number(item.tokenDecimal);
+                    const tokenDecimals = Number.isInteger(rawDecimals) && rawDecimals >= 0 && rawDecimals <= 36 ? rawDecimals : 6;
+                    const microsBigInt = tokenDecimals >= 6
+                        ? rawValue / 10n ** BigInt(tokenDecimals - 6)
+                        : rawValue * 10n ** BigInt(6 - tokenDecimals);
+                    if (microsBigInt <= 0n) continue;
                     const whole = microsBigInt / 1_000_000n;
                     const fraction = (microsBigInt % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
                     const amountFormatted = `${whole.toString()}.${fraction}`;
@@ -107,7 +138,7 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                             txHash: item.hash,
                             fromAddress: itemFrom,
                             toAddress: itemTo,
-                            amountUsdc: itemValueStr,
+                            amountUsdc: microsBigInt.toString(),
                             amountFormatted,
                             timestamp: timeMs,
                             blockNumber: blockNum,
@@ -202,14 +233,14 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
-                signal: AbortSignal.timeout(4000),
+                signal: AbortSignal.timeout(10000),
             });
 
             if (blockRes.ok) {
                 const blockJson = await blockRes.json();
                 const latestBlock = parseInt(blockJson.result, 16);
                 if (Number.isFinite(latestBlock) && latestBlock > 0) {
-                    const fromBlockHex = "0x" + Math.max(0, latestBlock - 50000).toString(16);
+                    const fromBlockHex = "0x" + Math.max(0, latestBlock - 5000).toString(16);
                     
                     // Run incoming & outgoing log queries in parallel
                     const [inLogRes, outLogRes] = await Promise.all([
@@ -220,14 +251,14 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                                 jsonrpc: "2.0",
                                 method: "eth_getLogs",
                                 params: [{
-                                    address: targetContract,
+                                    address: NATIVE_TOKEN_EVENT_ADDRESS,
                                     topics: [TRANSFER_EVENT_TOPIC, null, paddedTo],
                                     fromBlock: fromBlockHex,
                                     toBlock: "latest",
                                 }],
                                 id: 2,
                             }),
-                            signal: AbortSignal.timeout(5000),
+                            signal: AbortSignal.timeout(12000),
                         }).catch(() => null),
                         fetch(rpcUrl, {
                             method: "POST",
@@ -236,14 +267,14 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                                 jsonrpc: "2.0",
                                 method: "eth_getLogs",
                                 params: [{
-                                    address: targetContract,
+                                    address: NATIVE_TOKEN_EVENT_ADDRESS,
                                     topics: [TRANSFER_EVENT_TOPIC, paddedFrom, null],
                                     fromBlock: fromBlockHex,
                                     toBlock: "latest",
                                 }],
                                 id: 3,
                             }),
-                            signal: AbortSignal.timeout(5000),
+                            signal: AbortSignal.timeout(12000),
                         }).catch(() => null),
                     ]);
 
@@ -256,11 +287,14 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                             const fromHex = ethers.dataSlice(log.topics[1], 12).toLowerCase();
                             const toHex = ethers.dataSlice(log.topics[2], 12).toLowerCase();
                             if (fromHex === toHex) continue;
-                            const valBigInt = BigInt(log.data || "0x0");
-                            if (valBigInt <= 0n) continue;
+                            const rawVal = BigInt(log.data || "0x0");
+                            if (rawVal <= 0n) continue;
+                            // Native precompile Transfer data is 18-decimal; convert to 6-decimal USDC micros.
+                            const microsBigInt = rawVal / 10n ** 12n;
+                            if (microsBigInt <= 0n) continue;
 
-                            const whole = valBigInt / 1_000_000n;
-                            const fraction = (valBigInt % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
+                            const whole = microsBigInt / 1_000_000n;
+                            const fraction = (microsBigInt % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
                             const amountFormatted = `${whole.toString()}.${fraction}`;
                             const txHash = log.transactionHash;
                             const direction = isIncoming ? "inbound_deposit" : "outbound_send";
@@ -271,7 +305,7 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                                     txHash,
                                     fromAddress: fromHex,
                                     toAddress: toHex,
-                                    amountUsdc: valBigInt.toString(),
+                                    amountUsdc: microsBigInt.toString(),
                                     amountFormatted,
                                     timestamp: Date.now(),
                                     blockNumber: parseInt(log.blockNumber, 16) || latestBlock,

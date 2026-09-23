@@ -27,9 +27,9 @@ const SCROLL_DOWN_DELTA_THRESHOLD = 14; // Requires 14px of intentional down-scr
 const SCROLL_UP_DELTA_THRESHOLD = 8;   // Requires 8px of intentional up-scroll to expand
 const TOP_DEADZONE_PX = 16;            // Keep locked expanded at the very top of page
 
-// Sleek compact dimensions (+5% height increase from 52.5px to 55.125px)
-const CAPSULE_HEIGHT = 55.125;
-const CAPSULE_RETRACTED_SIZE = 55.125;
+// 10% taller than the previous 55.125px bar for a larger mobile touch target.
+const CAPSULE_HEIGHT = 60.6375;
+const CAPSULE_RETRACTED_SIZE = 60.6375;
 
 export default function MobileFloatingNav<T extends string = string>({
   tabs,
@@ -220,7 +220,7 @@ export default function MobileFloatingNav<T extends string = string>({
   const activeTabItem = tabs.find((t) => t.id === activeTab) || tabs[0];
   const ActiveIcon = activeTabItem?.icon;
   const isInboxActive = activeTab === ("inbox" as unknown as T);
-  const targetExpandedWidth = isInboxActive ? 216 : 272;
+  const targetExpandedWidth = isInboxActive ? 246 : 272;
 
   /* ─────────────────────────────────────────────────────────────────────────
    * 120fps ProMotion Deceleration Curve:
@@ -394,13 +394,13 @@ export default function MobileFloatingNav<T extends string = string>({
             WebkitBackfaceVisibility: "hidden",
             backdropFilter: "blur(24px)",
             WebkitBackdropFilter: "blur(24px)",
-            width: isRetracted ? CAPSULE_RETRACTED_SIZE : isInboxActive ? 82 : CAPSULE_RETRACTED_SIZE,
+            width: isRetracted ? CAPSULE_RETRACTED_SIZE : isInboxActive ? 112 : CAPSULE_RETRACTED_SIZE,
             height: CAPSULE_HEIGHT,
             minHeight: CAPSULE_HEIGHT,
             maxHeight: CAPSULE_HEIGHT,
             boxSizing: "border-box",
           }}
-          aria-label="Open Direct Messages"
+          aria-label="Open Payments"
         >
           {!isInboxActive && <LiquidGlassEffect />}
           <MessageSquare
@@ -412,7 +412,7 @@ export default function MobileFloatingNav<T extends string = string>({
           />
           {isInboxActive && !isRetracted && (
             <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-wider text-[#FFFFF0] dark:text-white truncate relative z-10">
-              DMs
+              Payments
             </span>
           )}
         </button>

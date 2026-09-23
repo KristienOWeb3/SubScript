@@ -112,13 +112,11 @@ export default function PrivacyPolicy() {
       <header className="sticky top-0 z-30 w-full border-b border-black/10 bg-[#FFFFF0]/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/" className="inline-flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg bg-[#2775CA] flex items-center justify-center p-1.5 shadow-sm">
-              <img
-                src="/logo-transparent.png"
-                alt="SubScript Logo"
-                className="w-full h-full object-contain brightness-0 invert"
-              />
-            </div>
+            <img
+              src="/logo-colored.png"
+              alt="SubScript Logo"
+              className="w-8 h-8 rounded-lg object-contain shadow-xs group-hover:scale-105 transition-transform"
+            />
             <span className="text-lg font-black tracking-tight text-[#111827]">
               SubScript
             </span>

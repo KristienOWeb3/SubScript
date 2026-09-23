@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { merchantDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import {
     findActiveOnChainSubscriptionId,
     getSubscriptionOnChain,
@@ -84,22 +84,11 @@ export async function GET(request: Request) {
             }
         });
 
-        /* Fetch aliases for the merchant addresses to display friendly names */
-        const merchantAddresses = subscriptions.map((s: any) => s.merchantAddress.toLowerCase());
-        const aliases = await prisma.addressAlias.findMany({
-            where: {
-                address: { in: merchantAddresses }
-            }
-        });
-
-        const aliasMap = new Map(aliases.map((a: any) => [a.address.toLowerCase(), a]));
-
         const formatted = subscriptions.map((sub: any) => {
-            const aliasInfo: any = aliasMap.get(sub.merchantAddress.toLowerCase());
             return {
                 subscriptionId: sub.subscriptionId.toString(),
                 merchantAddress: sub.merchantAddress,
-                merchantName: merchantDisplayName(aliasInfo?.alias),
+                merchantName: resolveMerchantDisplayName(sub.merchant.displayName),
                 merchantVerified: sub.merchant.verified,
                 merchantProfilePic: sub.merchant.profilePic,
                 status: sub.status,
