@@ -122,8 +122,12 @@ export async function POST(request: Request, { params }: RouteContext) {
             peerFee = { feeMicros: est.feeMicros, feeUsdc: est.feeUsdc };
             const bal = await readUsdcBalance(payer).catch(() => null);
             if (bal !== null && bal < amountMicros + est.feeMicros) {
+                const balFormatted = (Number(bal) / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 });
+                const errorMsg = bal <= amountMicros
+                    ? `You have just $${balFormatted}, send all-gas or top up your balance.`
+                    : `Insufficient balance. You have just $${balFormatted}, send all-gas or top up your balance.`;
                 return NextResponse.json({
-                    error: `Not enough USDC to cover this payment plus the ~${est.feeUsdc} USDC Arc network fee.`,
+                    error: errorMsg,
                     code: "INSUFFICIENT_BALANCE_FOR_FEE",
                 }, { status: 422 });
             }

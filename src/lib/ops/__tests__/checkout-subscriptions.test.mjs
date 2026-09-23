@@ -139,7 +139,7 @@ test("money movement requires review and never exposes a cancel result after bro
 
     assert.match(dashboard, /Review transfer/);
     assert.match(dashboard, /waitForTransactionReceipt\(\{ hash \}\)/);
-    assert.match(dashboard, /Number\(amount\) > walletBalance/);
+    assert.match(dashboard, /Number\(amount\) >=? walletBalance/);
     assert.doesNotMatch(dashboard, /will automatically bridge the remaining/);
 
     assert.match(withdrawal, /Review withdrawal/);

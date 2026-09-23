@@ -168,8 +168,12 @@ export async function POST(request: Request) {
         const feeEstimate = await estimateArcNetworkFeeMicros(parsedRecipients.length);
         const onChainBalance = await readUsdcBalance(fundingWallet).catch(() => null);
         if (onChainBalance !== null && onChainBalance < totalAmountMicros + feeEstimate.feeMicros) {
+            const balStr = formatAmount(onChainBalance);
+            const errorMsg = onChainBalance <= totalAmountMicros
+                ? `You have just $${balStr}, send all-gas or top up your balance.`
+                : `Insufficient balance. You have just $${balStr}, send all-gas or top up your balance.`;
             return NextResponse.json({
-                error: `Insufficient balance. Sending ${formatAmount(totalAmountMicros)} USDC needs about ${feeEstimate.feeUsdc} USDC for the Arc network fee, and this wallet has ${formatAmount(onChainBalance)} USDC.`,
+                error: errorMsg,
                 code: "INSUFFICIENT_BALANCE_FOR_FEE",
             }, { status: 422 });
         }
