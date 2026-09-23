@@ -61,7 +61,7 @@ function jsonResult(value) {
 const server = new Server(
   {
     name: "subscript-mcp",
-    version: "1.0.0",
+    version: "2.1.0",
   },
   {
     capabilities: {
@@ -300,16 +300,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     if (name === "get_subscript_config") {
+      const { status, json } = await callSubscriptApi("/api/cli/config");
+      if (status !== 200 || !json || !json.config) {
+        throw new Error(
+          `Failed to fetch live protocol configuration from SubScript API (HTTP ${status}): ${
+            json?.error || "Invalid response"
+          }`
+        );
+      }
+      const remote = json.config;
       const config = {
-        network: "Arc Testnet",
-        chainId: 5042002,
-        routerAddress: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
-        standardContractAddress: "0x6C574a62F174b7Dc29060200Ab22afc9933FD502",
-        usdcAddress: "0x3600000000000000000000000000000000000000",
-        explorerUrl: "https://explorer.arc.network",
+        network: remote.network || remote.networkName || "Arc",
+        chainId: remote.chainId,
+        routerAddress: remote.routerAddress,
+        standardContractAddress: remote.standardAddress,
+        usdcAddress: remote.usdcAddress,
+        explorerUrl: remote.explorerUrl,
+        rpcUrl: remote.rpcUrl,
+        nativeCurrency: remote.nativeCurrency,
         apiBase: API_BASE,
         gasToken: "USDC",
-        protocolFeeBps: 100, // 1% fee
+        protocolFeeBps: remote.feeBps ?? 100,
         amountUnit: "integer micro-USDC (1 USDC = 1000000)",
       };
       return jsonResult(config);

@@ -398,8 +398,11 @@ export default function AdminDashboardPage() {
   const [maStatusFilter, setMaStatusFilter] = useState("PENDING");
   const [maGrantEmail, setMaGrantEmail] = useState("");
   const [maGrantNote, setMaGrantNote] = useState("");
+  const [maGrantDisplayName, setMaGrantDisplayName] = useState("");
   /* Keyed by request id so two rows open at once cannot share a draft, matching kycReasonDraft. */
   const [maDeclineDraft, setMaDeclineDraft] = useState<Record<string, string>>({});
+  /* Per-request display-name draft for the approve flow; pre-filled from the request's companyName. */
+  const [maApproveNameDraft, setMaApproveNameDraft] = useState<Record<string, string>>({});
   const [maCopiedEmail, setMaCopiedEmail] = useState<string | null>(null);
   const [maInviteOnlyConfirm, setMaInviteOnlyConfirm] = useState("");
 
@@ -691,7 +694,7 @@ export default function AdminDashboardPage() {
 
   const grantMerchantAccess = async (
     email: string,
-    opts: { requestId?: string; note?: string } = {}
+    opts: { requestId?: string; note?: string; displayName?: string } = {}
   ) => {
     const trimmed = email.trim();
     if (!trimmed) return;
@@ -701,12 +704,14 @@ export default function AdminDashboardPage() {
         email: trimmed,
         requestId: opts.requestId,
         note: opts.note?.trim() || undefined,
+        displayName: opts.displayName?.trim() || undefined,
       },
       `grant:${opts.requestId || trimmed}`
     );
     if (result?.success) {
       setMaGrantEmail("");
       setMaGrantNote("");
+      setMaGrantDisplayName("");
     }
   };
 
@@ -2571,6 +2576,18 @@ export default function AdminDashboardPage() {
 
                       {r.status === "PENDING" ? (
                         <div className="space-y-2 border-t border-slate-200 pt-3">
+                          <input
+                            type="text"
+                            value={maApproveNameDraft[r.id] ?? (r.companyName || "")}
+                            onChange={(e) =>
+                              setMaApproveNameDraft((prev) => ({
+                                ...prev,
+                                [r.id]: e.target.value,
+                              }))
+                            }
+                            placeholder="Merchant display name (shown on checkout)"
+                            className={`${INPUT} w-full`}
+                          />
                           <div className="flex flex-col gap-2 sm:flex-row">
                             <input
                               type="text"
@@ -2591,6 +2608,7 @@ export default function AdminDashboardPage() {
                                   grantMerchantAccess(r.email, {
                                     requestId: r.id,
                                     note: maDeclineDraft[r.id],
+                                    displayName: maApproveNameDraft[r.id] ?? (r.companyName || ""),
                                   })
                                 }
                                 disabled={maBusy === `grant:${r.id}`}
@@ -2764,7 +2782,7 @@ export default function AdminDashboardPage() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  grantMerchantAccess(maGrantEmail, { note: maGrantNote });
+                  grantMerchantAccess(maGrantEmail, { note: maGrantNote, displayName: maGrantDisplayName });
                 }}
                 className="flex flex-col gap-3 sm:flex-row sm:items-center"
               >
@@ -2774,6 +2792,13 @@ export default function AdminDashboardPage() {
                   onChange={(e) => setMaGrantEmail(e.target.value)}
                   placeholder="billing@company.com"
                   className={`${INPUT} sm:flex-1`}
+                />
+                <input
+                  type="text"
+                  value={maGrantDisplayName}
+                  onChange={(e) => setMaGrantDisplayName(e.target.value)}
+                  placeholder="Merchant display name (shown on checkout)"
+                  className={`${INPUT} sm:w-64`}
                 />
                 <input
                   type="text"

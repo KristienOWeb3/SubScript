@@ -1,36 +1,20 @@
 import { NextResponse } from "next/server";
-import { ethers } from "ethers";
 import { requireScope } from "@/lib/admin/guard";
 import { CCTP_CONFIG, isProd } from "@/lib/contracts/constants";
 import { getArcRpcUrl, getRelayerAddress, resolveRpcUrl } from "@/lib/cctp/relayer";
-import { getSolanaConnection, getSolanaRelayerAddress } from "@/lib/cctp/solanaRelayer";
+import { getSolanaRelayerAddress } from "@/lib/cctp/solanaRelayer";
+import { readEvmNativeBalance, readSolanaNativeBalance, statusFor } from "@/lib/cctp/relayerGas";
 import type { RelayerBalanceInfo } from "@/lib/cctp/types";
 
 export const maxDuration = 60;
-
-/* Native gas thresholds per chain, in whole tokens. Polygon is denominated in POL, Solana in SOL,
-   everything else in ETH, which is why they cannot share one number. */
-const THRESHOLDS: Record<string, { warning: number; critical: number }> = {
-  arc: { warning: 10, critical: 2 },
-  "1": { warning: 0.1, critical: 0.02 },
-  "137": { warning: 10, critical: 2 },
-  solana: { warning: 0.2, critical: 0.05 },
-  default: { warning: 0.05, critical: 0.01 },
-};
-
-function statusFor(chainKey: string, balance: number): RelayerBalanceInfo["status"] {
-  const { warning, critical } = THRESHOLDS[chainKey] ?? THRESHOLDS.default;
-  if (balance > warning) return "healthy";
-  if (balance > critical) return "warning";
-  return "critical";
-}
 
 /**
  * Native gas balances for every chain the CCTP relayer mints on.
  *
  * The address comes from lib/cctp/relayer, the same helper the attestation worker signs with. When
  * this route derived its own address from SPONSOR_PRIVATE_KEY it reported a healthy balance for a
- * wallet that was not the one paying for mints.
+ * wallet that was not the one paying for mints. Thresholds and balance reads live in lib/cctp/relayerGas
+ * so this panel and the live route-availability guard cannot disagree about what "critical" means.
  */
 export async function GET(request: Request) {
   const auth = await requireScope(request, "engineering");
@@ -60,30 +44,16 @@ export async function GET(request: Request) {
       nativeTokenSymbol: params.symbol,
       walletAddress: relayerAddress,
     };
-    if (!params.rpc) {
-      return { ...base, nativeBalance: "0", formattedBalance: "0.0000", status: "critical", error: "No RPC configured" };
+    const read = await readEvmNativeBalance(params.rpc, relayerAddress);
+    if (read.balance === null) {
+      return { ...base, nativeBalance: read.raw, formattedBalance: "0.0000", status: "critical", error: read.error };
     }
-    try {
-      const provider = new ethers.JsonRpcProvider(params.rpc, undefined, { staticNetwork: true });
-      const wei = await provider.getBalance(relayerAddress);
-      const asNumber = Number(ethers.formatEther(wei));
-      return {
-        ...base,
-        nativeBalance: wei.toString(),
-        formattedBalance: asNumber.toFixed(4),
-        status: statusFor(params.chainKey, asNumber),
-      };
-    } catch (error: any) {
-      /* An unreachable RPC is not a healthy balance. Reporting critical here is deliberate: the
-         relayer cannot mint on a chain it cannot reach, whatever the wallet holds. */
-      return {
-        ...base,
-        nativeBalance: "0",
-        formattedBalance: "0.0000",
-        status: "critical",
-        error: error?.shortMessage || "RPC unreachable",
-      };
-    }
+    return {
+      ...base,
+      nativeBalance: read.raw,
+      formattedBalance: read.balance.toFixed(4),
+      status: statusFor(params.chainKey, read.balance),
+    };
   };
 
   /* Arc first: it is where inbound deposits mint, and its gas is USDC rather than ETH. */
@@ -129,26 +99,16 @@ export async function GET(request: Request) {
           error: "No Solana relayer key configured (SOLANA_RELAYER_PRIVATE_KEY)",
         };
       }
-      try {
-        const connection = getSolanaConnection();
-        const { PublicKey } = await import("@solana/web3.js");
-        const lamports = await connection.getBalance(new PublicKey(solanaRelayerAddress));
-        const sol = lamports / 1e9;
-        return {
-          ...base,
-          nativeBalance: lamports.toString(),
-          formattedBalance: sol.toFixed(4),
-          status: statusFor("solana", sol),
-        };
-      } catch (error: any) {
-        return {
-          ...base,
-          nativeBalance: "0",
-          formattedBalance: "0.0000",
-          status: "critical",
-          error: error?.message || "Solana RPC unreachable",
-        };
+      const read = await readSolanaNativeBalance(solanaRelayerAddress);
+      if (read.balance === null) {
+        return { ...base, nativeBalance: read.raw, formattedBalance: "0.0000", status: "critical", error: read.error };
       }
+      return {
+        ...base,
+        nativeBalance: read.raw,
+        formattedBalance: read.balance.toFixed(4),
+        status: statusFor("solana", read.balance),
+      };
     })(),
   );
 

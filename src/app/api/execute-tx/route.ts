@@ -17,6 +17,9 @@ import {
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { classifyGasPayer } from "@/lib/sponsor/policy";
+import { estimateArcNetworkFeeMicros, chargeNetworkFee } from "@/lib/sponsor/userPaidTransfer";
+import { readUsdcBalance } from "@/lib/vault/onchain";
 import { assertProviderRateLimit, ProviderRateLimitError } from "@/lib/providerRateLimit";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
@@ -35,8 +38,11 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
    amount uncapped, since the funds belong to the merchant. Comfortably above any real payout
    cadence without granting an unbounded sponsored-transaction budget. */
 const SPONSORED_TRANSFERS_PER_HOUR = 10;
-const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
-const MERCHANT_SPONSORED_ACTIONS = new Set([
+/* Actions each role may invoke through this dispatcher. Being allowlisted here does NOT mean the
+   action is gas-sponsored — the gas payer is decided per action by classifyGasPayer (e.g. an
+   ordinary transferUsdc is user-paid). */
+const USER_ALLOWED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
+const MERCHANT_ALLOWED_ACTIONS = new Set([
     "approveUsdc",
     "transferUsdc",
     "withdraw",
@@ -193,11 +199,11 @@ export async function POST(request: Request) {
         if (!accountRole) {
             return NextResponse.json({ error: "Forbidden: Account role is required for sponsored execution." }, { status: 403 });
         }
-        if (accountRole === "USER" && !USER_SPONSORED_ACTIONS.has(action)) {
-            return NextResponse.json({ error: "Forbidden: User accounts cannot execute merchant-sponsored actions." }, { status: 403 });
+        if (accountRole === "USER" && !USER_ALLOWED_ACTIONS.has(action)) {
+            return NextResponse.json({ error: "Forbidden: User accounts cannot execute this action." }, { status: 403 });
         }
-        if (accountRole === "ENTERPRISE" && !MERCHANT_SPONSORED_ACTIONS.has(action)) {
-            return NextResponse.json({ error: "Forbidden: Merchant account action is not allowlisted for sponsorship." }, { status: 403 });
+        if (accountRole === "ENTERPRISE" && !MERCHANT_ALLOWED_ACTIONS.has(action)) {
+            return NextResponse.json({ error: "Forbidden: Merchant account action is not allowlisted." }, { status: 403 });
         }
 
         /* Enforce Mandatory Tier 1 KYC Check: every user or merchant must be at least Tier 1 before making transactions */
@@ -303,6 +309,9 @@ export async function POST(request: Request) {
            instead fall back to a request-scoped key so retries dedupe only when the client reuses
            its x-request-id, never blocking a legitimately distinct future operation. */
         let durableIdempotencyKey: string | null = null;
+        /* Set only for an ordinary user-paid transfer (transferUsdc); drives the network-fee balance
+           guard and the fee-recovery charge below. Left null for sponsored/other actions. */
+        let userPaidTransferAmount: bigint | null = null;
 
         switch (action) {
             case "approveUsdc": {
@@ -370,6 +379,7 @@ export async function POST(request: Request) {
                 contractAbi = ERC20_ABI;
                 functionName = "transfer";
                 finalArgs = [getAddress(to), transferAmount];
+                userPaidTransferAmount = transferAmount;
                 break;
             }
             case "withdraw": {
@@ -505,18 +515,38 @@ export async function POST(request: Request) {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
             }
 
-            /* Sponsorship is a precondition for user-initiated execution: if it cannot be
-               confirmed, abort before custody submits anything so the no-funds-touched guarantee
-               remains true. Custody is detected server-side — Circle SCA wallets resolve through
-               Gas Station with no sponsor transfer; only legacy EOA wallets receive a bounded,
-               durably recorded top-up. */
-            await requireSponsoredGas({
-                wallet: wallet.toLowerCase(),
-                action: "execute_tx",
-                requestKey: `execute-tx:${requestId}:${action}:${wallet.toLowerCase()}`,
-            });
+            /* Classify who pays gas from the concrete action, server-side (never a client flag). This
+               pass narrows only the ordinary peer transfer (transferUsdc) to USER-PAID: it skips
+               sponsorship and recovers the Arc network fee from the sender. Every other action keeps
+               its existing sponsored behavior and is migrated in a later pass. */
+            const gasDecision = classifyGasPayer({ kind: "execute_action", action });
+            const isUserPaidTransfer = action === "transferUsdc" && userPaidTransferAmount !== null && !gasDecision.sponsored;
+            let networkFeeMicros = BigInt(0);
+            let networkFeeUsdc = "0";
+            if (isUserPaidTransfer) {
+                const fee = await estimateArcNetworkFeeMicros(1);
+                networkFeeMicros = fee.feeMicros;
+                networkFeeUsdc = fee.feeUsdc;
+                const bal = await readUsdcBalance(wallet.toLowerCase()).catch(() => null);
+                if (bal !== null && bal < (userPaidTransferAmount as bigint) + fee.feeMicros) {
+                    return NextResponse.json({
+                        error: `Insufficient balance for this transfer plus the ~${fee.feeUsdc} USDC Arc network fee.`,
+                        code: "INSUFFICIENT_BALANCE_FOR_FEE",
+                    }, { status: 422 });
+                }
+            } else {
+                /* Sponsorship is a precondition for sponsored execution: if it cannot be confirmed,
+                   abort before custody submits anything so the no-funds-touched guarantee holds.
+                   Custody is detected server-side — Circle SCA wallets resolve through Gas Station
+                   with no sponsor transfer; only legacy EOA wallets get a bounded, durable top-up. */
+                await requireSponsoredGas({
+                    wallet: wallet.toLowerCase(),
+                    action: "execute_tx",
+                    requestKey: `execute-tx:${requestId}:${action}:${wallet.toLowerCase()}`,
+                });
+            }
 
-            /* Custody routing: execute through Circle's contract-execution API (Gas Station pays gas). */
+            /* Custody routing: execute through Circle's contract-execution API. */
             const custody = await getWalletCustody(wallet.toLowerCase());
 
             const { txHash } = await custody.executeContract({
@@ -527,8 +557,19 @@ export async function POST(request: Request) {
                 /* Domain key where the op is terminal/idempotent; otherwise request-scoped
                    (client can reuse x-request-id to make a retry dedupe). */
                 idempotencyKey: durableIdempotencyKey ?? deterministicIdempotencyKey(`req:${requestId}:${action}`),
+                gasPayer: isUserPaidTransfer ? "wallet" : "platform",
             });
             console.log(`[execute-tx] executed ${functionName} via ${custody.kind} custody: ${txHash}`);
+
+            /* User-paid peer transfer: recover the Arc network fee from the sender after it settled.
+               Logged-not-thrown on failure inside chargeNetworkFee — the transfer is irreversible. */
+            if (isUserPaidTransfer && networkFeeMicros > BigInt(0)) {
+                await chargeNetworkFee({
+                    wallet: wallet.toLowerCase(),
+                    feeMicros: networkFeeMicros,
+                    requestKey: `execute-tx-fee:${requestId}:${wallet.toLowerCase()}`,
+                });
+            }
 
             let boundReceiptId: string | undefined;
             try {
@@ -560,7 +601,7 @@ export async function POST(request: Request) {
                 }).catch((err) => console.error("Failed to record withdrawal DM:", err));
             }
 
-            return NextResponse.json({ success: true, txHash, receiptId: boundReceiptId }, { status: 200 });
+            return NextResponse.json({ success: true, txHash, receiptId: boundReceiptId, networkFeeUsdc }, { status: 200 });
 
         } catch (err: any) {
             console.error("EVM execution error:", err);

@@ -13,17 +13,17 @@ test("customer checkout renders merchant names without wallet-address affordance
     ]);
 
     assert.match(checkout, /Pay \{displayMerchantName\}\?/);
-    assert.match(checkout, /merchantDisplayName\(linkData\?\.merchant_display_name\)/);
+    assert.match(checkout, /resolveMerchantDisplayName\(linkData\?\.merchant_display_name\)/);
     assert.doesNotMatch(checkout, /\{linkData\?\.merchant_address\}/);
     assert.doesNotMatch(checkout, /arcscan\.app\/.*\$\{.*tx/i);
     assert.match(checkout, /if \(pendingVerification\) \{\s*retryPendingVerification\(\)/);
     assert.match(checkout, /pendingVerification[\s\S]*Continue verification/);
 
-    assert.match(checkoutPage, /merchant_display_name: merchantDisplayName\(alias\?\.alias\)/);
+    assert.match(checkoutPage, /merchant_display_name: resolveMerchantDisplayName\(merchant\?\.display_name\)/);
     assert.doesNotMatch(checkoutPage, /merchant_address\.slice/);
     assert.doesNotMatch(subscribe, /Merchant wallet/i);
     assert.doesNotMatch(subscribe, /\{plan\.merchantAddress\}/);
-    assert.match(subscribePage, /merchantDisplayName\(plan\.merchant_alias\)/);
+    assert.match(subscribePage, /resolveMerchantDisplayName\(plan\.merchant_display_name\)/);
 });
 
 test("receipts and customer activity keep proof inside SubScript", async () => {
@@ -69,9 +69,9 @@ test("customer APIs use neutral names instead of raw-address fallbacks", async (
         source("src/app/api/user/dms/route.ts"),
     ]);
 
-    assert.match(subscriptions, /merchantName: merchantDisplayName\(aliasInfo\?\.alias\)/);
-    assert.match(vaults, /merchantName: merchantDisplayName/);
-    assert.match(dms, /senderName:[\s\S]*merchantDisplayName/);
+    assert.match(subscriptions, /merchantName: resolveMerchantDisplayName\(sub\.merchant\.displayName\)/);
+    assert.match(vaults, /merchantName: resolveMerchantDisplayName/);
+    assert.match(dms, /senderName:[\s\S]*resolveMerchantDisplayName/);
     assert.doesNotMatch(subscriptions, /merchantName:[^\n]*sub\.merchantAddress/);
     assert.doesNotMatch(vaults, /merchantName:[^\n]*\|\| v\.merchantAddress/);
 });

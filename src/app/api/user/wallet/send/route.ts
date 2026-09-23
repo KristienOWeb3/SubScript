@@ -27,7 +27,8 @@ import {
     finalizeSpendingLimitOperation,
     releaseSpendingLimitOperation,
 } from "@/lib/spendingLimits";
-import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { estimateArcNetworkFeeMicros, chargeNetworkFee } from "@/lib/sponsor/userPaidTransfer";
+import { readUsdcBalance } from "@/lib/vault/onchain";
 
 export const maxDuration = 120;
 
@@ -160,6 +161,19 @@ export async function POST(request: Request) {
             await assertNotBlocked(fundingWallet, recipient.receiver, "sending funds");
         }
 
+        /* USER→USER sends are user-paid on Arc: estimate the network fee and require the wallet to
+           hold the full amount PLUS that fee, so the recipient always receives the exact amount and
+           the fee-recovery transfer after the loop cannot fail for lack of funds. No gas sponsorship
+           is requested here — this outflow must never draw on the merchant-commerce budget. */
+        const feeEstimate = await estimateArcNetworkFeeMicros(parsedRecipients.length);
+        const onChainBalance = await readUsdcBalance(fundingWallet).catch(() => null);
+        if (onChainBalance !== null && onChainBalance < totalAmountMicros + feeEstimate.feeMicros) {
+            return NextResponse.json({
+                error: `Insufficient balance. Sending ${formatAmount(totalAmountMicros)} USDC needs about ${feeEstimate.feeUsdc} USDC for the Arc network fee, and this wallet has ${formatAmount(onChainBalance)} USDC.`,
+                code: "INSUFFICIENT_BALANCE_FOR_FEE",
+            }, { status: 422 });
+        }
+
         // Tier-based cumulative spending limit enforcement
         /* Keyed to the funding wallet: limits are strictly derived from the account's KYC Tier.
            Cumulative outflows across rolling 24h, 7d, and 30d windows are checked and reserved
@@ -267,15 +281,9 @@ export async function POST(request: Request) {
         for (let i = 0; i < parsedRecipients.length; i++) {
             const item = parsedRecipients[i];
             try {
-                /* Wallet sends previously bypassed the sponsorship policy entirely, so disabling
-                   sponsorship leaked a raw Circle paymaster error after budget reservation. Gate
-                   each irreversible transfer with a recipient-stable key before submission. */
-                await requireSponsoredGas({
-                    wallet: fundingWallet,
-                    action: "wallet_send",
-                    requestKey: `wallet-send:${normalizedSender}:${requestId}:${item.receiver}:${item.amountMicros.toString()}`,
-                    principalRequiredWei: 0n,
-                });
+                /* USER→USER transfer: the sender pays Arc network gas via fee-recovery after the
+                   batch settles. No requireSponsoredGas — this must never consume the merchant-
+                   commerce sponsorship budget. gasPayer:"wallet" marks the call user-paid. */
                 const { txHash } = await custody.executeContract({
                     contractAddress: USDC_NATIVE_GAS_ADDRESS,
                     abi: USDC_ERC20_ABI,
@@ -284,6 +292,7 @@ export async function POST(request: Request) {
                     idempotencyKey: deterministicIdempotencyKey(
                         `wallet-send:${normalizedSender}:${requestId}:${item.receiver}:${item.amountMicros.toString()}`
                     ),
+                    gasPayer: "wallet",
                 });
                 settledMicros += item.amountMicros;
                 txs.push({
@@ -341,6 +350,22 @@ export async function POST(request: Request) {
             spendingOperationId = null;
         }
 
+        /* Recover the Arc network fee from the sender for what actually settled. Charged once for the
+           batch, only after transfers mined (never for a send that didn't happen), scaled to the
+           settled count so a partial batch is fee'd only for the transfers that went through. A
+           failure is logged inside chargeNetworkFee, never thrown — the sends are irreversible. */
+        let networkFeeMicros = BigInt(0);
+        if (txs.length > 0) {
+            networkFeeMicros = txs.length === parsedRecipients.length
+                ? feeEstimate.feeMicros
+                : (feeEstimate.feeMicros * BigInt(txs.length)) / BigInt(parsedRecipients.length);
+            await chargeNetworkFee({
+                wallet: fundingWallet,
+                feeMicros: networkFeeMicros,
+                requestKey: `wallet-send-fee:${normalizedSender}:${requestId}`,
+            });
+        }
+
         /*
          * Receipts for whatever actually settled, to both sides, whether the batch finished or
          * stopped early. Wallet-to-wallet sends were the last settlement path that mailed nobody:
@@ -389,6 +414,7 @@ export async function POST(request: Request) {
                 success: false,
                 partial: sent > 0,
                 transfers: txs,
+                networkFeeUsdc: formatAmount(networkFeeMicros),
                 failedRecipient: failure,
                 code: isPaymasterError ? "CIRCLE_PAYMASTER_POLICY_REQUIRED" : failure.code,
                 error: sent > 0
@@ -400,6 +426,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
             success: true,
             transfers: txs,
+            networkFeeUsdc: formatAmount(networkFeeMicros),
         }, { status: 200 });
     } catch (error: any) {
         /* A throw after the reservation but before the release path ran (a custody lookup that

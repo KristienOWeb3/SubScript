@@ -27,7 +27,7 @@ import { withPgClient } from "@/lib/serverPg";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
-import { merchantDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import {
     remainingMicros,
     isMonthlyWindowStale,
@@ -426,13 +426,14 @@ async function runVaultTopUp(request: Request) {
                    record of an unattended debit, so they must name the merchant the user knows,
                    not a raw address. */
                 const merchantAddresses = Array.from(new Set(due.map((v) => v.merchantAddress.toLowerCase())));
-                const aliases = await prisma.addressAlias.findMany({
-                    where: { address: { in: merchantAddresses } },
+                const merchantRows = await prisma.merchant.findMany({
+                    where: { walletAddress: { in: merchantAddresses } },
+                    select: { walletAddress: true, displayName: true },
                 });
-                const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
+                const merchantNameMap = new Map(merchantRows.map((m) => [m.walletAddress.toLowerCase(), m.displayName]));
 
                 for (const row of due) {
-                    const merchantName = merchantDisplayName(aliasMap.get(row.merchantAddress.toLowerCase()));
+                    const merchantName = resolveMerchantDisplayName(merchantNameMap.get(row.merchantAddress.toLowerCase()));
                     try {
                         results.push(await topUpVault(row, merchantName));
                     } catch (err: any) {

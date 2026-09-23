@@ -23,32 +23,32 @@ import { defineChain } from "viem";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { subscriptConfig } from "./subscript.config";
 
-export const arcTestnet = defineChain({
+export const arcChain = defineChain({
   id: subscriptConfig.chainId,
-  name: "Arc Testnet",
+  name: subscriptConfig.networkName,
   nativeCurrency: {
-    name: "USDC",
-    symbol: "USDC",
-    decimals: 6,
+    name: subscriptConfig.nativeCurrency.name,
+    symbol: subscriptConfig.nativeCurrency.symbol,
+    decimals: subscriptConfig.nativeCurrency.decimals,
   },
   rpcUrls: {
     default: {
-      http: ["https://rpc.testnet.arc.network"],
+      http: [subscriptConfig.rpcUrl],
     },
   },
   blockExplorers: {
     default: {
       name: "Arc Explorer",
-      url: "https://explorer.arc.network",
+      url: subscriptConfig.explorerUrl,
     },
   },
 });
 
 export const config = createConfig({
-  chains: [arcTestnet],
+  chains: [arcChain],
   connectors: [injected()],
   transports: {
-    [subscriptConfig.chainId]: http(),
+    [subscriptConfig.chainId]: http(subscriptConfig.rpcUrl),
   },
   ssr: true,
 });

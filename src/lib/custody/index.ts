@@ -31,6 +31,13 @@ export interface ContractCall {
      * `deterministicIdempotencyKey(seed)` to build a well-formed UUID from an application seed.
      */
     idempotencyKey?: string;
+    /**
+     * Explicit gas-payer policy for this call. "platform" (default) is a sponsored merchant-commerce
+     * or keeper operation; "wallet" marks a USER-PAID call (peer send / withdrawal) whose gas the
+     * sender bears via fee-recovery. A "wallet" call must never be routed through the sponsorship
+     * orchestrator or a sponsor top-up — the classifier in @/lib/sponsor/policy decides which it is.
+     */
+    gasPayer?: "platform" | "wallet";
 }
 
 /**

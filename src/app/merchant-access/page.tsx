@@ -116,9 +116,7 @@ export default function MerchantAccessPage() {
             <div className="relative z-10 w-full max-w-lg py-10">
                 <div className="text-center mb-8">
                     <Link href="/" className="inline-flex items-center gap-2.5 group mb-5">
-                        <div className="w-9 h-9 rounded-lg bg-[#2775CA] flex items-center justify-center p-2 shadow-sm">
-                            <img src="/logo-transparent.png" alt="SubScript Logo" className="w-full h-full object-contain brightness-0 invert" />
-                        </div>
+                        <img src="/logo-colored.png" alt="SubScript Logo" className="w-9 h-9 rounded-lg object-contain shadow-xs group-hover:scale-105 transition-transform" />
                         <span className="text-lg font-black tracking-tight text-[#111827]">SubScript</span>
                     </Link>
                     <h1 className="text-2xl font-black text-[#111827] tracking-tight">

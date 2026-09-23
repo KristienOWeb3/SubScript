@@ -20,7 +20,7 @@ const SUPPORTED_FRAMEWORKS = ["next-app", "next-pages", "react-spa", "express"] 
 type SupportedFramework = (typeof SUPPORTED_FRAMEWORKS)[number];
 
 const NON_INTERACTIVE_EXAMPLE =
-    "npx @subscriptonarc/cli init --key sk_test_... --merchant 0x... --framework next-app --yes";
+    "npx @subscriptonarc/cli init --key sk_live_... --merchant 0x... --framework next-app --yes";
 
 function printAsciiBanner() {
     log(String.raw`
@@ -56,7 +56,7 @@ async function runWizard() {
 
     const secretKeyResult = await text({
         message: "Enter your SubScript Secret Key (server-side payment and subscription API key):",
-        placeholder: "sk_test_...",
+        placeholder: "sk_live_... (or sk_test_...)",
         validate(value) {
             if (!value || value.trim().length === 0) {
                 return "Secret key is required.";

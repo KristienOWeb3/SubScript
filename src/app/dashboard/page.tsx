@@ -21,6 +21,7 @@ import SendWalletModal from "@/components/SendWalletModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import { resolveScannedTarget } from "@/lib/qr/scanTargets";
 import ConfirmModal from "@/components/ConfirmModal";
+import MerchantDisplayNameModal from "@/components/dashboard/MerchantDisplayNameModal";
 import DurationPicker from "@/components/DurationPicker";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import SupportChatModal from "@/components/support/SupportChatModal";
@@ -78,7 +79,7 @@ const tabs = [
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
-    { id: "advanced", label: "Advanced", icon: Sliders },
+    { id: "advanced", label: "Advanced", icon: Zap },
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
@@ -793,6 +794,10 @@ export default function DashboardPage() {
     };
 
     const [userSettings, setUserSettings] = useState<any>(null);
+    /* One-time merchant display-name onboarding. The authoritative gate is displayNameLocked from
+       the server; the ref just stops it re-popping after "Decide later" within this page session. */
+    const [showNameOnboarding, setShowNameOnboarding] = useState(false);
+    const nameOnboardingHandledRef = useRef(false);
     const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
     const [settingsTxCategory, setSettingsTxCategory] = useState<string>("all");
     const [settingsTxStatus, setSettingsTxStatus] = useState<string>("all");
@@ -828,6 +833,10 @@ export default function DashboardPage() {
             const data = await res.json();
             if (data.success) {
                 setUserSettings(data.settings);
+                /* Prompt the self-serve merchant to confirm their default display name, once. */
+                if (data.settings?.displayNameLocked === false && !nameOnboardingHandledRef.current) {
+                    setShowNameOnboarding(true);
+                }
                 setChurnQuestionDraft(data.settings?.churnSurveyQuestion || "");
                 setSettingsTransactions(data.receipts);
                 if (data.settings.alias) {
@@ -3369,12 +3378,33 @@ Please complete the following implementation tasks:
                     <div className="space-y-6">
                         {renderBackHeader("Profile & Branding", "Manage your merchant logo, identity, and cancellation feedback question.")}
 
+                        {/* Business identity: immutable Merchant ID + admin-governed display name.
+                            Rendered without emojis or a lock icon by design. */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+                            <h3 className="text-xs font-semibold text-black">Business identity</h3>
+                            <div className="p-4 rounded-2xl border border-black/10 bg-[#D4E3E8] flex items-center justify-between">
+                                <div>
+                                    <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Merchant ID</p>
+                                    <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{userSettings?.merchantId || "—"}</h4>
+                                </div>
+                                <span className="px-3 py-1.5 border border-black/15 bg-white text-black/70 text-[10px] font-semibold rounded-full select-none">
+                                    Permanent
+                                </span>
+                            </div>
+                            <p className="text-sm text-[#082824] font-sans leading-relaxed">
+                                <span className="font-semibold">Verified Business Display Name:</span>{" "}
+                                <span className="font-bold">{userSettings?.displayName || "Not set"}</span>{" "}
+                                (To request a change,{" "}
+                                <a href="mailto:support@subscriptonarc.com" className="text-[#8AB4DB] underline underline-offset-2 hover:text-[#6f9bc4]">contact SubScript Support</a>).
+                            </p>
+                        </div>
+
                         <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
                             <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-black/10">
                                 <div className="relative group shrink-0">
                                     <div className="w-20 h-20 rounded-full border border-black/15 overflow-hidden bg-[#D4E3E8] flex items-center justify-center text-[#082824] relative">
-                                        {userSettings.profilePic ? (
-                                            <img src={userSettings.profilePic} alt="Merchant Avatar" className="w-full h-full object-cover" />
+                                        {userSettings?.profilePic ? (
+                                            <img src={userSettings?.profilePic} alt="Merchant Avatar" className="w-full h-full object-cover" />
                                         ) : (
                                             <User className="w-8 h-8 text-[#082824]" />
                                         )}
@@ -3415,7 +3445,7 @@ Please complete the following implementation tasks:
                                     <button
                                         type="button"
                                         onClick={() => handleUpdatePayoutDestination(payoutDestinationDraft)}
-                                        disabled={savingSettingsField === "payoutDestination" || payoutDestinationDraft.trim() === (userSettings.payoutDestination || "")}
+                                        disabled={savingSettingsField === "payoutDestination" || payoutDestinationDraft.trim() === (userSettings?.payoutDestination || "")}
                                         className="rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] px-5 py-2.5 text-xs font-semibold text-[#082824] disabled:cursor-not-allowed disabled:opacity-40"
                                     >
                                         {savingSettingsField === "payoutDestination" ? "Saving…" : "Save Destination"}
@@ -3468,11 +3498,11 @@ Please complete the following implementation tasks:
                                     ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong>. You can change it again then. Business names cannot be unregistered.</>
                                     : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully, because after a change you won&apos;t be able to switch again for a year.</>}
                             </p>
-                            {userSettings.alias ? (
+                            {userSettings?.alias ? (
                                 <div className="p-4 rounded-2xl border border-black/10 bg-[#D4E3E8] flex items-center justify-between">
                                     <div>
                                         <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Registered Alias</p>
-                                        <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{userSettings.alias}</h4>
+                                        <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{userSettings?.alias}</h4>
                                     </div>
                                     <span className="px-3 py-1.5 border border-black/15 bg-white text-black/70 text-[10px] font-semibold rounded-full select-none">
                                         Permanent
@@ -4586,14 +4616,14 @@ Please complete the following implementation tasks:
                                     <h4 className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-2">
                                         <Shield className="w-4 h-4 text-[#082824] dark:text-emerald-400" /> Business Verification
                                     </h4>
-                                    {userSettings.verified ? (
+                                    {userSettings?.verified ? (
                                         <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30">Verified</span>
                                     ) : (
                                         <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-amber-500/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30">Unverified</span>
                                     )}
                                 </div>
                                 <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
-                                    {userSettings.verified
+                                    {userSettings?.verified
                                         ? "Your merchant account is verified. Checkout links will display a verified trust badge to customers."
                                         : "Complete business verification to gain verified status and remove checkout warnings."}
                                 </p>
@@ -4899,7 +4929,7 @@ Please complete the following implementation tasks:
                                     <div>
                                         <h3 className="text-sm sm:text-base font-bold text-[#082824] mb-1">Rotation / Roll Credentials</h3>
                                         <p className="text-xs sm:text-sm text-black/60 max-w-md">
-                                            Roll your API key pair instantly. Old keys are immediately invalidated for safety in this sandbox.
+                                            Roll your API key pair instantly. Old keys are immediately invalidated for safety.
                                             {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one. The new key is revealed and copied once, here."}
                                         </p>
                                     </div>
@@ -5676,6 +5706,19 @@ Please complete the following implementation tasks:
             </main>
             </div>
             </div>
+            <MerchantDisplayNameModal
+                open={showNameOnboarding}
+                defaultName={userSettings?.displayName || ""}
+                onSaved={(name) => {
+                    setUserSettings((prev: any) => ({ ...prev, displayName: name, displayNameLocked: true }));
+                    nameOnboardingHandledRef.current = true;
+                    setShowNameOnboarding(false);
+                }}
+                onClose={() => {
+                    nameOnboardingHandledRef.current = true;
+                    setShowNameOnboarding(false);
+                }}
+            />
             <SupportChatModal
                 open={supportChatOpen}
                 onClose={() => setSupportChatOpen(false)}
@@ -5793,11 +5836,13 @@ Please complete the following implementation tasks:
                                     [10, 10, 10, 0], // Top-right eye
                                     [10, 0, 10, 10]  // Bottom-left eye
                                 ]}
-                                logoImage="/logo.png"
+                                logoImage="/logo-colored.png"
                                 logoWidth={38}
                                 logoHeight={38}
+                                logoOpacity={1}
                                 removeQrCodeBehindLogo={true}
                                 logoPadding={2}
+                                logoPaddingStyle="square"
                             />
                         </div>
 

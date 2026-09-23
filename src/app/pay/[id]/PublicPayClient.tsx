@@ -23,7 +23,7 @@ import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { ROUTER_DEPOSIT_ABI, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
-import { merchantDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import { shouldAutoReturnToMerchant, type CheckoutArrival } from "@/lib/paymentLinks/arrival";
 import { getDashboardUrl } from "@/utils/navigation";
 import CheckoutSkeleton from "./CheckoutSkeleton";
@@ -150,7 +150,10 @@ export default function PublicPayClient({
     });
 
     const [linkData, setLinkData] = useState<any>(initialLinkData);
-    const displayMerchantName = merchantDisplayName(linkData?.merchant_display_name);
+    /* Estimated Arc network fee shown before confirming a peer (user-to-user) request, which is
+       user-paid. Merchant checkouts stay sponsored and show no network fee. */
+    const [peerNetworkFeeUsdc, setPeerNetworkFeeUsdc] = useState<number | null>(null);
+    const displayMerchantName = resolveMerchantDisplayName(linkData?.merchant_display_name);
     const [isLoading, setIsLoading] = useState(!initialLinkData);
     const [error, setError] = useState<string | null>(null);
     const hasInitialSingleUseSettlement = Boolean(
@@ -879,6 +882,18 @@ export default function PublicPayClient({
 
         checkRole();
     }, [address, isUserRequest]);
+
+    /* Peer requests are user-paid: fetch the Arc network-fee estimate so the payer sees it in the
+       final review. Merchant checkouts are sponsored and skip this. */
+    useEffect(() => {
+        if (!isUserRequest) { setPeerNetworkFeeUsdc(null); return; }
+        let cancelled = false;
+        fetch("/api/user/wallet/estimate-fee?recipients=1")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => { if (!cancelled && d?.feeUsdc) setPeerNetworkFeeUsdc(Number(d.feeUsdc)); })
+            .catch(() => { /* best-effort UI; the server charges the real fee at settlement */ });
+        return () => { cancelled = true; };
+    }, [isUserRequest]);
 
     const handleConnect = async () => {
         /* Without an injected provider the wagmi connector is still registered but can never
@@ -2547,6 +2562,12 @@ export default function PublicPayClient({
                             <div className="space-y-3 rounded-2xl border border-black/15 bg-[#f8fafc] p-4 text-xs">
                                 <div className="flex justify-between gap-4"><span className="text-black/60">Merchant</span><span className="text-right font-bold text-[#111827]">{displayMerchantName}</span></div>
                                 <div className="flex justify-between gap-4"><span className="text-black/60">You pay</span><span className="font-bold text-[#111827]">{(Number(linkData?.amount_usdc || 0) / 1_000_000).toFixed(2)} USDC</span></div>
+                                {isUserRequest && (
+                                    <>
+                                        <div className="flex justify-between gap-4"><span className="text-black/60">Network fee (Arc gas)</span><span className="font-bold text-[#111827]">{peerNetworkFeeUsdc !== null ? `+${peerNetworkFeeUsdc.toFixed(4)}` : "≈ …"} USDC</span></div>
+                                        <div className="flex justify-between gap-4 border-t border-black/10 pt-2"><span className="text-black/60">Total debited</span><span className="font-bold text-[#111827]">{((Number(linkData?.amount_usdc || 0) / 1_000_000) + (peerNetworkFeeUsdc || 0)).toFixed(4)} USDC</span></div>
+                                    </>
+                                )}
                                 {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined && <div className="flex justify-between gap-4"><span className="text-black/60">Estimated value</span><span className="font-bold text-[#111827]">≈ {fiatSymbol}{displayAmount.toFixed(2)} {displayCurrency}</span></div>}
                             </div>
                             <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-relaxed text-amber-900/80">Only continue if you recognize {displayMerchantName} and the amount is correct.</p>

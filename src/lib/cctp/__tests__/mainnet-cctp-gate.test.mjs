@@ -5,12 +5,14 @@ import test from "node:test";
 const root = new URL("../../../../", import.meta.url);
 const source = (path) => readFile(new URL(path, root), "utf8");
 
-test("Arc CCTP is fail-closed in production", async () => {
+test("Arc CCTP is enabled and pinned to the verified mainnet domain", async () => {
   const constants = await source("src/lib/contracts/constants.ts");
 
-  assert.match(constants, /export const ARC_CCTP_ENABLED = !isProd/);
-  assert.match(constants, /Arc Testnet CCTP domain ID/);
-  assert.doesNotMatch(constants, /Domain ID: 26 for Arc Testnet \/ Arc Mainnet/);
+  /* Mainnet CCTP is intentionally enabled (Circle's Arc addresses verified). The real safety net is
+     no longer a blanket gate but the per-route gas fail-closed check; the entry-point guards below
+     still exist so the flag can be flipped back off in one line if needed. */
+  assert.match(constants, /export const ARC_CCTP_ENABLED = true/);
+  assert.match(constants, /export const ARC_CCTP_DOMAIN_ID = 26 as const/);
 });
 
 test("money-moving CCTP routes reject mainnet before side effects", async () => {

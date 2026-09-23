@@ -8,7 +8,6 @@
 
 import crypto from "crypto";
 import { pgMaybeOne } from "@/lib/serverPg";
-import { merchantDisplayName } from "@/lib/identityDisplay";
 import {
     formatUsdc,
     getWalletEmailPreference,
@@ -41,7 +40,7 @@ type PaymentReceipt = {
     payerAddress: string;
     paymentTitle?: string | null;
     /**
-     * The merchant's registered name, resolved from address_aliases by
+     * The merchant's governed display name, resolved from merchants.display_name by
      * sendPaymentReceiptEmails. Never the merchant_name supplied with an individual checkout:
      * that field is branding metadata and must not be able to name a different payee.
      */
@@ -183,15 +182,15 @@ export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
     });
 }
 
-/** The merchant's registered handle, or null when there is none or it is marked anonymous. */
+/** The merchant's governed display name, or null when none is set. */
 async function getMerchantAliasName(merchantAddress: string): Promise<string | null> {
     try {
-        const row = await pgMaybeOne<{ alias: string | null; is_anonymous: boolean | null }>(
-            `select alias, is_anonymous from address_aliases where address = $1 limit 1`,
+        const row = await pgMaybeOne<{ display_name: string | null }>(
+            `select display_name from merchants where wallet_address = $1 limit 1`,
             [merchantAddress.toLowerCase()]
         );
-        if (!row?.alias || row.is_anonymous) return null;
-        return merchantDisplayName(row.alias);
+        const name = row?.display_name?.trim();
+        return name || null;
     } catch (error) {
         console.error("Merchant name lookup failed", error instanceof Error ? error.message : "Unknown error");
         return null;

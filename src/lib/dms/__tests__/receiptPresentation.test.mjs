@@ -45,12 +45,12 @@ test("receipt DMs use exact human-readable USDC amounts and a local receipt iden
     );
 });
 
-test("the settlement worker uses canonical aliases and never checkout-supplied identity or URLs", async () => {
+test("the settlement worker uses the merchant's governed display name, never checkout-supplied identity or URLs", async () => {
     const worker = await readFile(new URL("../../payments/paymentLinkVerificationWorker.ts", import.meta.url), "utf8");
-    const receiptEffect = worker.slice(worker.indexOf("if (!existingReceipt)"), worker.indexOf("await sendPaymentReceiptEmails"));
+    const receiptEffect = worker.slice(worker.indexOf("if (!existingReceipt)"), worker.indexOf("If this was a sponsored gift checkout"));
 
-    assert.match(receiptEffect, /from\("address_aliases"\)/);
-    assert.match(receiptEffect, /safeReceiptPayeeLabel\(merchantAlias\?\.alias, job\.merchant_address\)/);
+    assert.match(receiptEffect, /from\("merchants"\)/);
+    assert.match(receiptEffect, /safeReceiptPayeeLabel\(merchantRecord\?\.display_name, job\.merchant_address\)/);
     assert.match(receiptEffect, /buildReceiptDmDescription/);
     assert.doesNotMatch(receiptEffect, /merchant_name_snapshot\?\.trim/);
     assert.doesNotMatch(receiptEffect, /shareUrl/);

@@ -174,6 +174,7 @@ export async function POST(request: Request) {
                 } catch (dbErr: any) {
                     if (dbErr.message?.includes('challenge_id') || dbErr.message?.includes('column')) {
                         await client.query(`ALTER TABLE public.otp_codes ADD COLUMN IF NOT EXISTS challenge_id UUID NOT NULL DEFAULT gen_random_uuid()`).catch(() => {});
+                        await client.query(`ALTER TABLE public.otp_codes ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()`).catch(() => {});
                         try {
                             return await client.query(
                                 `insert into otp_codes (email, code, expires_at, purpose, wallet_address)

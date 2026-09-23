@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
 import { formatPromotion, isPromotionLive, type PromotionRow } from "@/lib/subscriptions/promotions";
 
@@ -42,17 +43,15 @@ export async function GET(_request: Request, { params }: RouteContext) {
         };
 
         const merchantAddress = plan.merchantAddress.toLowerCase();
-        const [alias, merchant, role] = await Promise.all([
-            prisma.addressAlias.findUnique({ where: { address: merchantAddress } }).catch(() => null),
+        const [merchant, role] = await Promise.all([
             prisma.merchant.findUnique({
                 where: { walletAddress: merchantAddress },
-                select: { verified: true, profilePic: true },
+                select: { verified: true, profilePic: true, displayName: true },
             }).catch(() => null),
             getAccountRole(merchantAddress).catch(() => null),
         ]);
 
-        const merchantName = alias?.alias
-            || `${merchantAddress.slice(0, 6)}...${merchantAddress.slice(-4)}`;
+        const merchantName = resolveMerchantDisplayName(merchant?.displayName);
 
         /* Live introductory offer on catalog plans (checkout sessions carry none). The
            subscribe page uses it to disclose due-today vs recurring price BEFORE the
@@ -86,7 +85,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
             merchant: {
                 address: merchantAddress,
                 name: merchantName,
-                alias: alias?.alias || null,
+                alias: null,
                 profilePic: merchant?.profilePic || null,
                 verified: Boolean(merchant?.verified),
                 isEnterprise: role === "ENTERPRISE",

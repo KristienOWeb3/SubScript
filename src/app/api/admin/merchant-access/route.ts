@@ -15,6 +15,7 @@ import {
     findConflictingAccountForEmail,
     generateInviteToken,
 } from "@/lib/merchants/accessGrants";
+import { sanitizeDisplayName } from "@/lib/merchants/identity";
 
 /* Merchant access review: the console side of invite-only merchant signup.
  *
@@ -87,6 +88,7 @@ export async function GET(request: Request) {
                 revokedBy: g.revokedBy,
                 revokeReason: g.revokeReason,
                 note: g.note,
+                displayName: g.displayName,
                 createdAt: g.createdAt.toISOString(),
             })),
             viewerIsRoot: auth.admin.isRoot,
@@ -123,6 +125,10 @@ export async function POST(request: Request) {
 async function grant(request: Request, actor: string, body: any) {
     const email = normalizeAccountEmail(body?.email);
     const note = typeof body?.note === "string" ? body.note.trim().slice(0, 500) || null : null;
+    /* The official business display name the merchant's account is initialized with (and locked to)
+       when they claim this invite. Decoupled from any .sub handle. Optional — an admin can leave it
+       and set it later from the merchant catalog. */
+    const displayName = sanitizeDisplayName(body?.displayName) || null;
     const requestId = typeof body?.requestId === "string" && body.requestId.trim() ? body.requestId.trim() : null;
     const sendEmail = body?.sendEmail !== false;
 
@@ -160,13 +166,14 @@ async function grant(request: Request, actor: string, body: any) {
         update: {
             grantedBy: actor,
             note: note ?? existing?.note ?? null,
+            displayName: displayName ?? existing?.displayName ?? null,
             requestId: requestId ?? existing?.requestId ?? null,
             inviteToken: token,
             revokedAt: null,
             revokedBy: null,
             revokeReason: null,
         },
-        create: { email, grantedBy: actor, note, requestId, inviteToken: token },
+        create: { email, grantedBy: actor, note, displayName, requestId, inviteToken: token },
     });
 
     if (requestId) {
@@ -208,7 +215,7 @@ async function grant(request: Request, actor: string, body: any) {
         target: email,
         /* Never the token: an audit log is read by more people than the grant itself, and the link
            is re-readable from the console by anyone who needs it. */
-        detail: { requestId, note, emailed, revived: Boolean(existing?.revokedAt) },
+        detail: { requestId, note, displayName, emailed, revived: Boolean(existing?.revokedAt) },
         request,
     });
 
@@ -219,6 +226,7 @@ async function grant(request: Request, actor: string, body: any) {
             grantedBy: actor,
             inviteUrl: url,
             note,
+            displayName,
             claimedAt: null,
             createdAt: grantRow.createdAt.toISOString(),
         },

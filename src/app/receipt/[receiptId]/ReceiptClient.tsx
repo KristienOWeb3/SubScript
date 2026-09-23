@@ -6,8 +6,6 @@ import { useAccount, useSignMessage, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { CheckCircle2, Lock, UserPlus, Loader2, ExternalLink, ShieldAlert, Key, Copy, Check, Download } from "@/components/icons";
 import { Identity } from "@/components/Identity";
-import { resolveAliasForAddress } from "@/lib/alias/resolve";
-import { merchantDisplayName } from "@/lib/identityDisplay";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import { financialStatusMeta } from "@/components/FinancialStatusBadge";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
@@ -138,20 +136,12 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
         fetchReceiptDetails();
     }, [fetchReceiptDetails]);
 
-    /* The headline needs the merchant's name as a STRING for the last fallback, which the
-       Identity component can't hand back. Same cached resolver Identity uses, so the two agree
-       and only one request goes out. */
+    /* The headline needs the merchant's name as a STRING. It arrives server-resolved on the receipt
+       (the frozen merchant_name_snapshot from link creation, else the merchant's governed
+       display_name) — decoupled from any .sub handle. */
     useEffect(() => {
-        const address = receipt?.merchant_address;
-        if (!address) return;
-        let active = true;
-        resolveAliasForAddress(address)
-            .then((alias) => {
-                if (active) setMerchantName(alias ? merchantDisplayName(alias) : null);
-            })
-            .catch(() => undefined);
-        return () => { active = false; };
-    }, [receipt?.merchant_address]);
+        setMerchantName(receipt?.merchant_display_name || null);
+    }, [receipt?.merchant_display_name]);
 
     // Handle wallet change vs session mismatch
     useEffect(() => {
@@ -427,12 +417,33 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                     <dl className="mt-2 divide-y divide-black/10">
                         <div className="flex items-baseline justify-between gap-6 py-4">
                             <dt className={rowLabel}>Paid to</dt>
-                            <dd className={rowValue}>
-                                <Identity
-                                    address={receipt.merchant_address}
-                                    fallback={formatAddress(receipt.merchant_address)}
-                                    placeholderClassName="bg-black/10"
-                                />
+                            <dd className="min-w-0 text-right">
+                                {receipt.merchant_id ? (
+                                    /* Registered merchant: lead with the governed display name, then the
+                                       immutable merc_ id as the verifiable identity, then the on-chain
+                                       payee address. */
+                                    <>
+                                        <span className="block text-sm font-semibold text-[#111827] break-words">
+                                            {receipt.merchant_display_name}
+                                        </span>
+                                        <span className="mt-0.5 block font-mono text-xs text-black/45 break-all">
+                                            {receipt.merchant_id}
+                                        </span>
+                                        <span className="mt-0.5 block font-mono text-xs text-black/40 break-all">
+                                            {formatAddress(receipt.merchant_address)}
+                                        </span>
+                                    </>
+                                ) : (
+                                    /* Peer or treasury payee (no merchant record): keep the account's own
+                                       resolved identity rather than mislabeling it a merchant. */
+                                    <span className="text-sm font-semibold text-[#111827]">
+                                        <Identity
+                                            address={receipt.merchant_address}
+                                            fallback={formatAddress(receipt.merchant_address)}
+                                            placeholderClassName="bg-black/10"
+                                        />
+                                    </span>
+                                )}
                             </dd>
                         </div>
                         <div className="flex items-baseline justify-between gap-6 py-4">

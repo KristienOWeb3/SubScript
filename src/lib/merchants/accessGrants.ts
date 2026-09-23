@@ -28,6 +28,7 @@ export type MerchantAccessGrantRow = {
     claimed_wallet: string | null;
     revoked_at: Date | null;
     note: string | null;
+    display_name: string | null;
 };
 
 /* Distinct codes so the client can say something actionable instead of one flat "no". */
@@ -142,7 +143,7 @@ export async function assertMerchantSignupAllowed(
     }
 
     const grantResult = await client.query(
-        `select email, granted_by, invite_token, claimed_at, claimed_wallet, revoked_at, note
+        `select email, granted_by, invite_token, claimed_at, claimed_wallet, revoked_at, note, display_name
            from merchant_access_grants
           where email = $1
           limit 1

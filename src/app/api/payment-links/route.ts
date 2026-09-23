@@ -403,7 +403,7 @@ export async function POST(request: Request) {
         const [merchantRes, countRes] = await Promise.all([
             supabase
                 .from("merchants")
-                .select("tier, payout_destination, verified")
+                .select("tier, payout_destination, verified, display_name")
                 .eq("wallet_address", merchantAddress.toLowerCase())
                 .maybeSingle(),
             supabase
@@ -448,7 +448,9 @@ export async function POST(request: Request) {
                 expires_at: normalizedExpiry,
                 external_reference: external_reference || null,
                 idempotency_key: idempotency_key || null,
-                merchant_name_snapshot: merchant_name || null,
+                /* Historical merchant-name snapshot for receipts: server-authoritative and frozen
+                   from the governed display_name. Never accept caller branding as payee identity. */
+                merchant_name_snapshot: (merchantRes.data?.display_name || "").trim() || null,
                 receipt_token: generateReceiptId(title),
                 max_uses: maxUses,
                 beneficiary_address: normalizedBeneficiary,

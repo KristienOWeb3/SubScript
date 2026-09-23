@@ -49,10 +49,9 @@ export const viewport: Viewport = {
     initialScale: 1,
     viewportFit: "cover",
     themeColor: [
-        { media: "(prefers-color-scheme: light)", color: "#000000" },
-        { media: "(prefers-color-scheme: dark)", color: "#000000" },
+        { media: "(prefers-color-scheme: light)", color: "#FFFFF0" },
+        { media: "(prefers-color-scheme: dark)", color: "#060608" },
     ],
-    colorScheme: "dark",
 };
 
 const configuredAppUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL);
@@ -266,11 +265,8 @@ export default async function RootLayout({
     const nonce = (await headers()).get("x-nonce") || undefined;
 
     return (
-        <html lang="en" suppressHydrationWarning style={{ backgroundColor: "#000000", colorScheme: "dark" }}>
+        <html lang="en" suppressHydrationWarning>
             <head>
-                <meta name="theme-color" content="#000000" />
-                <meta name="background-color" content="#000000" />
-                <meta name="color-scheme" content="dark" />
                 {/* Resolve the saved theme before first paint.
                  *
                  * useTheme() stamps data-theme from an effect, which only runs after hydration —
@@ -281,17 +277,17 @@ export default async function RootLayout({
                 <script
                     nonce={nonce}
                     dangerouslySetInnerHTML={{
-                        __html: `(function(){try{var t=localStorage.getItem('subscript_theme')||'light';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.classList.remove('light','dark');r.classList.add(d?'dark':'light');r.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();`,
+                        __html: `(function(){try{var t=localStorage.getItem('subscript_theme')||'light';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.classList.remove('light','dark');r.classList.add(d?'dark':'light');r.setAttribute('data-theme',d?'dark':'light');r.style.colorScheme=d?'dark':'light';r.style.backgroundColor=d?'#060608':'#FFFFF0';}catch(e){}})();`,
                     }}
                 />
                 <style
                     nonce={nonce}
                     dangerouslySetInnerHTML={{
-                        __html: `html,body{background-color:#000000 !important;color:#ffffff !important;color-scheme:dark !important;}`,
+                        __html: `html,body{background-color:#FFFFF0;color:#111827;}html.dark,html[data-theme="dark"],html.dark body,html[data-theme="dark"] body{background-color:#060608 !important;color:#ffffff !important;color-scheme:dark !important;}`,
                     }}
                 />
             </head>
-            <body className={`${sukar.variable} font-sans antialiased`} style={{ backgroundColor: "#000000" }}>
+            <body className={`${sukar.variable} font-sans antialiased`} suppressHydrationWarning>
                 <script
                     nonce={nonce}
                     suppressHydrationWarning

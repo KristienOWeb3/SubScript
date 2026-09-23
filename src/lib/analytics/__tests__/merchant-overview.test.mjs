@@ -91,6 +91,9 @@ test("overview endpoint enforces merchant auth, canonical micros path, UTC bound
     assert.match(overviewRoute, /date_trunc\(\$\{bucketUnit\}::text, occurred_at AT TIME ZONE 'UTC'\)/);
     assert.match(combined, /event_type IN \('subscription\.activated', 'subscription\.renewed'\)/);
     assert.match(combined, /COALESCE\(\(e\.payload ->> 'simulated'\)::boolean, false\) = false/);
+    /* Unpaid subscription checkouts (subscription.activated emitted at creation with
+       status 'incomplete') must not be counted as settled earnings. */
+    assert.match(combined, /\{data,object,status\}', ''\) <> 'incomplete'/);
     assert.match(combined, /FLOOR\(amount_micros \* \$\{feeBps\} \/ 10000\)/);
 });
 

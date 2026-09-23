@@ -80,7 +80,7 @@ export async function runListen(options: ListenOptions): Promise<void> {
     } else {
         console.log("  signing key: using your configured SUBSCRIPT_WEBHOOK_SECRET");
     }
-    console.log("\nWaiting for events... (trigger one with a testnet checkout, or `subscript trigger payment.succeeded`)");
+    console.log("\nWaiting for events... (trigger one with a checkout, or `subscript trigger payment.succeeded`)");
     console.log("Press Ctrl+C to stop.\n");
 
     let cursor: { since: string; after: string | null } = { since: new Date().toISOString(), after: null };

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import CommitClient from "./CommitClient";
-import { merchantDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
 type PageProps = {
     params: Promise<{ merchantAddress: string }>;
@@ -16,6 +16,8 @@ async function getMerchant(address: string) {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const normalized = address.toLowerCase();
 
+    // The alias lookup here is address RESOLUTION only (the URL segment may be a .hq/.biz handle),
+    // never the source of the merchant's name — that comes from merchants.display_name below.
     const { data: aliasData } = await supabase
         .from("address_aliases")
         .select("address, alias")
@@ -23,18 +25,17 @@ async function getMerchant(address: string) {
         .maybeSingle();
 
     const resolvedAddress = (aliasData?.address || normalized).toLowerCase();
-    const aliasName = aliasData?.alias || null;
 
     const { data: merchantData } = await supabase
         .from("merchants")
-        .select("wallet_address, tier, verified")
+        .select("wallet_address, tier, verified, display_name")
         .eq("wallet_address", resolvedAddress)
         .maybeSingle();
 
     return {
         address: resolvedAddress,
-        name: merchantDisplayName(aliasName),
-        alias: aliasName,
+        name: resolveMerchantDisplayName(merchantData?.display_name),
+        alias: null,
         verified: merchantData?.verified ?? false,
         tier: merchantData?.tier || "FREE",
     };

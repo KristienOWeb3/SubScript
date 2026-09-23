@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { isValidPaymentLinkId, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
-import { merchantDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
 async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
     const sessionWallet = await getSessionWallet(request.headers);
@@ -84,18 +84,12 @@ export async function GET(request: Request, { params }: RouteContext) {
 
         const [
             { data: merchant },
-            { data: merchantAlias },
             { data: paymentSettings, error: paymentSettingsError },
         ] = await Promise.all([
             supabase
                 .from("merchants")
-                .select("verified")
+                .select("verified, display_name")
                 .eq("wallet_address", link.merchant_address.toLowerCase())
-                .maybeSingle(),
-            supabase
-                .from("address_aliases")
-                .select("alias")
-                .eq("address", link.merchant_address.toLowerCase())
                 .maybeSingle(),
             supabase
                 .from("system_settings")
@@ -104,7 +98,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         ]);
 
         const merchantVerified = merchant ? !!merchant.verified : false;
-        const merchantName = merchantDisplayName(merchantAlias?.alias);
+        const merchantName = resolveMerchantDisplayName(merchant?.display_name);
         const hostedPaymentsEnabled = !paymentSettingsError && paymentSettings?.hosted_payments_enabled !== false;
 
         /* Check authorization: if not owner, check active, expiration, and usage constraints */

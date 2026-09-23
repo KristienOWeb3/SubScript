@@ -77,6 +77,9 @@ export async function GET(
             success: true,
             merchant: {
                 walletAddress: merchant.walletAddress,
+                merchantId: merchant.merchantId,
+                displayName: merchant.displayName,
+                displayNameLocked: merchant.displayNameLocked,
                 tier: merchant.tier,
                 verified: merchant.verified,
                 availableBalanceUsdc: (Number(merchant.availableBalanceUsdc) / 1_000_000).toFixed(2),

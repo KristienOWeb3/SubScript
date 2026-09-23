@@ -192,6 +192,12 @@ export function settlementSql(merchantAddress: string, environment: "TEST" | "LI
               AND e.environment = ${environment}
               AND e.event_type IN ('subscription.activated', 'subscription.renewed')
               AND COALESCE((e.payload ->> 'simulated')::boolean, false) = false
+              /* Only count subscription events that actually settled money. /api/v1/subscriptions
+                 emits subscription.activated at checkout creation with status 'incomplete' — an
+                 unpaid offer, not revenue. Counting those inflated Earnings by the offer amount
+                 (e.g. six $5 test checkouts read as $30 gross). Real activations and renewals carry
+                 status 'active'; a null status (legacy events) is kept for backward compatibility. */
+              AND COALESCE(e.payload #>> '{data,object,status}', '') <> 'incomplete'
               AND e.occurred_at >= ${from}
               AND e.occurred_at < ${to}
               AND NULLIF(

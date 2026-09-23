@@ -33,17 +33,20 @@ function resolveSecret(explicit?: string): { secret: string; placeholder: boolea
 
 function reconciliation() {
     const txHash = "0x" + crypto.randomBytes(32).toString("hex");
+    /* Synthetic test fixture chain ID (defaults to Arc Mainnet 5042 or SUBSCRIPT_CHAIN_ID override) */
+    const syntheticChainId = Number(process.env.SUBSCRIPT_CHAIN_ID) || 5042;
+    const explorerBase = process.env.SUBSCRIPT_EXPLORER_URL || "https://explorer.arc.io";
     return {
         txHash,
         fields: {
             transaction_hash: txHash,
             txHash,
-            chain_id: 5042002,
-            chainId: 5042002,
+            chain_id: syntheticChainId,
+            chainId: syntheticChainId,
             usdc_address: "0x3600000000000000000000000000000000000000",
             usdcAddress: "0x3600000000000000000000000000000000000000",
-            explorer_url: `https://explorer.arc.network/tx/${txHash}`,
-            explorerUrl: `https://explorer.arc.network/tx/${txHash}`,
+            explorer_url: `${explorerBase}/tx/${txHash}`,
+            explorerUrl: `${explorerBase}/tx/${txHash}`,
         },
     };
 }

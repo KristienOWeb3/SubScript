@@ -97,7 +97,7 @@ export default function CommitClient({
 
     const resolveCommitIntent = async (requestId: string) => {
         try {
-            const res = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(requestId)}`);
+            const res = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(requestId)}`, { cache: "no-store" });
             if (!res.ok) return null;
             return await res.json().catch(() => null);
         } catch {
@@ -106,18 +106,21 @@ export default function CommitClient({
     };
 
     const pollCommitIntent = async (requestId: string) => {
-        const delaysMs = [0, 1500, 3000, 5000];
+        /* Resolve the durable commit id quickly after a dropped/ambiguous response. Short, even
+           polls make the platform reflect vault confirmation in ~0.5s steps instead of waiting
+           through the old 1.5s/3s/5s backoff. */
+        const delaysMs = [0, 500, 500, 750, 1000, 1500, 2000];
         let latest: any = null;
         for (const delay of delaysMs) {
             if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
             latest = await resolveCommitIntent(requestId);
-            if (latest?.exists && (latest.status === "MIRRORED" || latest.status === "FAILED")) return latest;
+            if (latest?.exists && (latest.status === "MIRRORED" || (latest.status === "SUBMITTED" && latest.txHash) || latest.status === "FAILED")) return latest;
         }
         return latest;
     };
 
     const applyCommitOutcome = (outcome: any): boolean => {
-        if (outcome?.exists && outcome.status === "MIRRORED" && outcome.txHash) {
+        if (outcome?.exists && (outcome.status === "MIRRORED" || outcome.status === "SUBMITTED") && outcome.txHash) {
             setCommitError(null);
             setCommitPendingNote(null);
             setCommittedTxHash(outcome.txHash);

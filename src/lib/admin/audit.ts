@@ -65,6 +65,9 @@ export const ADMIN_ACTIONS = [
     "WEBHOOK_REDELIVER",
     "PROFILE_RESET",
     "ALIAS_SEIZE",
+    /* Admin correction of a merchant's governed display name. Distinct from MERCHANT_ACCESS_GRANT
+       (which is about admitting a business) — this is editing the name that shows on checkout. */
+    "MERCHANT_DISPLAY_NAME_SET",
     "DATA_EXPORT_REQUEST",
 ] as const;
 

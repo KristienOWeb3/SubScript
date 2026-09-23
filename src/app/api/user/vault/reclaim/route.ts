@@ -7,7 +7,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { reclaimAbandonedFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
-import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { estimateArcNetworkFeeMicros, chargeNetworkFee } from "@/lib/sponsor/userPaidTransfer";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
@@ -40,14 +40,15 @@ export async function POST(request: Request) {
            legitimate user's escape hatch indefinitely. */
         await assertWithdrawalAllowed(wallet, "USER");
 
-        await requireSponsoredGas({
-            wallet: wallet.toLowerCase(),
-            action: "execute_tx",
-            requestKey: `vault-reclaim:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
-            principalRequiredWei: 0n,
-        });
-
+        /* Reclaiming the user's own abandoned escrow is user-paid. No gas sponsorship is requested;
+           the Arc network fee is recovered from the wallet after the reclaimed funds land there. */
+        const reqId = request.headers.get("x-request-id")?.trim() || crypto.randomUUID();
         const txHash = await reclaimAbandonedFromEmbedded(wallet, merchantAddress);
+        await chargeNetworkFee({
+            wallet: wallet.toLowerCase(),
+            feeMicros: (await estimateArcNetworkFeeMicros(1)).feeMicros,
+            requestKey: `vault-reclaim-fee:${reqId}:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
+        });
         const v = await syncVaultMirror(wallet, merchantAddress);
 
         const environment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";

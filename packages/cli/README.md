@@ -14,7 +14,7 @@ zero runtime dependencies to your project.
 npx @subscriptonarc/cli
 
 # Non-interactive (AI agents, CI, scripts) — no prompts, no dashboard round-trip
-npx @subscriptonarc/cli init --key sk_test_... --merchant 0xYourCommitID --framework next-app --yes
+npx @subscriptonarc/cli init --key sk_live_... --merchant 0xYourCommitID --framework next-app --yes
 ```
 
 The wizard detects your framework (Next.js App/Pages Router, React SPA, Express), scaffolds the

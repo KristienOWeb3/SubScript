@@ -145,9 +145,10 @@ test("the misleading arcTestnet name is a deprecated alias of activeArcChain", (
 });
 
 test("testnet USDC and testnet networks are strictly blocked from mainnet interactions", () => {
-    /* 1. Mainnet constants configuration: testnet CCTP USDC contracts cannot be loaded in prod */
+    /* 1. Mainnet constants configuration: CCTP is enabled on mainnet, but CCTP_CONFIG still switches
+       on isProd, so only mainnet USDC/contract addresses load in prod — testnet CCTP contracts can't. */
     const constantsSource = source("src/lib/contracts/constants.ts");
-    assert.match(constantsSource, /export const ARC_CCTP_ENABLED = !isProd;/);
+    assert.match(constantsSource, /export const ARC_CCTP_ENABLED = true;/);
     assert.match(constantsSource, /export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd/);
 
     /* 2. Mainnet validation rejects testnet RPC URLs and testnet contract addresses */

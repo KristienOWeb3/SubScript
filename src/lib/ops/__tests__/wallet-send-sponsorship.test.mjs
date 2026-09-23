@@ -5,19 +5,27 @@ import test from "node:test";
 const root = new URL("../../../../", import.meta.url);
 const source = (path) => readFileSync(new URL(path, root), "utf8");
 
-test("wallet sends enforce sponsorship before every irreversible transfer", () => {
+test("wallet sends are user-paid: sender charged the Arc network fee, never sponsored", () => {
     const route = source("src/app/api/user/wallet/send/route.ts");
     const sponsor = source("src/lib/sponsor/sponsorship.ts");
 
-    assert.match(sponsor, /\| "wallet_send"/);
-    assert.match(route, /import \{ requireSponsoredGas \} from "@\/lib\/sponsor\/sponsorship"/);
-    assert.match(route, /action: "wallet_send"/);
+    /* USER→USER sends must never draw on the merchant-commerce sponsorship budget. */
+    assert.doesNotMatch(route, /await requireSponsoredGas/);
+    assert.doesNotMatch(route, /import \{ requireSponsoredGas \}/);
+    assert.doesNotMatch(route, /action: "wallet_send"/);
+    assert.doesNotMatch(sponsor, /\| "wallet_send"/);
+
+    /* Fee-recovery: estimate up front, guard that the balance covers amount + fee, and recover the
+       fee after the transfers settle. The transfer itself is marked user-paid. */
+    assert.match(route, /estimateArcNetworkFeeMicros\(parsedRecipients\.length\)/);
+    assert.match(route, /INSUFFICIENT_BALANCE_FOR_FEE/);
+    assert.match(route, /gasPayer: "wallet"/);
 
     const loopAt = route.indexOf("for (let i = 0; i < parsedRecipients.length; i++)");
-    const sponsorAt = route.indexOf("await requireSponsoredGas", loopAt);
     const transferAt = route.indexOf("await custody.executeContract", loopAt);
-    assert.ok(loopAt !== -1 && loopAt < sponsorAt && sponsorAt < transferAt);
-    assert.match(route, /requestKey: `wallet-send:\$\{normalizedSender\}:\$\{requestId\}:\$\{item\.receiver\}:\$\{item\.amountMicros\.toString\(\)\}`/);
+    const chargeAt = route.indexOf("await chargeNetworkFee(", transferAt);
+    /* Fee is charged only after the transfer loop has run (never for a send that didn't happen). */
+    assert.ok(loopAt !== -1 && transferAt > loopAt && chargeAt > transferAt);
 });
 
 test("wallet send route maps CirclePaymasterPolicyError to CIRCLE_PAYMASTER_POLICY_REQUIRED with 503", () => {
@@ -27,4 +35,3 @@ test("wallet send route maps CirclePaymasterPolicyError to CIRCLE_PAYMASTER_POLI
     assert.match(route, /isPaymasterError \? 503 : 400/);
     assert.match(route, /if \(error instanceof CirclePaymasterPolicyError\)/);
 });
-

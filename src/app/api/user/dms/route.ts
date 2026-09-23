@@ -3,7 +3,8 @@ import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { bindTxToReceipt } from "@/lib/receipts/binding";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
-import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
+import { accountDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -94,7 +95,7 @@ export async function GET(request: Request) {
 
         const merchants = await prisma.merchant.findMany({
             where: { walletAddress: { in: Array.from(uniqueAddresses) } },
-            select: { walletAddress: true, profilePic: true, verified: true }
+            select: { walletAddress: true, profilePic: true, verified: true, displayName: true }
         });
         const roles = await prisma.accountRole.findMany({
             where: { address: { in: Array.from(uniqueAddresses) } },
@@ -102,6 +103,10 @@ export async function GET(request: Request) {
         });
 
         const aliasMap = new Map(aliases.map((a: any) => [a.address.toLowerCase(), a.alias]));
+        /* Merchant branding comes from the governed display_name, never the .sub/.hq/.biz handle. */
+        const merchantNameMap = new Map<string, string | null>(
+            merchants.map((m: any) => [m.walletAddress.toLowerCase(), m.displayName])
+        );
         const roleMap = new Map(roles.map((r: any) => [r.address.toLowerCase(), r.role]));
         const profilePicMap = new Map<string, string | null>();
 
@@ -186,7 +191,7 @@ export async function GET(request: Request) {
                 }),
                 prisma.merchant.findMany({
                     where: { walletAddress: { in: missingProfileAddrs } },
-                    select: { walletAddress: true, profilePic: true, verified: true },
+                    select: { walletAddress: true, profilePic: true, verified: true, displayName: true },
                 }),
                 prisma.accountRole.findMany({
                     where: { address: { in: missingProfileAddrs } },
@@ -197,6 +202,7 @@ export async function GET(request: Request) {
             missingCustomers.forEach((c) => rememberProfilePic(c.walletAddress, c.profilePic));
             missingMerchants.forEach((m) => {
                 rememberProfilePic(m.walletAddress, m.profilePic);
+                merchantNameMap.set(m.walletAddress.toLowerCase(), m.displayName);
                 /* Same trust rule as above: the badge comes from merchants.verified, nothing else. */
                 if (m.verified === true) verifiedMerchants.add(m.walletAddress.toLowerCase());
             });
@@ -223,14 +229,14 @@ export async function GET(request: Request) {
             id: dm.id,
             senderAddress: dm.senderAddress,
             senderName: roleMap.get(dm.senderAddress.toLowerCase()) === "ENTERPRISE"
-                ? merchantDisplayName(aliasMap.get(dm.senderAddress.toLowerCase()))
+                ? resolveMerchantDisplayName(merchantNameMap.get(dm.senderAddress.toLowerCase()))
                 : accountDisplayName(aliasMap.get(dm.senderAddress.toLowerCase())),
             senderRole: roleMap.get(dm.senderAddress.toLowerCase()) || null,
             senderProfilePic: profilePicMap.get(dm.senderAddress.toLowerCase()) || null,
             senderVerified: verifiedMerchants.has(dm.senderAddress.toLowerCase()),
             receiverAddress: dm.receiverAddress,
             receiverName: roleMap.get(dm.receiverAddress.toLowerCase()) === "ENTERPRISE"
-                ? merchantDisplayName(aliasMap.get(dm.receiverAddress.toLowerCase()))
+                ? resolveMerchantDisplayName(merchantNameMap.get(dm.receiverAddress.toLowerCase()))
                 : accountDisplayName(aliasMap.get(dm.receiverAddress.toLowerCase())),
             receiverRole: roleMap.get(dm.receiverAddress.toLowerCase()) || null,
             receiverProfilePic: profilePicMap.get(dm.receiverAddress.toLowerCase()) || null,

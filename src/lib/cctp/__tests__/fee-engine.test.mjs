@@ -78,24 +78,15 @@ describe("CCTP bridge fee engine", () => {
     assert.throws(() => calculateBridgeFee(10_000_000n, 999999, "inbound_deposit"), /don't support/i);
   });
 
-  /* Solana withdrawals are supported via the dedicated Solana relayer module. Inbound deposits remain
-     disabled until Solana wallet support / deposit tracking is activated. */
-  it("allows Solana outbound withdrawals while refusing inbound deposits", () => {
-    assert.equal(SOLANA_CCTP_CONFIG.allowWithdrawals, true);
+  /* Solana outbound withdrawals are OFF by default until the mainnet relayer + RPC are ready
+     (NEXT_PUBLIC_SOLANA_CCTP_WITHDRAWALS_ENABLED). Inbound deposits stay disabled too. */
+  it("keeps Solana outbound withdrawals off by default and refuses inbound deposits", () => {
+    assert.equal(SOLANA_CCTP_CONFIG.allowWithdrawals, false);
     assert.equal(SOLANA_CCTP_CONFIG.allowDeposits, false);
 
-    // Outbound withdrawal to Solana (domain 5 or "solana")
-    const fee = calculateBridgeFee(100_000_000n, 5, "outbound_withdrawal");
-    assert.equal(fee.grossMicros, 100_000_000n);
-    assert.equal(fee.feeMicros, 500_000n);
-    assert.equal(fee.netMicros, 99_500_000n);
-    assert.equal(fee.feeBps, 50);
-    assert.equal(fee.feePercentage, "0.5%");
-    assert.equal(fee.domain, 5);
-
-    const feeByString = calculateBridgeFee(100_000_000n, "solana", "outbound_withdrawal");
-    assert.equal(feeByString.domain, 5);
-    assert.equal(feeByString.netMicros, 99_500_000n);
+    // Outbound withdrawal to Solana (domain 5 or "solana") is refused while the route is disabled
+    assert.throws(() => calculateBridgeFee(100_000_000n, 5, "outbound_withdrawal"), /withdrawals to solana/i);
+    assert.throws(() => calculateBridgeFee(100_000_000n, "solana", "outbound_withdrawal"), /withdrawals to solana/i);
 
     // Inbound deposit from Solana is refused
     assert.throws(() => calculateBridgeFee(100_000_000n, 5, "inbound_deposit"), /deposits from solana/i);
@@ -136,18 +127,19 @@ describe("CCTP bridge fee engine", () => {
     });
     assert.equal(valid.netMicros, 49_750_000n);
 
-    // Validates Solana Base58 recipient for Solana withdrawals
+    // Solana withdrawals are disabled by default, so even a valid Base58 recipient is refused at quote time
     const SOLANA_RECIPIENT = "GSJ729WXUt7bWGo92ZrfJu5yB6XJYkoG21NFGZM7HPLg";
-    const solanaValid = validateBridgeRequest({
-      direction: "outbound_withdrawal",
-      targetChainIdOrDomain: "solana",
-      amountMicros: 50_000_000n,
-      userWallet: EVM_WALLET,
-      recipientAddress: SOLANA_RECIPIENT,
-    });
-    assert.equal(solanaValid.netMicros, 49_750_000n);
-    assert.equal(solanaValid.domain, 5);
-    assert.equal(solanaValid.feeBps, 50);
+    assert.throws(
+      () =>
+        validateBridgeRequest({
+          direction: "outbound_withdrawal",
+          targetChainIdOrDomain: "solana",
+          amountMicros: 50_000_000n,
+          userWallet: EVM_WALLET,
+          recipientAddress: SOLANA_RECIPIENT,
+        }),
+      /withdrawals to solana/i,
+    );
 
     // Rejects invalid Solana address for Solana destination
     assert.throws(
@@ -206,10 +198,11 @@ describe("CCTP route listing", () => {
     assert.deepEqual(fees, [...fees].sort((a, b) => a - b));
   });
 
-  it("shows Solana as available for outbound withdrawals, but unavailable for inbound deposits", () => {
+  it("keeps Solana off by default for both outbound withdrawals and inbound deposits", () => {
     const solanaWithdrawal = listBridgeRoutes("outbound_withdrawal").find((r) => r.id === "solana");
     assert.ok(solanaWithdrawal);
-    assert.equal(solanaWithdrawal.available, true);
+    assert.equal(solanaWithdrawal.available, false);
+    assert.equal(solanaWithdrawal.unavailableReason, "Coming soon");
     assert.equal(solanaWithdrawal.feeBps, 50);
     assert.equal(solanaWithdrawal.feePercentage, "0.5%");
 

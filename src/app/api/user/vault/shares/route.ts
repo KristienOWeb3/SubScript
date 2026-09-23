@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { merchantDisplayName } from "@/lib/identityDisplay";
 import { notifyCommitInvite, resolveInviteeAddress } from "@/lib/dms/commitInvite";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 import { CommitAccessError, isCommitId, resolveDisplayName } from "@/lib/commitId";
@@ -251,11 +250,12 @@ export async function POST(request: Request) {
                 });
                 let merchantLabel = "this merchant";
                 if (vault?.merchantAddress) {
-                    const merchantAliasRecord = await prisma.addressAlias.findUnique({
-                        where: { address: vault.merchantAddress.toLowerCase() },
-                        select: { alias: true },
+                    // Merchant branding for the invite DM comes from the governed display_name.
+                    const merchantRecord = await prisma.merchant.findUnique({
+                        where: { walletAddress: vault.merchantAddress.toLowerCase() },
+                        select: { displayName: true },
                     });
-                    merchantLabel = merchantDisplayName(merchantAliasRecord?.alias);
+                    merchantLabel = merchantRecord?.displayName?.trim() || "this merchant";
                 }
 
                 dmSent = await notifyCommitInvite({

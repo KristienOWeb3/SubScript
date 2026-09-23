@@ -11,6 +11,11 @@ import {
     markGrantClaimed,
     type MerchantSignupRefusal,
 } from "@/lib/merchants/accessGrants";
+import {
+    deriveDisplayNameFromEmail,
+    generateMerchantId,
+    sanitizeDisplayName,
+} from "@/lib/merchants/identity";
 
 export async function POST(request: Request) {
     try {
@@ -139,16 +144,48 @@ export async function POST(request: Request) {
 
                 if (role === "ENTERPRISE") {
                     await client.query("delete from customers where wallet_address = $1", [normalizedWallet]);
+
+                    /* Resolve the merchant's initial display name, decoupled from any .sub handle.
+                       An admin-set grant name locks the display name immediately; an uninvited
+                       self-serve merchant gets a title-cased default from their VERIFIED email
+                       (claude@gmail.com -> "Claude") left UNLOCKED so the one-time onboarding modal
+                       prompts them to confirm or change it once. The grant is read regardless of
+                       invite-only enforcement, since an admin may pre-seed a name with the flag off. */
+                    let grantDisplayName = "";
+                    if (verifiedEmailVal) {
+                        const grantNameRow = await client.query(
+                            "select display_name from merchant_access_grants where email = $1 limit 1",
+                            [verifiedEmailVal],
+                        );
+                        grantDisplayName = sanitizeDisplayName(grantNameRow.rows[0]?.display_name);
+                    }
+                    const merchantId = generateMerchantId();
+                    let displayName: string;
+                    let displayNameLocked: boolean;
+                    if (grantDisplayName) {
+                        displayName = grantDisplayName;
+                        displayNameLocked = true;
+                    } else {
+                        displayName = deriveDisplayNameFromEmail(verifiedEmailVal);
+                        // Locked only when there is no default to confirm; otherwise the modal prompts.
+                        displayNameLocked = displayName === "";
+                    }
+
                     await client.query(
                         `insert into merchants (
                             wallet_address,
                             tier,
                             available_balance_usdc,
-                            reserved_balance_usdc
-                        ) values ($1, 'FREE', 0, 0)
+                            reserved_balance_usdc,
+                            merchant_id,
+                            display_name,
+                            display_name_locked
+                        ) values ($1, 'FREE', 0, 0, $2, $3, $4)
                         on conflict (wallet_address) do update set
-                            updated_at = now()`,
-                        [normalizedWallet]
+                            updated_at = now(),
+                            display_name = case when merchants.display_name = '' then excluded.display_name else merchants.display_name end,
+                            display_name_locked = case when merchants.display_name = '' then excluded.display_name_locked else merchants.display_name_locked end`,
+                        [normalizedWallet, merchantId, displayName, displayNameLocked]
                     );
                     /* Same transaction as the merchants row: the grant is spent exactly when the
                        merchant account comes into existence, never before and never without it. */

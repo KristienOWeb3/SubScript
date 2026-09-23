@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import { detectFramework } from "../utils/framework.js";
 import { getProjectPaths, CLI_VERSION, TEMPLATE_VERSION } from "../utils/config.js";
 import { fetchConfigAndVerify, sendTelemetry } from "../utils/api.js";
+import { generateConfigTemplate } from "../templates/configTemplate.js";
 import { generateProviderTemplate } from "../templates/SubScriptProvider.js";
 import { generateCheckoutButtonTemplate } from "../templates/CheckoutButton.js";
 import { generateCheckoutRouteTemplate } from "../templates/checkoutRouteTemplate.js";
@@ -128,6 +129,29 @@ export async function runUpdate(options: { noTelemetry?: boolean }) {
         console.log(`[INFO] Skipped update for ${fileName}.`);
       }
     };
+
+    // Update subscript.config.ts if present
+    if (existsSync(paths.configPath)) {
+      const configContent = generateConfigTemplate({
+        merchantAddress,
+        mode,
+        tier: 1,
+        chainId: protocolConfig.chainId,
+        networkName: protocolConfig.network || protocolConfig.networkName || "Arc",
+        rpcUrl: protocolConfig.rpcUrl,
+        explorerUrl: protocolConfig.explorerUrl,
+        nativeCurrencyDecimals: protocolConfig.nativeCurrency?.decimals ?? 18,
+        routerAddress: protocolConfig.routerAddress,
+        standardAddress: protocolConfig.standardAddress,
+        usdcAddress: protocolConfig.usdcAddress,
+        feeBps: protocolConfig.feeBps ?? 100,
+        cliVersion: CLI_VERSION,
+        templateVersion: TEMPLATE_VERSION,
+        requestId,
+        generationTimestamp
+      });
+      await updateFile(paths.configPath, "subscript.config.ts", configContent);
+    }
 
     // Update SubScriptProvider.tsx
     const providerPath = path.join(paths.componentsDir, "SubScriptProvider.tsx");

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
-import { merchantDisplayName } from "@/lib/identityDisplay";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import { remainingMicros } from "@/lib/vault/autoTopUp";
 
 export async function GET(request: Request) {
@@ -24,25 +24,20 @@ export async function GET(request: Request) {
                 orderBy: { updatedAt: "desc" }
             });
 
-            // Resolve aliases & profile pictures for merchant addresses
+            // Resolve display names & profile pictures for merchant addresses
             const uniqueMerchantAddresses = Array.from(new Set(vaults.map(v => v.merchantAddress.toLowerCase())));
-            const [aliases, merchants] = await Promise.all([
-                prisma.addressAlias.findMany({
-                    where: { address: { in: uniqueMerchantAddresses } }
-                }),
-                prisma.merchant.findMany({
-                    where: { walletAddress: { in: uniqueMerchantAddresses } },
-                    select: { walletAddress: true, profilePic: true }
-                })
-            ]);
-            const aliasMap = new Map(aliases.map(a => [a.address.toLowerCase(), a.alias]));
+            const merchants = await prisma.merchant.findMany({
+                where: { walletAddress: { in: uniqueMerchantAddresses } },
+                select: { walletAddress: true, profilePic: true, displayName: true }
+            });
+            const merchantNameMap = new Map(merchants.map(m => [m.walletAddress.toLowerCase(), m.displayName]));
             const merchantPicMap = new Map(merchants.map(m => [m.walletAddress.toLowerCase(), m.profilePic]));
 
             const formattedVaults = vaults.map(v => ({
                 id: v.id,
                 userAddress: v.userAddress,
                 merchantAddress: v.merchantAddress,
-                merchantName: merchantDisplayName(aliasMap.get(v.merchantAddress.toLowerCase())),
+                merchantName: resolveMerchantDisplayName(merchantNameMap.get(v.merchantAddress.toLowerCase())),
                 merchantPic: merchantPicMap.get(v.merchantAddress.toLowerCase()) || null,
                 balanceUsdc: v.balanceUsdc.toString(),
                 commitUsdc: v.commitUsdc.toString(),
