@@ -119,8 +119,19 @@ test("Server config route returns Arc Mainnet configuration when environment is 
 });
 
 test("Generated SubScriptProvider and config templates read network properties dynamically", async () => {
-  const { generateConfigTemplate } = await import("../../../../packages/cli/dist/templates/configTemplate.js");
-  const { generateProviderTemplate } = await import("../../../../packages/cli/dist/templates/SubScriptProvider.js");
+  let generateConfigTemplate;
+  let generateProviderTemplate;
+  try {
+    const configMod = await import("../../../../packages/cli/src/templates/configTemplate.ts");
+    const providerMod = await import("../../../../packages/cli/src/templates/SubScriptProvider.ts");
+    generateConfigTemplate = configMod.generateConfigTemplate;
+    generateProviderTemplate = providerMod.generateProviderTemplate;
+  } catch {
+    const configMod = await import("../../../../packages/cli/dist/templates/configTemplate.js");
+    const providerMod = await import("../../../../packages/cli/dist/templates/SubScriptProvider.js");
+    generateConfigTemplate = configMod.generateConfigTemplate;
+    generateProviderTemplate = providerMod.generateProviderTemplate;
+  }
 
   const mainnetConfig = generateConfigTemplate({
     merchantAddress: "0x1234567890123456789012345678901234567890",
