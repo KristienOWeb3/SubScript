@@ -354,6 +354,44 @@ const looksLikeWalletAddress = (value: string | null | undefined) => {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value.trim());
 };
 
+function getTransactionAvatarInfo(tx: {
+  pic?: string | null;
+  dnsName?: string | null;
+  name?: string | null;
+  incoming?: boolean;
+  kind?: string;
+  detail?: string;
+}): { type: "pfp"; picUrl: string } | { type: "letter"; letter: string; isDns: boolean } {
+  if (tx.pic) {
+    return { type: "pfp", picUrl: tx.pic };
+  }
+
+  let dns = tx.dnsName;
+  if (!dns && tx.name) {
+    const atMatch = tx.name.match(/@([a-zA-Z0-9_.-]+)/);
+    if (atMatch && atMatch[1]) {
+      dns = atMatch[1];
+    }
+  }
+
+  if (dns) {
+    const clean = dns.replace(/^@/, "").trim();
+    const firstAlpha = clean.match(/[a-zA-Z]/);
+    if (firstAlpha) {
+      return { type: "letter", letter: firstAlpha[0].toUpperCase(), isDns: true };
+    }
+    if (clean.length > 0) {
+      return { type: "letter", letter: clean[0].toUpperCase(), isDns: true };
+    }
+  }
+
+  const isDeposit = Boolean(tx.incoming) || Boolean(tx.detail && tx.detail.toLowerCase().includes("deposit"));
+  if (isDeposit) {
+    return { type: "letter", letter: "D", isDns: false };
+  }
+  return { type: "letter", letter: "S", isDns: false };
+}
+
 /* An alias-less peer used to fall through to accountDisplayName(null), which is the constant
    "SubScript account" — so three contacts without a registered DNS name all rendered as the same
    string in the inbox and could not be told apart. The shortened address is the only identifier
@@ -1811,6 +1849,12 @@ export default function UserDashboard() {
     const amountMicros = dm.amountUsdc;
     const requesterAddress = dm.senderAddress;
     const humanAmount = microsToUsdcString(amountMicros);
+    const requestedNum = Number(amountMicros) / 1_000_000;
+    if (walletBalance <= requestedNum) {
+      const balStr = walletBalance.toFixed(walletBalance % 1 === 0 ? 0 : 2);
+      triggerToast(`You have just $${balStr}, send all-gas or top up your balance.`);
+      return;
+    }
 
     await runAction(`pay-${dm.id}`, async () => {
       let txHash: string | undefined;
@@ -3583,6 +3627,7 @@ export default function UserDashboard() {
         id: `sub-${s.subscriptionId}`,
         kind: "recurring" as const,
         name: resolveMerchantDisplayName(s.merchantName),
+        dnsName: s.merchantName ? s.merchantName.replace(/^@/, "").trim() : null,
         pic: s.merchantProfilePic,
         detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
         amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
@@ -3619,12 +3664,21 @@ export default function UserDashboard() {
         if (isWithdrawal) kind = "withdrawals";
         else if (isPeerTransfer) kind = "transfers";
 
+        const rawCounterparty = counterpartyIsSender ? d.senderName : d.receiverName;
+        const isSubscriptDns = Boolean(
+          rawCounterparty &&
+          !rawCounterparty.startsWith("0x") &&
+          !["Merchant", "Recipient", "Payment", "SubScript Transaction"].includes(rawCounterparty.trim())
+        );
+        const dnsName = isSubscriptDns ? rawCounterparty.replace(/^@/, "").trim() : null;
+
         return {
           id: `dm-${d.id}`,
           kind,
           name: isWithdrawal
             ? "Sent from balance to wallet"
             : (counterpartyIsSender ? d.senderName : d.receiverName) || "Payment",
+          dnsName,
           pic: counterpartyIsSender ? d.senderProfilePic : d.receiverProfilePic,
           detail: isWithdrawal
             ? "SubScript Balance Withdrawal"
@@ -3687,10 +3741,14 @@ export default function UserDashboard() {
           }
         }
 
+        const rawDns = incoming ? d.senderName : d.receiverName;
+        const dnsName = rawDns && !rawDns.startsWith("0x") ? rawDns.replace(/^@/, "").trim() : null;
+
         return {
           id: d.id || `dep-${d.txHash}`,
           kind,
           name,
+          dnsName,
           pic: null as string | null,
           detail,
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
@@ -3712,11 +3770,18 @@ export default function UserDashboard() {
         const cleanMemo = r.memoNote && !r.memoNote.toLowerCase().startsWith("rcpt-") && !/^rcpt-[0-9a-f]{32}$/i.test(r.memoNote.trim())
           ? r.memoNote.trim()
           : (incoming ? "Payment received" : "Payment sent");
+        const isDns = Boolean(
+          r.counterpartyName &&
+          !r.counterpartyName.startsWith("0x") &&
+          !["SubScript Transaction", "Payment"].includes(r.counterpartyName.trim())
+        );
+        const dnsName = isDns ? r.counterpartyName!.replace(/^@/, "").trim() : null;
 
         return {
           id: `rcpt-${r.receiptId}`,
           kind: "one-time" as const,
           name: r.counterpartyName || formatAddress(incoming ? r.payerAddress : r.merchantAddress) || "SubScript Transaction",
+          dnsName,
           pic: null as string | null,
           detail: cleanMemo,
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(r.amountUsdc)}`,
@@ -4097,11 +4162,23 @@ export default function UserDashboard() {
                       filteredTransactions.slice(0, 6).map((tx) => (
                         <div key={tx.id} className="flex items-center gap-3 py-3">
                           <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
-                            {tx.pic ? (
-                              <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
-                            ) : (
-                              <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
-                            )}
+                            {(() => {
+                              const avatar = getTransactionAvatarInfo(tx);
+                              if (avatar.type === "pfp") {
+                                return <img src={avatar.picUrl} alt={tx.name} className="h-full w-full object-cover" />;
+                              }
+                              return (
+                                <span className={`text-sm font-black ${
+                                  avatar.isDns 
+                                    ? "text-[#ccff00]" 
+                                    : avatar.letter === "D" 
+                                      ? "text-emerald-400" 
+                                      : "text-amber-400"
+                                }`}>
+                                  {avatar.letter}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-black text-white">{tx.name}</p>
@@ -7218,11 +7295,23 @@ export default function UserDashboard() {
                   return list.map((tx) => (
                     <div key={tx.id} className="flex items-center gap-3 py-3">
                       <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
-                        {tx.pic ? (
-                          <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
-                        ) : (
-                          <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
-                        )}
+                        {(() => {
+                          const avatar = getTransactionAvatarInfo(tx);
+                          if (avatar.type === "pfp") {
+                            return <img src={avatar.picUrl} alt={tx.name} className="h-full w-full object-cover" />;
+                          }
+                          return (
+                            <span className={`text-sm font-black ${
+                              avatar.isDns 
+                                ? "text-[#ccff00]" 
+                                : avatar.letter === "D" 
+                                  ? "text-emerald-400" 
+                                  : "text-amber-400"
+                            }`}>
+                              {avatar.letter}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-black text-white">{tx.name}</p>
@@ -10112,8 +10201,9 @@ function SendFundsModal({
       setStatus("Please enter a valid amount.");
       return;
     }
-    if (Number(amount) > walletBalance) {
-      setStatus(`Insufficient Arc balance. Bridge or deposit ${(Number(amount) - walletBalance).toFixed(2)} more USDC before sending.`);
+    if (Number(amount) >= walletBalance) {
+      const balStr = walletBalance.toFixed(walletBalance % 1 === 0 ? 0 : 2);
+      setStatus(`You have just $${balStr}, send all-gas or top up your balance.`);
       return;
     }
 
@@ -10245,7 +10335,25 @@ function SendFundsModal({
               </div>
 
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Amount (USDC)</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Amount (USDC)</span>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => {
+                      const maxSendable = Math.max(0, walletBalance - 0.01);
+                      if (maxSendable > 0) {
+                        setAmount(maxSendable.toFixed(2));
+                        setReviewOpen(false);
+                        setStatus(null);
+                        setTransactionHash(null);
+                      }
+                    }}
+                    className="text-[10px] font-black uppercase tracking-wider text-[#2775CA] hover:underline disabled:opacity-50"
+                  >
+                    Send all-gas (Max)
+                  </button>
+                </div>
                 <input
                   type="number"
                   step="any"

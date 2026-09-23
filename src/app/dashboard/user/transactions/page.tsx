@@ -109,6 +109,44 @@ function formatChainAbbr(chainNameOrId?: string | number | null): string {
   return s.toUpperCase();
 }
 
+function getTransactionAvatarInfo(tx: {
+  pic?: string | null;
+  dnsName?: string | null;
+  name?: string | null;
+  incoming?: boolean;
+  kind?: string;
+  detail?: string;
+}): { type: "pfp"; picUrl: string } | { type: "letter"; letter: string; isDns: boolean } {
+  if (tx.pic) {
+    return { type: "pfp", picUrl: tx.pic };
+  }
+
+  let dns = tx.dnsName;
+  if (!dns && tx.name) {
+    const atMatch = tx.name.match(/@([a-zA-Z0-9_.-]+)/);
+    if (atMatch && atMatch[1]) {
+      dns = atMatch[1];
+    }
+  }
+
+  if (dns) {
+    const clean = dns.replace(/^@/, "").trim();
+    const firstAlpha = clean.match(/[a-zA-Z]/);
+    if (firstAlpha) {
+      return { type: "letter", letter: firstAlpha[0].toUpperCase(), isDns: true };
+    }
+    if (clean.length > 0) {
+      return { type: "letter", letter: clean[0].toUpperCase(), isDns: true };
+    }
+  }
+
+  const isDeposit = Boolean(tx.incoming) || Boolean(tx.detail && tx.detail.toLowerCase().includes("deposit"));
+  if (isDeposit) {
+    return { type: "letter", letter: "D", isDns: false };
+  }
+  return { type: "letter", letter: "S", isDns: false };
+}
+
 export default function UserTransactionsPage() {
   const router = useRouter();
   const { theme } = useTheme();
@@ -350,6 +388,14 @@ export default function UserTransactionsPage() {
       const matchingReceipt = m.txHash ? receiptByHash.get(m.txHash.toLowerCase()) : null;
       const receiptId = matchingReceipt?.receiptId || null;
 
+      const rawCounterparty = counterpartyIsSender ? m.senderName : m.receiverName;
+      const isSubscriptDns = Boolean(
+        rawCounterparty &&
+        !rawCounterparty.startsWith("0x") &&
+        !["Merchant", "Recipient", "Payment", "SubScript Transaction"].includes(rawCounterparty.trim())
+      );
+      const dnsName = isSubscriptDns ? rawCounterparty.replace(/^@/, "").trim() : null;
+
       return {
         id: `dm-${m.id}`,
         kind,
@@ -358,6 +404,7 @@ export default function UserTransactionsPage() {
           : counterpartyIsSender
           ? (m.senderName || "Merchant")
           : (m.receiverName || "Recipient"),
+        dnsName,
         pic: counterpartyIsSender ? m.senderProfilePic : m.receiverProfilePic,
         detail: isWithdrawal
           ? "SubScript Balance Withdrawal"
@@ -383,11 +430,18 @@ export default function UserTransactionsPage() {
       const cleanMemo = r.memoNote && !r.memoNote.toLowerCase().startsWith("rcpt-") && !/^rcpt-[0-9a-f]{32}$/i.test(r.memoNote.trim())
         ? r.memoNote.trim()
         : (incoming ? "Payment received" : "Payment sent");
+      const isDns = Boolean(
+        r.counterpartyName &&
+        !r.counterpartyName.startsWith("0x") &&
+        !["SubScript Transaction", "Payment"].includes(r.counterpartyName.trim())
+      );
+      const dnsName = isDns ? r.counterpartyName!.replace(/^@/, "").trim() : null;
 
       return {
         id: `rcpt-${r.receiptId}`,
         kind: "one-time" as const,
         name: r.counterpartyName || formatAddress(incoming ? r.payerAddress : r.merchantAddress) || "SubScript Transaction",
+        dnsName,
         pic: null as string | null,
         detail: cleanMemo,
         amountUsdc: r.amountUsdc,
@@ -449,10 +503,14 @@ export default function UserTransactionsPage() {
         }
       }
 
+      const rawDns = incoming ? d.senderName : d.receiverName;
+      const dnsName = rawDns && !rawDns.startsWith("0x") ? rawDns.replace(/^@/, "").trim() : null;
+
       return {
         id: d.id || `dep-${d.txHash}`,
         kind,
         name,
+        dnsName,
         pic: null as string | null,
         detail,
         amountUsdc: d.amountUsdc,
@@ -467,25 +525,35 @@ export default function UserTransactionsPage() {
     });
 
   const allTransactions = [
-    ...optimisticTxs.map((tx) => ({
-      id: tx.id,
-      kind: "transfers" as const,
-      name: tx.recipientLabel || "Recipient",
-      pic: null as string | null,
-      detail: "Sending • Awaiting confirmation",
-      amountUsdc: tx.amountUsdcMicros,
-      amountLabel: `-$${formatUsdc(tx.amountUsdcMicros)}`,
-      localAmountLabel: `-${getLocalValueLabel(tx.amountUsdcMicros)}`,
-      time: tx.createdAt,
-      incoming: false,
-      status: "PENDING",
-      txHash: tx.txHash,
-      receiptId: null as string | null,
-    })),
+    ...optimisticTxs.map((tx) => {
+      const isDns = Boolean(
+        tx.recipientLabel &&
+        !tx.recipientLabel.startsWith("0x") &&
+        tx.recipientLabel !== "Recipient"
+      );
+      const dnsName = isDns ? tx.recipientLabel!.replace(/^@/, "").trim() : null;
+      return {
+        id: tx.id,
+        kind: "transfers" as const,
+        name: tx.recipientLabel || "Recipient",
+        dnsName,
+        pic: null as string | null,
+        detail: "Sending • Awaiting confirmation",
+        amountUsdc: tx.amountUsdcMicros,
+        amountLabel: `-$${formatUsdc(tx.amountUsdcMicros)}`,
+        localAmountLabel: `-${getLocalValueLabel(tx.amountUsdcMicros)}`,
+        time: tx.createdAt,
+        incoming: false,
+        status: "PENDING",
+        txHash: tx.txHash,
+        receiptId: null as string | null,
+      };
+    }),
     ...subscriptions.map((s) => ({
       id: `sub-${s.subscriptionId}`,
       kind: "recurring" as const,
       name: s.merchantName,
+      dnsName: s.merchantName ? s.merchantName.replace(/^@/, "").trim() : null,
       pic: s.merchantProfilePic,
       detail: `Subscription • ${humanSubscriptionStatus(s.status)}`,
       amountUsdc: s.amountCapUsdc,
@@ -902,19 +970,23 @@ export default function UserTransactionsPage() {
                         <td className="py-3.5 pr-4">
                           <div className="flex items-center gap-3">
                             <div className="h-9 w-9 shrink-0 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
-                              {tx.pic ? (
-                                <Image src={tx.pic} alt={tx.name} width={36} height={36} unoptimized className="h-full w-full object-cover" />
-                              ) : tx.kind === "recurring" ? (
-                                <Shield className="h-4 w-4 text-[#2775CA]" />
-                              ) : tx.kind === "withdrawals" ? (
-                                <ArrowUpRight className="h-4 w-4 text-amber-500" />
-                              ) : tx.detail.toLowerCase().includes("deposit") || tx.incoming ? (
-                                <ArrowDownToLine className="h-4 w-4 text-emerald-500" />
-                              ) : tx.kind === "transfers" ? (
-                                <ArrowUpRight className="h-4 w-4 text-sky-500" />
-                              ) : (
-                                <CreditCard className="h-4 w-4 text-purple-500" />
-                              )}
+                              {(() => {
+                                const avatar = getTransactionAvatarInfo(tx);
+                                if (avatar.type === "pfp") {
+                                  return <Image src={avatar.picUrl} alt={tx.name} width={36} height={36} unoptimized className="h-full w-full object-cover" />;
+                                }
+                                return (
+                                  <span className={`text-sm font-black ${
+                                    avatar.isDns 
+                                      ? "text-[#2775CA] dark:text-[#5fa5f9]" 
+                                      : avatar.letter === "D" 
+                                        ? "text-emerald-600 dark:text-emerald-400" 
+                                        : "text-amber-600 dark:text-amber-400"
+                                  }`}>
+                                    {avatar.letter}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <div className="min-w-0">
                               <p className="truncate font-bold text-slate-900 dark:text-white">{tx.name}</p>
@@ -989,17 +1061,23 @@ export default function UserTransactionsPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="h-8 w-8 shrink-0 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
-                          {tx.pic ? (
-                            <Image src={tx.pic} alt={tx.name} width={32} height={32} unoptimized className="h-full w-full object-cover" />
-                          ) : tx.kind === "recurring" ? (
-                            <Shield className="h-4 w-4 text-[#2775CA]" />
-                          ) : tx.kind === "withdrawals" ? (
-                            <ArrowUpRight className="h-4 w-4 text-amber-500" />
-                          ) : tx.detail.toLowerCase().includes("deposit") || tx.incoming ? (
-                            <ArrowDownToLine className="h-4 w-4 text-emerald-500" />
-                          ) : (
-                            <CreditCard className="h-4 w-4 text-purple-500" />
-                          )}
+                          {(() => {
+                            const avatar = getTransactionAvatarInfo(tx);
+                            if (avatar.type === "pfp") {
+                              return <Image src={avatar.picUrl} alt={tx.name} width={32} height={32} unoptimized className="h-full w-full object-cover" />;
+                            }
+                            return (
+                              <span className={`text-xs font-black ${
+                                avatar.isDns 
+                                  ? "text-[#2775CA] dark:text-[#5fa5f9]" 
+                                  : avatar.letter === "D" 
+                                    ? "text-emerald-600 dark:text-emerald-400" 
+                                    : "text-amber-600 dark:text-amber-400"
+                              }`}>
+                                {avatar.letter}
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="min-w-0">
                           <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{tx.name}</p>

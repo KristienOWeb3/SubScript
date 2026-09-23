@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
     title: "Support & Contact",
-    description: "Get help with SubScript: general product support, billing and refund requests, privacy and legal contact, security disclosures, and answers to common questions about USDC subscriptions on Arc.",
+    description: "Get help with SubScript payments on Arc, including checkout, recurring and usage-based billing, refunds, privacy, legal questions, and security disclosures.",
     alternates: {
         canonical: "/support",
     },

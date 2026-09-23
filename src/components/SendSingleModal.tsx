@@ -367,18 +367,20 @@ export default function SendSingleModal({
                                                     const optionGas = routeGasStatus?.[option.id] ?? null;
                                                     const optionGasDepleted =
                                                         option.available && optionGas !== null && !optionGas.available;
+                                                    const isOptionDisabled = !option.available || optionGasDepleted || loading;
                                                     return (
                                                         <button
                                                             key={option.id}
                                                             type="button"
-                                                            disabled={!option.available || loading}
+                                                            disabled={isOptionDisabled}
                                                             onClick={() => {
+                                                                if (isOptionDisabled) return;
                                                                 setSelectedNetwork(option.id);
                                                                 setNetworkMenuOpen(false);
                                                             }}
                                                             className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs transition ${
-                                                                !option.available
-                                                                    ? "cursor-not-allowed text-black/35"
+                                                                isOptionDisabled
+                                                                    ? "cursor-not-allowed opacity-50 pointer-events-none text-black/35"
                                                                     : isSelected
                                                                       ? "bg-[#2775CA]/10 font-bold text-[#2775CA]"
                                                                       : "text-black hover:bg-black/5"
@@ -637,6 +639,16 @@ export default function SendSingleModal({
                                         Sending to {currentNetwork.name} needs your in-app wallet. Switch to it, or send on Arc
                                         instead.
                                     </p>
+                                )}
+
+                                {exceedsBalance && (
+                                    <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-700 dark:text-red-300">
+                                        {numericAmount >= walletBalance ? (
+                                            <>You have just ${walletBalance.toFixed(walletBalance % 1 === 0 ? 0 : 2)}, send all-gas or top up your balance.</>
+                                        ) : (
+                                            <>Insufficient balance for this transfer plus the Arc network fee. Click &quot;Max&quot; to send all-gas or top up your balance.</>
+                                        )}
+                                    </div>
                                 )}
 
                                 {isArcRoute && !status?.startsWith("Sent") && !status?.startsWith("Success") && routingNotice}

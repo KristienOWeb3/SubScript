@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
     title: "Terms of Service",
-    description: "Terms for using SubScript's Arc Network USDC subscription protocol, checkout intents, webhooks, embedded wallet onboarding, and digital receipt infrastructure.",
+    description: "Terms for using SubScript's Arc Network USDC payment platform, checkout intents, recurring and usage-based billing, webhooks, embedded wallets, and digital receipts.",
     alternates: {
         canonical: "/terms",
     },
