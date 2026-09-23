@@ -155,7 +155,7 @@ export const metadata: Metadata = {
     "programmable stablecoin commerce",
     "Unified Payment Authorization",
     "Arc USDC checkout",
-    "stablecoin subscriptions",
+    "programmable stablecoin payments",
     "payment links",
     "metered vault billing",
     "Arc memo receipts",
@@ -192,7 +192,7 @@ export default function ProtocolPage() {
             </h1>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-black/70">
               The Unified Payment Authorization model gives one-time checkout,
-              subscriptions, usage billing, invoices, sponsored payments, and
+              recurring payments, usage billing, invoices, sponsored payments, and
               AI-native transactions the same shape: create an intent,
               authorize a bounded USDC action, record an Arc memo receipt, and
               fulfill with a signed webhook.

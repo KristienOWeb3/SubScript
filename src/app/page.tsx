@@ -517,7 +517,7 @@ export default function Home() {
     const featureCardsLarge = [
         {
             icon: Zap,
-            title: "Programmable subscriptions",
+            title: "Programmable recurring payments",
             text: "Bounded USDC payment authorizations via Permit2, with revocation controls the customer holds. Funds stay in the customer's wallet until each billing cycle executes. There are no locked balances, and no charges after cancellation.",
         },
         {
@@ -626,7 +626,7 @@ export default function Home() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.8, delay: 0.25 }}
                         >
-                            Accept one-time, subscription, and pay-as-you-go USDC payments with hosted checkout and signed
+                            Accept one-time, recurring, and pay-as-you-go USDC payments with hosted checkout and signed
                             webhooks, settled on Arc in under a second.
                         </motion.p>
 

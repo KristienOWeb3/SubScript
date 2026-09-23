@@ -715,7 +715,7 @@ function SignupContent() {
         subtitle={
           selectedRole === "ENTERPRISE"
             ? "For businesses, platforms, and global commerce"
-            : "For individuals paying, sending, and subscribing"
+            : "For individuals paying, sending, and managing USDC"
         }
       >
         <div className="space-y-3.5">
@@ -731,7 +731,7 @@ function SignupContent() {
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
-                    <span>One-click checkout and automated subscription management</span>
+                    <span>Pay at checkout, manage recurring payments, and stay in control</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
@@ -764,11 +764,11 @@ function SignupContent() {
                 <ul className="space-y-2 text-xs text-[#111827]">
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
-                    <span>Cross-border USDC checkout links and recurring billing engine</span>
+                    <span>Accept cross-border USDC through checkout links and recurring billing</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
-                    <span>Developer APIs, webhooks, and metered subscription vaults</span>
+                    <span>Developer APIs, signed webhooks, and prepaid usage-based billing</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />

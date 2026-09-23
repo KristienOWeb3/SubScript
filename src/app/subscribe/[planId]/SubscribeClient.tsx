@@ -696,7 +696,7 @@ export default function SubscribeClient({
                         )}
 
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-black/60 font-sans">
-                            <Lock className="w-3 h-3" /> Secured by the SubScript subscription protocol
+                            <Lock className="w-3 h-3" /> Secured by SubScript payments
                         </div>
                     </motion.div>
                 )}

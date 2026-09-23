@@ -19,12 +19,12 @@ const comparisons = [
   {
     name: "SubScript vs Stripe",
     answer:
-      "Stripe is optimized for card and fiat payment rails. SubScript is optimized for USDC checkout, Arc Network receipts, wallet-based payment flows, and programmable crypto subscriptions.",
+      "Stripe is built around cards and fiat settlement. SubScript is built for USDC checkout, recurring and usage-based payments, sponsored flows, Arc receipts, and wallet-based customer journeys.",
   },
   {
     name: "SubScript vs Coinbase Commerce",
     answer:
-      "Coinbase Commerce focuses on crypto checkout. SubScript adds recurring billing patterns, merchant intent IDs, event-sourced webhook fulfillment with per-attempt delivery tracking, metered vaults, payment links, and Arc memo receipt infrastructure.",
+      "Coinbase Commerce focuses on crypto checkout. SubScript also supports recurring and usage-based billing, merchant intent IDs, signed webhook fulfillment, prepaid balances, payment links, and Arc memo receipts.",
   },
   {
     name: "SubScript vs manual USDC invoices",
@@ -34,7 +34,7 @@ const comparisons = [
   {
     name: "SubScript vs custom smart contract billing",
     answer:
-      "Custom billing contracts give teams control but require security, checkout UX, webhook delivery, receipt indexing, and wallet onboarding work. SubScript packages those merchant operations into a hosted protocol.",
+      "Custom billing contracts give teams control but require security, checkout UX, webhook delivery, receipt indexing, and wallet onboarding work. SubScript packages those operations into a hosted payment platform.",
   },
   {
     name: "SubScript vs local & dollar bank cards",
@@ -82,14 +82,14 @@ const structuredData = {
 export const metadata: Metadata = {
   title: "SubScript Protocol Comparisons",
   description:
-    "Compare SubScript with Stripe, Coinbase Commerce, manual USDC invoices, and custom smart contract billing for stablecoin subscriptions and Web3 checkout.",
+    "Compare SubScript with Stripe, Coinbase Commerce, manual USDC invoices, and custom smart contract billing for programmable USDC payments on Arc.",
   alternates: {
     canonical: "/compare",
   },
   keywords: [
     "SubScript vs Stripe",
     "SubScript vs Coinbase Commerce",
-    "USDC subscription billing",
+    "USDC payment infrastructure",
     "stablecoin payments comparison",
     "crypto checkout comparison",
     "Web3 payment infrastructure",
@@ -113,9 +113,9 @@ export default function ComparePage() {
           </h1>
           <p className="mt-6 max-w-3xl text-lg leading-8 text-black/70">
             SubScript is not a card processor or a bare wallet transfer flow. It
-            is a USDC-native checkout and subscription protocol with hosted
-            payment links, signed merchant webhooks, metered prepaid balances,
-            and Arc Network receipt records.
+            is a USDC-native payment platform for checkout, recurring and
+            usage-based billing, sponsored payments, signed webhooks, prepaid
+            balances, and Arc Network receipts.
           </p>
         </div>
       </section>
@@ -149,8 +149,9 @@ export default function ComparePage() {
             <h2 className="text-xl font-semibold">When SubScript is a strong fit</h2>
             <p className="mt-3 leading-7 text-black/70">
               Use SubScript when your product needs stablecoin checkout,
-              recurring USDC billing, webhook-driven fulfillment, no-code
-              payment links, or usage-based prepaid balances on Arc Network.
+              recurring or usage-based billing, sponsored payments,
+              webhook-driven fulfillment, no-code payment links, or prepaid
+              balances on Arc Network.
             </p>
           </article>
           <article className="rounded-lg border border-black/10 bg-white/60 p-6 shadow-sm">

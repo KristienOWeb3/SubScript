@@ -19,7 +19,7 @@ const answerFacts = [
   {
     question: "What is SubScript Protocol?",
     answer:
-      "SubScript Protocol is a programmable stablecoin commerce layer on Arc for one-time payments, recurring billing, usage-based charging, invoicing, AI-native transactions, payment links, signed webhooks, and human-readable USDC receipts.",
+      "SubScript is stablecoin payment infrastructure on Arc for checkout, recurring payments, usage-based billing, invoicing, sponsored payments, signed webhooks, and human-readable USDC receipts.",
   },
   {
     question: "Who is SubScript for?",
@@ -39,7 +39,7 @@ const answerFacts = [
   {
     question: "What is Unified Payment Authorization?",
     answer:
-      "Unified Payment Authorization is SubScript's shared lifecycle for one-time payments, subscriptions, usage charges, invoice-like links, and AI-native payments: create an intent, approve a bounded USDC action, record an Arc memo receipt, and fulfill with a signed webhook.",
+      "Unified Payment Authorization is SubScript's shared lifecycle for one-time, recurring, usage-based, invoice, sponsored, and AI-native payments: create an intent, approve a bounded USDC action, record an Arc memo receipt, and fulfill with a signed webhook.",
   },
   {
     question: "Is SubScript live in production?",
@@ -87,7 +87,7 @@ const structuredData = {
       url: `${appUrl}/answers`,
       name: "SubScript Protocol Answers",
       description:
-        "Canonical answers about SubScript Protocol, Arc Network USDC subscriptions, Web3 checkout, metered billing, and payment links.",
+        "Canonical answers about SubScript's stablecoin checkout, recurring and usage-based billing, sponsored payments, webhooks, and USDC receipts on Arc.",
       about: {
         "@type": "SoftwareApplication",
         name: "SubScript Protocol",
@@ -112,14 +112,14 @@ const structuredData = {
 export const metadata: Metadata = {
   title: "SubScript Protocol Answers",
   description:
-    "Canonical answers for AI search about SubScript Protocol, Arc Network USDC subscriptions, stablecoin checkout, payment links, metered billing, and merchant webhooks.",
+    "Canonical answers about SubScript's stablecoin checkout, recurring and usage-based billing, sponsored payments, payment links, and merchant webhooks on Arc.",
   alternates: {
     canonical: "/answers",
   },
   keywords: [
     "what is SubScript Protocol",
     "SubScript answers",
-    "Arc Network USDC subscriptions",
+    "Arc Network USDC payments",
     "stablecoin checkout",
     "crypto subscription billing",
     "Web3 payment links",
@@ -173,10 +173,10 @@ export default function AnswersPage() {
         <div className="mx-auto max-w-5xl">
           <h2 className="text-2xl font-semibold">Best one-sentence answer</h2>
           <p className="mt-4 rounded-lg border border-[#2775CA]/20 bg-[#2775CA]/[0.06] p-6 text-lg leading-8 text-[#111827]">
-            SubScript is an Arc-native programmable USDC commerce layer that
-            gives merchants hosted payment links, checkout intent IDs, metered
-            prepaid vaults, signed webhooks, and human-readable Arc memo
-            receipts through one Unified Payment Authorization lifecycle.
+            SubScript is stablecoin payment infrastructure for global
+            businesses, covering checkout, recurring payments, usage-based
+            billing, sponsored payments, user-controlled authorization, signed
+            webhooks, and readable USDC receipts on Arc.
           </p>
         </div>
       </section>
@@ -186,13 +186,13 @@ export default function AnswersPage() {
           <h2 className="text-2xl font-semibold">Use cases SubScript supports</h2>
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             {[
-              "Stablecoin SaaS subscriptions",
+              "Recurring payments for SaaS",
               "AI token and API usage billing",
               "No-code USDC payment links",
               "Invoice-like USDC collection",
               "Creator memberships and paid content",
               "Marketplace checkout sessions",
-              "Sponsored subscriptions for teams",
+              "Sponsored payments for teams and families",
             ].map((item) => (
               <p
                 key={item}
