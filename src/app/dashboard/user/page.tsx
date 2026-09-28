@@ -365,6 +365,44 @@ const looksLikeWalletAddress = (value: string | null | undefined) => {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value.trim());
 };
 
+function getTransactionAvatarInfo(tx: {
+  pic?: string | null;
+  dnsName?: string | null;
+  name?: string | null;
+  incoming?: boolean;
+  kind?: string;
+  detail?: string;
+}): { type: "pfp"; picUrl: string } | { type: "letter"; letter: string; isDns: boolean } {
+  if (tx.pic) {
+    return { type: "pfp", picUrl: tx.pic };
+  }
+
+  let dns = tx.dnsName;
+  if (!dns && tx.name) {
+    const atMatch = tx.name.match(/@([a-zA-Z0-9_.-]+)/);
+    if (atMatch && atMatch[1]) {
+      dns = atMatch[1];
+    }
+  }
+
+  if (dns) {
+    const clean = dns.replace(/^@/, "").trim();
+    const firstAlpha = clean.match(/[a-zA-Z]/);
+    if (firstAlpha) {
+      return { type: "letter", letter: firstAlpha[0].toUpperCase(), isDns: true };
+    }
+    if (clean.length > 0) {
+      return { type: "letter", letter: clean[0].toUpperCase(), isDns: true };
+    }
+  }
+
+  const isDeposit = Boolean(tx.incoming) || Boolean(tx.detail && tx.detail.toLowerCase().includes("deposit"));
+  if (isDeposit) {
+    return { type: "letter", letter: "D", isDns: false };
+  }
+  return { type: "letter", letter: "S", isDns: false };
+}
+
 /* An alias-less peer used to fall through to accountDisplayName(null), which is the constant
    "SubScript account" — so three contacts without a registered DNS name all rendered as the same
    string in the inbox and could not be told apart. The shortened address is the only identifier
@@ -3924,7 +3962,6 @@ export default function UserDashboard() {
           timestamp: d.timestamp,
           routedAt: d.routedAt,
         });
-
         const rawDns = incoming ? d.senderName : d.receiverName;
         const dnsName = rawDns && !rawDns.startsWith("0x") ? rawDns.replace(/^@/, "").trim() : null;
 
