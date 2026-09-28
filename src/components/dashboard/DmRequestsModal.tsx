@@ -105,32 +105,32 @@ export default function DmRequestsModal({
         }
     };
 
-    if (!open) return null;
-
     const pendingReceivedCount = received.filter((r) => r.status === "PENDING").length;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={onClose}
-                className="absolute inset-0 bg-black/80 backdrop-blur-md"
-            />
-
-            {/* Modal Box */}
-            <motion.div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="dm-requests-title"
-                initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                className="relative z-10 w-full max-w-xl max-h-[85vh] flex flex-col rounded-3xl border border-black/10 bg-[#FFFFF0] text-black shadow-2xl overflow-hidden"
-            >
+        <AnimatePresence>
+            {open && (
+                <motion.div
+                    key="dm-requests-modal"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 font-sans"
+                    onClick={onClose}
+                >
+                    {/* Modal Box */}
+                    <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="dm-requests-title"
+                        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="dashboard-modal-surface relative z-10 w-full max-w-xl max-h-[85vh] flex flex-col rounded-3xl border border-black/10 bg-[#FFFFF0] text-black shadow-2xl overflow-hidden transform-gpu"
+                    >
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-white/60">
                     <div className="flex items-center gap-3">
@@ -414,7 +414,9 @@ export default function DmRequestsModal({
                         )
                     )}
                 </div>
-            </motion.div>
-        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 }

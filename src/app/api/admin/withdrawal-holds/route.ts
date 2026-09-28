@@ -56,7 +56,7 @@ export async function POST(request: Request) {
         const body = await request.json().catch(() => ({}));
         let rawAddress = typeof body?.address === "string" ? body.address.trim() : "";
 
-        // Support DNS alias lookup (e.g. merchant.sub)
+        // Support DNS alias lookup (e.g. alice.sub)
         if (rawAddress.includes(".") && !ADDRESS_PATTERN.test(rawAddress)) {
             const aliasRow = await prisma.addressAlias.findUnique({
                 where: { alias: rawAddress.toLowerCase() },

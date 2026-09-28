@@ -29,7 +29,7 @@ export type Pt = { x: number; y: number };
  * depending on whether the admin sidebar was open. Measuring instead lets the SVG be 1:1 with
  * pixels, so 11px text is 11px everywhere and SVG coordinates equal overlay coordinates.
  */
-export function useMeasuredWidth<T extends HTMLElement>(fallback = 640) {
+export function useMeasuredWidth<T extends HTMLElement>(fallback = 320) {
     const ref = useRef<T | null>(null);
     const [width, setWidth] = useState(fallback);
 

@@ -36,7 +36,17 @@ import {
    chat, and the chat auto-selects the requester's active ticket, so this one link lands
    correctly for a user and a merchant alike. Hardcoded like the admin-alert template:
    an email that outlives a deploy must never point at a preview URL. */
-const SUPPORT_THREAD_URL = "https://www.subscriptonarc.com/support";
+/* Where a ticket thread actually lives. /support carries the button that opens the ticket
+   chat, and the chat auto-selects the requester's active ticket, so this one link lands
+   correctly for a user and a merchant alike. Hardcoded like the admin-alert template:
+   an email that outlives a deploy must never point at a preview URL. */
+export const SUPPORT_BASE_URL = "https://www.subscriptonarc.com/support";
+
+export function buildSupportTicketUrl(ticketId?: string): string {
+    return ticketId
+        ? `${SUPPORT_BASE_URL}?ticket=${encodeURIComponent(ticketId)}`
+        : SUPPORT_BASE_URL;
+}
 
 /* Long enough that they recognise their own words in the inbox list, short enough not to
    run off the end of it. Ticket subjects are allowed up to 200 characters. */
@@ -76,6 +86,7 @@ type SupportEmailContent = {
 export type RenderedSupportEmail = Omit<EmailMessage, "to" | "category" | "idempotencyKey">;
 
 function renderSupportEmail(content: SupportEmailContent): RenderedSupportEmail {
+    const threadUrl = buildSupportTicketUrl(content.ticketId);
     const referenceLines = `Reference: ${content.ticketId}\nSubject: ${content.ticketSubject}`;
     const footnoteText = content.footnote ? `\n\n${content.footnote}` : "";
 
@@ -83,7 +94,7 @@ function renderSupportEmail(content: SupportEmailContent): RenderedSupportEmail 
         subject: content.subject,
         /* The heading opens the text part too. renderEmailLayout puts it above the body in the
            HTML, and a plain-text reader should not have to infer it from the subject line. */
-        text: `${content.heading}\n\n${content.lead}\n\n${referenceLines}\n\n${IN_APP_CLOSE}${footnoteText}\n\nOpen your ticket: ${SUPPORT_THREAD_URL}`,
+        text: `${content.heading}\n\n${content.lead}\n\n${referenceLines}\n\n${IN_APP_CLOSE}${footnoteText}\n\nOpen your ticket: ${threadUrl}`,
         html: renderEmailLayout({
             previewText: content.previewText,
             heading: content.heading,
@@ -96,7 +107,7 @@ function renderSupportEmail(content: SupportEmailContent): RenderedSupportEmail 
                 </div>
                 <p style="margin:0${content.footnote ? " 0 14px" : ""}">${htmlEscape(IN_APP_CLOSE)}</p>
                 ${content.footnote ? `<p style="margin:0;color:#6b7280;font-size:12px">${htmlEscape(content.footnote)}</p>` : ""}`,
-            cta: { label: "Open your ticket", url: SUPPORT_THREAD_URL },
+            cta: { label: "Open your ticket", url: threadUrl },
         }),
     };
 }
@@ -148,6 +159,225 @@ export async function sendSupportTicketReceivedEmail(input: {
         to: recipient,
         category: "transactional",
         ...buildSupportTicketReceivedEmail({
+            recipient,
+            ticketId: input.ticketId,
+            subject: input.subject,
+        }),
+    }));
+}
+
+/**
+ * Combined claim & reply notification when an admin first replies to an open ticket.
+ *
+ * The first admin reply claims the ticket exclusively. Instead of sending two duplicate
+ * emails (one claim notification + one reply notification), send one combined human message.
+ */
+export function buildSupportTicketFirstAdminReplyEmail(input: {
+    recipient: string;
+    ticketId: string;
+    messageId: string;
+    subject: string;
+}): Omit<EmailMessage, "to" | "category"> {
+    const rendered = renderSupportEmail({
+        subject: `SubScript Support replied: ${clampSubjectLine(input.subject)}`,
+        previewText: "SubScript Support is now handling your ticket and has replied.",
+        heading: "SubScript Support is handling your ticket",
+        lead: "SubScript Support has claimed your ticket and replied to your conversation.",
+        ticketId: input.ticketId,
+        ticketSubject: input.subject,
+    });
+
+    return {
+        ...rendered,
+        idempotencyKey: `support-ticket-first-reply:${input.messageId}:${recipientTag(input.recipient)}`,
+    };
+}
+
+export async function sendSupportTicketFirstAdminReplyEmail(input: {
+    creatorWallet: string;
+    ticketId: string;
+    messageId: string;
+    subject: string;
+}) {
+    const recipient = await resolveRecipient(input.creatorWallet, "transactional");
+    if (!recipient) return;
+
+    return safelySendEmail("support ticket first admin reply", () => sendTransactionalEmail({
+        to: recipient,
+        category: "transactional",
+        ...buildSupportTicketFirstAdminReplyEmail({
+            recipient,
+            ticketId: input.ticketId,
+            messageId: input.messageId,
+            subject: input.subject,
+        }),
+    }));
+}
+
+/**
+ * Subsequent admin reply notification.
+ */
+export function buildSupportTicketAdminReplyEmail(input: {
+    recipient: string;
+    ticketId: string;
+    messageId: string;
+    subject: string;
+}): Omit<EmailMessage, "to" | "category"> {
+    const rendered = renderSupportEmail({
+        subject: `New reply from SubScript Support: ${clampSubjectLine(input.subject)}`,
+        previewText: "A new reply has been added to your support ticket.",
+        heading: "New reply from SubScript Support",
+        lead: "A new reply has been added to your support ticket by SubScript Support.",
+        ticketId: input.ticketId,
+        ticketSubject: input.subject,
+    });
+
+    return {
+        ...rendered,
+        idempotencyKey: `support-ticket-reply:${input.messageId}:${recipientTag(input.recipient)}`,
+    };
+}
+
+export async function sendSupportTicketAdminReplyEmail(input: {
+    creatorWallet: string;
+    ticketId: string;
+    messageId: string;
+    subject: string;
+}) {
+    const recipient = await resolveRecipient(input.creatorWallet, "transactional");
+    if (!recipient) return;
+
+    return safelySendEmail("support ticket admin reply", () => sendTransactionalEmail({
+        to: recipient,
+        category: "transactional",
+        ...buildSupportTicketAdminReplyEmail({
+            recipient,
+            ticketId: input.ticketId,
+            messageId: input.messageId,
+            subject: input.subject,
+        }),
+    }));
+}
+
+/**
+ * Ticket resolved notification.
+ */
+export function buildSupportTicketResolvedEmail(input: {
+    recipient: string;
+    ticketId: string;
+    subject: string;
+}): Omit<EmailMessage, "to" | "category"> {
+    const rendered = renderSupportEmail({
+        subject: `Ticket resolved: ${clampSubjectLine(input.subject)}`,
+        previewText: "Your support ticket has been marked as resolved.",
+        heading: "Your ticket has been resolved",
+        lead: "SubScript Support has marked your ticket as resolved.",
+        ticketId: input.ticketId,
+        ticketSubject: input.subject,
+    });
+
+    return {
+        ...rendered,
+        idempotencyKey: `support-ticket-resolved:${input.ticketId}:${recipientTag(input.recipient)}`,
+    };
+}
+
+export async function sendSupportTicketResolvedEmail(input: {
+    creatorWallet: string;
+    ticketId: string;
+    subject: string;
+}) {
+    const recipient = await resolveRecipient(input.creatorWallet, "transactional");
+    if (!recipient) return;
+
+    return safelySendEmail("support ticket resolved", () => sendTransactionalEmail({
+        to: recipient,
+        category: "transactional",
+        ...buildSupportTicketResolvedEmail({
+            recipient,
+            ticketId: input.ticketId,
+            subject: input.subject,
+        }),
+    }));
+}
+
+/**
+ * Ticket closed notification.
+ */
+export function buildSupportTicketClosedEmail(input: {
+    recipient: string;
+    ticketId: string;
+    subject: string;
+}): Omit<EmailMessage, "to" | "category"> {
+    const rendered = renderSupportEmail({
+        subject: `Ticket closed: ${clampSubjectLine(input.subject)}`,
+        previewText: "Your support ticket has been closed.",
+        heading: "Your ticket has been closed",
+        lead: "SubScript Support has closed your ticket.",
+        ticketId: input.ticketId,
+        ticketSubject: input.subject,
+    });
+
+    return {
+        ...rendered,
+        idempotencyKey: `support-ticket-closed:${input.ticketId}:${recipientTag(input.recipient)}`,
+    };
+}
+
+export async function sendSupportTicketClosedEmail(input: {
+    creatorWallet: string;
+    ticketId: string;
+    subject: string;
+}) {
+    const recipient = await resolveRecipient(input.creatorWallet, "transactional");
+    if (!recipient) return;
+
+    return safelySendEmail("support ticket closed", () => sendTransactionalEmail({
+        to: recipient,
+        category: "transactional",
+        ...buildSupportTicketClosedEmail({
+            recipient,
+            ticketId: input.ticketId,
+            subject: input.subject,
+        }),
+    }));
+}
+
+/**
+ * Ticket reopened notification.
+ */
+export function buildSupportTicketReopenedEmail(input: {
+    recipient: string;
+    ticketId: string;
+    subject: string;
+}): Omit<EmailMessage, "to" | "category"> {
+    const rendered = renderSupportEmail({
+        subject: `Ticket reopened: ${clampSubjectLine(input.subject)}`,
+        previewText: "Your support ticket has been reopened.",
+        heading: "Your ticket has been reopened",
+        lead: "Your support ticket has been reopened. You can continue the conversation in the app.",
+        ticketId: input.ticketId,
+        ticketSubject: input.subject,
+    });
+
+    return {
+        ...rendered,
+        idempotencyKey: `support-ticket-reopened:${input.ticketId}:${recipientTag(input.recipient)}`,
+    };
+}
+
+export async function sendSupportTicketReopenedEmail(input: {
+    creatorWallet: string;
+    ticketId: string;
+    subject: string;
+}) {
+    const recipient = await resolveRecipient(input.creatorWallet, "transactional");
+    if (!recipient) return;
+
+    return safelySendEmail("support ticket reopened", () => sendTransactionalEmail({
+        to: recipient,
+        category: "transactional",
+        ...buildSupportTicketReopenedEmail({
             recipient,
             ticketId: input.ticketId,
             subject: input.subject,

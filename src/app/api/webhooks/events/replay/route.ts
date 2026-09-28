@@ -35,6 +35,7 @@ export async function POST(request: Request) {
                 ? body.endpointId.trim()
                 : undefined;
         const replayLatest = body.latest === true;
+        const requestedEnvironment = typeof body.environment === "string" ? body.environment.toUpperCase() : undefined;
 
         if (!rawEventId && !replayLatest) {
             return NextResponse.json({
@@ -53,7 +54,12 @@ export async function POST(request: Request) {
         let merchantEvent;
         if (replayLatest) {
             merchantEvent = await prisma.merchantEvent.findFirst({
-                where: { merchantAddress: normalizedWallet },
+                where: {
+                    merchantAddress: normalizedWallet,
+                    ...(requestedEnvironment === "LIVE" || requestedEnvironment === "TEST"
+                        ? { environment: requestedEnvironment }
+                        : {}),
+                },
                 orderBy: { createdAt: "desc" },
             });
         } else {

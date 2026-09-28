@@ -20,7 +20,8 @@ Canonical product brief: [subscript-protocol-features-and-problems-solved.md](./
 | Absolute stateless router | Partial | Contracts/docs reference stateless routing. Confirm with contract tests/audit before treating as a security guarantee. |
 | Spam-proof proof-of-transaction DMs | Partial | DM routes and payment request flows exist. Enforce a strict recent valid transaction gate before calling this fully spam-proof. |
 | Privacy Premium at 10 USDC/month baseline | Partial | Premium tier, confidentiality routes, payroll, and settings exist. Ensure pricing copy says 10 USDC/month and verify ArcaneVM deployment before claiming production confidentiality. |
-| DNS aliases | Implemented | `address_aliases` schema, alias API, and dashboard/user UI exist. |
+| Consumer DNS aliases | Implemented | `address_aliases` schema, alias API, and user dashboard P2P UI exist; DNS is not used for merchant verification or Commit lookup. |
+| Merchant three-name identity | Implemented | Immutable `merchant_id` for administration, immutable `commit_slug` for public Commit routing, and governed `display_name` for customer-facing branding. |
 | Automated notification gateways | Partial | Transactional email, webhooks, and merchant automation routes exist. SMS/multi-channel gateway support should be formalized. |
 | Payment links | Implemented | `payment_links` schema, `/api/payment-links`, `/pay/[id]`, receipt tokens, and dashboard flows exist. |
 | Flexible usage-based billing | Implemented baseline | Metered vault schema and `/api/user/vault/*` routes exist for API tokens, AI usage, storage, media, and pay-per-use scenarios. |

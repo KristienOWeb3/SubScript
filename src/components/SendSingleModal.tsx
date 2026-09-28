@@ -73,9 +73,53 @@ export default function SendSingleModal({
     /* Estimated Arc network fee for a user-paid on-chain send. Fetched from the same estimator the
        server charges with, so the quoted number matches what is billed. */
     const [arcFeeUsdc, setArcFeeUsdc] = useState<number | null>(null);
+    const [arcFeeFallback, setArcFeeFallback] = useState(false);
     /* Live, gas-aware availability per route, polled from /api/cctp/routes-status while the sheet is
        open. Null until the first response; routes fall back to their static availability meanwhile. */
-    const [routeGasStatus, setRouteGasStatus] = useState<Record<string, { available: boolean; status: string }> | null>(null);
+    const [routeGasStatus, setRouteGasStatus] = useState<Record<string, { available: boolean; status: string; unavailableReason?: string | null }> | null>(null);
+
+    /* ── Recipient input validation ────────────────────────────────────────────────
+       Rules are invisible until the user breaks one, then the specific violation is
+       shown inline below the input.  Cleared as soon as the input becomes valid. */
+    const [recipientError, setRecipientError] = useState<string | null>(null);
+
+    /** Validate the recipient value and return the sanitised string (spaces stripped). */
+    const validateRecipient = (raw: string): string => {
+        /* Always strip spaces — they can sneak in via paste. */
+        const cleaned = raw.replace(/\s/g, "");
+
+        if (cleaned !== raw) {
+            /* The user typed or pasted a space — tell them once even though we stripped it. */
+            setRecipientError("Spaces are not allowed");
+        } else if (cleaned.length === 0) {
+            setRecipientError(null);
+        } else if (cleaned.startsWith("0x")) {
+            /* EVM-style address: must be exactly 42 hex characters. */
+            const body = cleaned.slice(2);
+            if (!/^[a-fA-F0-9]*$/.test(body)) {
+                setRecipientError("Invalid hexadecimal characters");
+            } else if (cleaned.length < 42) {
+                setRecipientError("Address must be 42 characters");
+            } else if (cleaned.length > 42 && !cleaned.endsWith(".sub")) {
+                setRecipientError("Address must be 42 characters");
+            } else {
+                setRecipientError(null);
+            }
+        } else if (cleaned.endsWith(".sub")) {
+            /* .sub name — just needs some body before the suffix. */
+            const body = cleaned.slice(0, -4);
+            if (body.length === 0) {
+                setRecipientError("Enter a name before .sub");
+            } else {
+                setRecipientError(null);
+            }
+        } else {
+            /* Partial input — don't show an error while the user is still typing. */
+            setRecipientError(null);
+        }
+
+        return cleaned;
+    };
 
     const recipientInputRef = useRef<HTMLInputElement | null>(null);
     const triggerRef = useRef<HTMLElement | null>(null);
@@ -88,9 +132,8 @@ export default function SendSingleModal({
     const currentNetwork = networkOptions.find((n) => n.id === selectedNetwork) || networkOptions[0];
     const isArcRoute = currentNetwork.id === "arc";
 
-    /* Escape closes, and the body is locked so the dashboard behind the sheet can't scroll on
-       iOS. A send in flight ignores both — tearing down mid-transaction would strand the user
-       without the confirmation or the error. */
+    /* Escape closes. The dashboard owns its desktop scroll container, so mutating body overflow
+       here caused a scrollbar-width layout jump (the visible "blink") every time the modal opened. */
     useEffect(() => {
         if (!open) return;
         const onKeyDown = (event: KeyboardEvent) => {
@@ -102,11 +145,8 @@ export default function SendSingleModal({
             if (!loading) onClose();
         };
         document.addEventListener("keydown", onKeyDown);
-        const previousOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
         return () => {
             document.removeEventListener("keydown", onKeyDown);
-            document.body.style.overflow = previousOverflow;
         };
     }, [open, loading, onClose, networkMenuOpen]);
 
@@ -142,12 +182,18 @@ export default function SendSingleModal({
     useEffect(() => {
         if (!open || !isArcRoute) {
             setArcFeeUsdc(null);
+            setArcFeeFallback(false);
             return;
         }
         let cancelled = false;
         fetch("/api/user/wallet/estimate-fee?recipients=1")
             .then((r) => (r.ok ? r.json() : null))
-            .then((d) => { if (!cancelled && d?.feeUsdc) setArcFeeUsdc(Number(d.feeUsdc)); })
+            .then((d) => {
+                if (!cancelled && d?.feeUsdc) {
+                    setArcFeeUsdc(Number(d.feeUsdc));
+                    setArcFeeFallback(Boolean(d.fallback));
+                }
+            })
             .catch(() => { /* best-effort UI; the server enforces the real fee at send time */ });
         return () => { cancelled = true; };
     }, [open, isArcRoute]);
@@ -168,10 +214,14 @@ export default function SendSingleModal({
                 if (!res.ok || cancelled) return;
                 const data = await res.json();
                 if (cancelled || !Array.isArray(data?.routes)) return;
-                const next: Record<string, { available: boolean; status: string }> = {};
+                const next: Record<string, { available: boolean; status: string; unavailableReason?: string | null }> = {};
                 for (const route of data.routes) {
                     if (route && typeof route.id === "string") {
-                        next[route.id] = { available: Boolean(route.available), status: String(route.status ?? "") };
+                        next[route.id] = {
+                            available: Boolean(route.available),
+                            status: String(route.status ?? ""),
+                            unavailableReason: route.unavailableReason ?? null,
+                        };
                     }
                 }
                 setRouteGasStatus(next);
@@ -201,6 +251,7 @@ export default function SendSingleModal({
     /* On the user-paid Arc route the wallet must keep enough for the network fee, so the most that
        can be sent is the balance minus that fee; cross-chain routes bill their fee out of the amount. */
     const arcNetworkFee = isArcRoute && arcFeeUsdc ? arcFeeUsdc : 0;
+    const formattedArcFee = arcFeeUsdc?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
     const maxSendable = isArcRoute ? Math.max(0, walletBalance - arcNetworkFee) : walletBalance;
 
     /* Both routes debit the same Arc balance: a direct transfer moves it, a withdrawal burns it. So
@@ -220,10 +271,13 @@ export default function SendSingleModal({
     const routeUnavailable = !currentNetwork.available;
     const needsInAppWallet = !isArcRoute && !canWithdrawCrossChain;
 
-    /* Live gas signal for the selected route. A route can be listed as available (built at load time)
-       yet have its relayer out of gas right now, in which case the send is blocked until a top-up. */
+    /* Live gas signal for the selected route. Strict fail-closed: Arc is natively live; every other
+       chain is ONLY live when its relayer gas is confirmed available. If relayer gas is depleted,
+       unreachable, or unconfirmed, cross-chain withdrawal is blocked. */
     const currentRouteGas = routeGasStatus?.[currentNetwork.id] ?? null;
-    const routeGasDepleted = currentNetwork.available && currentRouteGas !== null && !currentRouteGas.available;
+    const currentRouteLive = isArcRoute || (currentNetwork.available && Boolean(currentRouteGas?.available));
+    const routeGasDepleted = !isArcRoute && currentNetwork.available && (!currentRouteGas || !currentRouteGas.available);
+    const currentUnavailableReason = currentRouteGas?.unavailableReason || currentNetwork.unavailableReason || "Relayer gas reserve low";
 
     const submitBlocked =
         loading ||
@@ -234,7 +288,7 @@ export default function SendSingleModal({
         exceedsBalance ||
         belowBridgeMinimum ||
         routeUnavailable ||
-        routeGasDepleted ||
+        (!isArcRoute && !currentRouteLive) ||
         needsInAppWallet;
 
     const handleSubmit = (event: React.FormEvent) => {
@@ -251,20 +305,20 @@ export default function SendSingleModal({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm sm:items-center"
+                    transition={{ duration: 0.15 }}
+                    className="dashboard-modal-overlay fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 font-sans"
                     onClick={loading ? undefined : onClose}
                 >
                     <motion.div
                         role="dialog"
                         aria-modal="true"
                         aria-label="Send USDC"
-                        initial={{ opacity: 0, y: 24, scale: 0.97 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 24, scale: 0.97 }}
-                        transition={{ type: "spring", stiffness: 320, damping: 30 }}
+                        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
                         onClick={(event) => event.stopPropagation()}
-                        className="relative my-auto w-full max-w-md overflow-hidden rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-6 shadow-2xl"
+                        className="dashboard-modal-surface relative my-auto w-full max-w-md max-h-[90vh] overflow-y-auto transform-gpu custom-scrollbar rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-6 shadow-2xl"
                     >
                         <div className="relative z-10 mb-5 flex items-center justify-between">
                             <div>
@@ -351,23 +405,41 @@ export default function SendSingleModal({
                                                 <div className="flex flex-col text-left">
                                                     <span>{currentNetwork.name}</span>
                                                     <span className="text-[10px] font-normal text-black/50">
-                                                        {currentNetwork.feeBps === 0
-                                                            ? "No fee, arrives instantly"
-                                                            : `${currentNetwork.feePercentage} fee, ${currentNetwork.estimatedTime.toLowerCase()}`}
+                                                        {!currentRouteLive
+                                                            ? currentUnavailableReason
+                                                            : currentNetwork.feeBps === 0
+                                                              ? "No fee, arrives instantly"
+                                                              : `${currentNetwork.feePercentage} fee, ${currentNetwork.estimatedTime.toLowerCase()}`}
                                                     </span>
                                                 </div>
                                             </div>
-                                            <ChevronDown className="h-4 w-4 text-black/40" />
+                                            <div className="flex items-center gap-2">
+                                                {!isArcRoute && (
+                                                    currentRouteLive ? (
+                                                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">
+                                                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                                                            Live
+                                                        </span>
+                                                    ) : (
+                                                        <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                                                            Unavailable ⛽
+                                                        </span>
+                                                    )
+                                                )}
+                                                <ChevronDown className="h-4 w-4 text-black/40" />
+                                            </div>
                                         </button>
 
                                         {networkMenuOpen && (
                                             <div className="custom-scrollbar absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl">
                                                 {networkOptions.map((option) => {
                                                     const isSelected = selectedNetwork === option.id;
+                                                    const isArc = option.id === "arc";
                                                     const optionGas = routeGasStatus?.[option.id] ?? null;
-                                                    const optionGasDepleted =
-                                                        option.available && optionGas !== null && !optionGas.available;
-                                                    const isOptionDisabled = !option.available || optionGasDepleted || loading;
+                                                    // Strict fail-closed: Arc is natively live; other chains are ONLY live when relayer gas is confirmed available
+                                                    const isOptionLive = isArc || (option.available && Boolean(optionGas?.available));
+                                                    const isOptionDisabled = !isOptionLive || loading;
+                                                    const unavailableReason = optionGas?.unavailableReason || option.unavailableReason || "Relayer gas reserve low";
                                                     return (
                                                         <button
                                                             key={option.id}
@@ -390,10 +462,10 @@ export default function SendSingleModal({
                                                                 <ChainLogo chain={option.id} size={20} className="h-5 w-5" />
                                                                 <div className="min-w-0">
                                                                     <div className="truncate">{option.name}</div>
-                                                                    {/* The fee for this chain, right under its name. */}
+                                                                    {/* The fee or reason for this chain, right under its name. */}
                                                                     <div className="text-[10px] font-normal text-black/50">
-                                                                        {!option.available
-                                                                            ? option.unavailableReason || "Not available yet"
+                                                                        {!isOptionLive
+                                                                            ? unavailableReason
                                                                             : option.feeBps === 0
                                                                               ? "No fee, arrives instantly"
                                                                               : `${option.feePercentage} fee, ${option.estimatedTime.toLowerCase()}`}
@@ -401,18 +473,17 @@ export default function SendSingleModal({
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center gap-2 shrink-0">
-                                                                {option.available &&
-                                                                    (optionGasDepleted ? (
-                                                                        <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
-                                                                            Unavailable ⛽
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">
-                                                                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                                                                            Live
-                                                                        </span>
-                                                                    ))}
-                                                                {isSelected && option.available && (
+                                                                {isOptionLive ? (
+                                                                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">
+                                                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                                                                        Live
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                                                                        Unavailable ⛽
+                                                                    </span>
+                                                                )}
+                                                                {isSelected && isOptionLive && (
                                                                     <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2775CA]" />
                                                                 )}
                                                             </div>
@@ -442,7 +513,8 @@ export default function SendSingleModal({
                                                 ref={recipientInputRef}
                                                 value={recipient}
                                                 disabled={loading}
-                                                onChange={(event) => onRecipientChange(event.target.value)}
+                                                onKeyDown={(e) => { if (e.key === " ") { e.preventDefault(); setRecipientError("Spaces are not allowed"); } }}
+                                                onChange={(event) => onRecipientChange(validateRecipient(event.target.value))}
                                                 placeholder={
                                                     isArcRoute
                                                         ? "alice.sub or 0x..."
@@ -471,6 +543,13 @@ export default function SendSingleModal({
                                         </button>
                                     </div>
                                 </Field>
+
+                                {/* Inline validation — only visible when a rule is broken. */}
+                                {recipientError && (
+                                    <p className="mt-1 text-[11px] font-medium text-red-600">
+                                        {recipientError}
+                                    </p>
+                                )}
 
                                 {/* Address confirmation. A resolved .sub name has to be visible before the user
                                     commits, and a failed lookup has to say so rather than just refusing to submit. */}
@@ -573,19 +652,19 @@ export default function SendSingleModal({
                                 {amountIsValid && isArcRoute && (
                                     <div className="space-y-1.5 rounded-2xl border border-black/10 bg-white/70 p-3.5 text-xs shadow-sm">
                                         <div className="flex justify-between text-black/70">
-                                            <span>You send</span>
+                                            <span>Amount</span>
                                             <span className="font-mono font-bold">{numericAmount.toFixed(2)} USDC</span>
                                         </div>
                                         <div className="flex justify-between text-black/70">
-                                            <span>Network fee (Arc gas)</span>
-                                            <span className="font-mono font-bold">{arcFeeUsdc !== null ? `+${arcFeeUsdc.toFixed(4)}` : "≈ …"} USDC</span>
+                                            <span>Estimated Arc network fee{arcFeeFallback ? " (fallback)" : ""}</span>
+                                            <span className="font-mono font-bold">{arcFeeUsdc !== null ? `+${formattedArcFee}` : "≈ …"} USDC</span>
                                         </div>
                                         <div className="flex justify-between border-t border-black/10 pt-1.5 font-bold text-[#111827]">
-                                            <span>Total debited</span>
-                                            <span className="font-mono text-[#2775CA]">{(numericAmount + arcNetworkFee).toFixed(4)} USDC</span>
+                                            <span>Estimated total</span>
+                                            <span className="font-mono text-[#2775CA]">{(numericAmount + arcNetworkFee).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDC</span>
                                         </div>
                                         <p className="pt-0.5 text-[10px] leading-relaxed text-black/50">
-                                            The recipient receives the full {numericAmount.toFixed(2)} USDC.
+                                            Arc network fees are charged separately from the amount received by the recipient.
                                         </p>
                                     </div>
                                 )}
@@ -629,8 +708,8 @@ export default function SendSingleModal({
 
                                 {routeGasDepleted && (
                                     <p className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-900">
-                                        Withdrawals to {currentNetwork.name} are temporarily paused while sponsor gas reserves are
-                                        replenished. Check back shortly.
+                                        Withdrawals to {currentNetwork.name} are temporarily paused while relayer gas reserves are
+                                        replenished ({currentUnavailableReason}). Check back shortly.
                                     </p>
                                 )}
 

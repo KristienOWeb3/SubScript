@@ -80,7 +80,7 @@ export async function GET(
                 merchantId: merchant.merchantId,
                 displayName: merchant.displayName,
                 displayNameLocked: merchant.displayNameLocked,
-                tier: merchant.tier,
+                commitSlug: merchant.commitSlug,
                 verified: merchant.verified,
                 availableBalanceUsdc: (Number(merchant.availableBalanceUsdc) / 1_000_000).toFixed(2),
                 reservedBalanceUsdc: (Number(merchant.reservedBalanceUsdc) / 1_000_000).toFixed(2),

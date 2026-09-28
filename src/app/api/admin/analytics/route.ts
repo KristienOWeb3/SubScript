@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireScope } from "@/lib/admin/guard";
 import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
 import { jsonOk } from "@/lib/http/json";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
 /* Platform-wide analytics for the admin console.
  *
@@ -13,6 +14,7 @@ import { jsonOk } from "@/lib/http/json";
  */
 
 const MICRO_USDC = 1_000_000n;
+const COMMERCE_RECEIPT_SOURCES = ["COMMERCE_PAYMENT", "SUBSCRIPTION"] as const;
 
 function formatUsdc(micro: bigint | null | undefined): string {
     if (micro === null || micro === undefined) return "0.00";
@@ -79,22 +81,22 @@ export async function GET(request: Request) {
         ] = await runAdminQueriesSequentially([
             /* Volume: confirmed receipts are the settled, on-chain-verified record. */
             () => prisma.receipt.aggregate({
-                where: { status: "CONFIRMED" },
+                where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
             () => prisma.receipt.aggregate({
-                where: { status: "CONFIRMED", createdAt: { gte: sevenDaysAgo } },
+                where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] }, createdAt: { gte: sevenDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
             () => prisma.receipt.aggregate({
-                where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
+                where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] }, createdAt: { gte: thirtyDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
             () => prisma.receipt.aggregate({
-                where: { status: "CONFIRMED", createdAt: { gte: ninetyDaysAgo } },
+                where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] }, createdAt: { gte: ninetyDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
@@ -134,7 +136,7 @@ export async function GET(request: Request) {
             () => getSponsorWalletStatus().catch(() => null),
             /* Timeline raw data for the last 30 days */
             () => prisma.receipt.findMany({
-                where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
+                where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] }, createdAt: { gte: thirtyDaysAgo } },
                 select: { createdAt: true, amountUsdc: true },
                 orderBy: { createdAt: "asc" },
             }),
@@ -156,11 +158,11 @@ export async function GET(request: Request) {
             /* Top merchants by settled receipt volume. */
             () => prisma.receipt.groupBy({
                 by: ["merchantAddress"],
-                where: { status: "CONFIRMED" },
+                where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] } },
                 _sum: { amountUsdc: true },
                 _count: { _all: true },
                 orderBy: { _sum: { amountUsdc: "desc" } },
-                take: 5,
+                take: 25,
             }),
         ]);
 
@@ -279,7 +281,8 @@ export async function GET(request: Request) {
         }
 
 
-        /* Resolve the merchant profile and alias after ranking by actual settled volume. */
+        /* Only real merchant profiles can appear in this ranking. Wallet transfers are excluded by
+           sourceType above, and merchant identity is deliberately independent of DNS aliases. */
         const rankedMerchants = topMerchantsRaw as unknown as Array<{
             merchantAddress: string;
             _sum: { amountUsdc: bigint | null };
@@ -287,40 +290,36 @@ export async function GET(request: Request) {
         }>;
 
         const merchantAddresses = rankedMerchants.map((m) => m.merchantAddress.toLowerCase());
-        const [merchantProfiles, aliases] = await runAdminQueriesSequentially([
-            () => prisma.merchant.findMany({
+        const merchantProfiles = await prisma.merchant.findMany({
                 where: { walletAddress: { in: merchantAddresses } },
                 select: {
                     walletAddress: true,
-                    tier: true,
+                    merchantId: true,
+                    displayName: true,
                     verified: true,
                     profilePic: true,
                     createdAt: true,
                 },
-            }),
-            () => prisma.addressAlias.findMany({
-                where: { address: { in: merchantAddresses } },
-            }),
-        ]);
+            });
         const profileMap = new Map(merchantProfiles.map((m) => [m.walletAddress.toLowerCase(), m]));
-        const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
 
-        const topMerchants = rankedMerchants.map((m) => {
+        const topMerchants = rankedMerchants.flatMap((m) => {
             const walletAddress = m.merchantAddress.toLowerCase();
             const profile = profileMap.get(walletAddress);
+            if (!profile) return [];
             const volumeMicro = toBigInt(m._sum.amountUsdc);
-            return {
+            return [{
                 walletAddress,
-                merchantName: aliasMap.get(walletAddress) || walletAddress.slice(0, 10),
-                tier: profile?.tier ?? "FREE",
-                verified: profile?.verified ?? false,
-                profilePic: profile?.profilePic ?? null,
-                createdAt: profile?.createdAt.toISOString() ?? null,
+                merchantId: profile.merchantId,
+                merchantName: resolveMerchantDisplayName(profile.displayName),
+                verified: profile.verified,
+                profilePic: profile.profilePic,
+                createdAt: profile.createdAt.toISOString(),
                 volumeUsdc: formatUsdc(volumeMicro),
                 volumeUsdcNumber: usdcMicrosToNumber(volumeMicro),
                 paymentCount: m._count._all,
-            };
-        });
+            }];
+        }).slice(0, 5);
 
         /* Estimate MRR */
         const activeTotal = activeCustomerSubs;

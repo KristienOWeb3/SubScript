@@ -97,14 +97,18 @@ export default function WithdrawModal({
     return (
         <AnimatePresence>
             {isOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <motion.div
+                    key="withdraw-modal-wrapper"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
+                >
                     {/* Backdrop */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
+                    <div
                         onClick={resetStates}
-                        className="fixed inset-0 bg-black/80 backdrop-blur-md"
+                        className="fixed inset-0 bg-black/75"
                     />
 
                     {/* Modal container */}
@@ -112,11 +116,11 @@ export default function WithdrawModal({
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="withdraw-dialog-title"
-                        initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                        initial={{ opacity: 0, scale: 0.96, y: 8 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overflow-x-hidden overscroll-contain border border-black/15 rounded-3xl p-6 sm:p-8 shadow-2xl z-10 text-black bg-[#FFFFF0] font-sans"
+                        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        className="dashboard-modal-surface relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overflow-x-hidden overscroll-contain transform-gpu border border-black/15 rounded-3xl p-6 sm:p-8 shadow-2xl z-10 text-black bg-[#FFFFF0] font-sans"
                     >
                         {/* Header */}
                         <div className="flex justify-between items-center mb-6 relative z-10 border-b border-black/10 pb-4">
@@ -282,7 +286,7 @@ export default function WithdrawModal({
                             </button>
                         </div>
                     </motion.div>
-                </div>
+                </motion.div>
             )}
         </AnimatePresence>
     );

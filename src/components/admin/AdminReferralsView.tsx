@@ -492,13 +492,13 @@ export function AdminReferralsView() {
       </div>
 
       {/* Main Filter & Navigation Strip */}
-      <div className="flex flex-col gap-3 rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-2.5 rounded-xl border border-[#e2e8f0] bg-white p-2.5 shadow-sm lg:flex-row lg:items-center lg:justify-between overflow-x-auto">
         {/* Left: View Mode Toggle */}
-        <div className="flex items-center gap-1 rounded-lg bg-[#f1f5f9] p-1">
+        <div className="flex items-center gap-1 rounded-lg bg-[#f1f5f9] p-1 shrink-0">
           <button
             type="button"
             onClick={() => setViewMode("leaderboard")}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${
+            className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-bold transition ${
               viewMode === "leaderboard"
                 ? "bg-white text-[#2775ca] shadow-sm"
                 : "text-[#64748b] hover:text-[#0f172a]"
@@ -510,7 +510,7 @@ export function AdminReferralsView() {
           <button
             type="button"
             onClick={() => setViewMode("tree")}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${
+            className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-bold transition ${
               viewMode === "tree"
                 ? "bg-white text-[#2775ca] shadow-sm"
                 : "text-[#64748b] hover:text-[#0f172a]"
@@ -522,7 +522,7 @@ export function AdminReferralsView() {
           <button
             type="button"
             onClick={() => setViewMode("stream")}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${
+            className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-bold transition ${
               viewMode === "stream"
                 ? "bg-white text-[#2775ca] shadow-sm"
                 : "text-[#64748b] hover:text-[#0f172a]"
@@ -534,21 +534,21 @@ export function AdminReferralsView() {
         </div>
 
         {/* Right: Search, Timeframe & Sort */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex items-center gap-2 shrink-0 flex-nowrap">
           {/* Search Input */}
-          <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+          <div className="relative w-40 lg:w-44 xl:w-52 shrink-0">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94a3b8]" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search wallet or .sub alias…"
-              className="w-full rounded-lg border border-[#cbd5e1] bg-white pl-8 pr-3 py-1.5 text-xs text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#2775ca] focus:outline-none focus:ring-1 focus:ring-[#2775ca]"
+              className="w-full rounded-lg border border-[#cbd5e1] bg-white pl-8 pr-2.5 py-1 text-xs text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#2775ca] focus:outline-none focus:ring-1 focus:ring-[#2775ca]"
             />
           </div>
 
           {/* Timeframe Selector */}
-          <div className="flex items-center rounded-lg border border-[#cbd5e1] bg-white p-0.5">
+          <div className="flex items-center rounded-lg border border-[#cbd5e1] bg-white p-0.5 shrink-0">
             {(
               [
                 { id: "all", label: "All Time" },
@@ -561,7 +561,7 @@ export function AdminReferralsView() {
                 key={t.id}
                 type="button"
                 onClick={() => setTimeframe(t.id)}
-                className={`rounded px-2.5 py-1 text-[11px] font-bold transition ${
+                className={`whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-bold transition ${
                   timeframe === t.id
                     ? "bg-[#2775ca] text-white"
                     : "text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172a]"
@@ -578,7 +578,7 @@ export function AdminReferralsView() {
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortBy)}
               aria-label="Sort Leaderboard"
-              className="rounded-lg border border-[#cbd5e1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#0f172a] focus:border-[#2775ca] focus:outline-none"
+              className="shrink-0 rounded-lg border border-[#cbd5e1] bg-white px-2 py-1 text-xs font-semibold text-[#0f172a] focus:border-[#2775ca] focus:outline-none"
             >
               <option value="total">Sort: Total Referrals</option>
               <option value="active">Sort: Active Converted</option>

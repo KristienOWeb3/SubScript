@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { adminTierOf } from "@/lib/admin/identity";
 import {
@@ -8,6 +8,10 @@ import {
     maskSupportAdminIdentity,
     type SenderRole,
 } from "@/lib/support/tickets";
+import {
+    sendSupportTicketFirstAdminReplyEmail,
+    sendSupportTicketAdminReplyEmail,
+} from "@/lib/email/templates/support";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
@@ -124,6 +128,40 @@ export async function POST(
 
         // Return the updated ticket with messages
         const updatedTicket = await getSupportTicketWithMessages(ticketId);
+
+        /* Transactional emails run in after(), never on the critical path of the response.
+           A message must not fail because Resend is down or rate-limited. */
+        if (isAdmin && result.message && result.creatorWallet) {
+            const creatorWallet = result.creatorWallet;
+            const messageId = result.message.id;
+            const subject = result.subject || updatedTicket?.subject || "Support Request";
+            const isFirst = Boolean(result.isFirstAdminReply);
+
+            // Never email the requester for their own messages
+            if (creatorWallet.toLowerCase() !== cleanWallet) {
+                after(async () => {
+                    try {
+                        if (isFirst) {
+                            await sendSupportTicketFirstAdminReplyEmail({
+                                creatorWallet,
+                                ticketId,
+                                messageId,
+                                subject,
+                            });
+                        } else {
+                            await sendSupportTicketAdminReplyEmail({
+                                creatorWallet,
+                                ticketId,
+                                messageId,
+                                subject,
+                            });
+                        }
+                    } catch (emailErr) {
+                        console.error("[support/tickets] Failed to send admin reply email:", emailErr);
+                    }
+                });
+            }
+        }
 
         return NextResponse.json({
             success: true,

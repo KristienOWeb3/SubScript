@@ -9,6 +9,7 @@
 
 html {
   font-size: 108%;
+  scrollbar-gutter: stable;
 }
 
 @layer components {
@@ -175,6 +176,7 @@ html {
 
 html,
 body {
+  scrollbar-gutter: stable;
   max-width: 100vw;
   overflow-x: hidden;
   overscroll-behavior-y: auto;
@@ -779,11 +781,20 @@ body {
   border-color: transparent !important;
 }
 
-.user-dashboard-content .text-white:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
-.user-dashboard-content [class*="text-white/"]:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
+.user-dashboard-content .text-white:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
+.user-dashboard-content [class*="text-white/"]:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
 .user-dashboard-redesign [role="dialog"] .text-white,
 .user-dashboard-redesign [role="dialog"] [class*="text-white/"] {
   color: #000000 !important;
+}
+
+/* Explicit rule for active spend timeframe pills and dark elements: pure white text */
+.spend-timeframe-active,
+[data-spend-pill="active"],
+.user-dashboard-content [data-spend-pill="active"],
+.user-dashboard-content .spend-timeframe-active {
+  background-color: #082824 !important;
+  color: #ffffff !important;
 }
 
 /* Explicit rule for dark chat bubbles in DMs: pure white text */
@@ -2666,6 +2677,23 @@ aside [class~="bg-[#FFFFF0]"] *,
 
 [data-theme="dark"] [data-spend-chart] circle {
   fill: #18181b !important;
+}
+
+/* Full-viewport opacity and backdrop-filter animations force Chromium to rebuild the dashboard's
+   compositing layer. On blur-heavy dashboard pages that presents as a bright flash when a dialog
+   opens or closes. Keep the scrim stable and animate only the dialog's transform. */
+.dashboard-modal-overlay {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  isolation: isolate;
+}
+
+.dashboard-modal-surface {
+  filter: none !important;
+  -webkit-filter: none !important;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
 }
 
 

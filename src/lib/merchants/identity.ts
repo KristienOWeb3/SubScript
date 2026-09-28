@@ -18,10 +18,16 @@ export function generateMerchantId(): string {
 }
 
 const MERCHANT_ID_PATTERN = /^merc_[a-z0-9]+$/;
+const COMMIT_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
 /** True for a well-formed merchant id. Used to reject merchant ids as P2P transfer recipients. */
 export function isMerchantId(value: unknown): boolean {
     return typeof value === "string" && MERCHANT_ID_PATTERN.test(value.trim().toLowerCase());
+}
+
+/** Public Vault Commit route locator. It identifies a merchant; it never authorizes spending. */
+export function isCommitSlug(value: unknown): boolean {
+    return typeof value === "string" && COMMIT_SLUG_PATTERN.test(value.trim().toLowerCase());
 }
 
 export const MERCHANT_DISPLAY_NAME_MAX = 60;

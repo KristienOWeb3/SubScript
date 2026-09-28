@@ -2,7 +2,8 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import jsQR from "jsqr";
-import { X, QrCode, AlertCircle, Zap, RotateCw, Check } from "@/components/icons";
+import { motion, AnimatePresence } from "framer-motion";
+import { X, QrCode, AlertCircle, Sparkles, RotateCw, Check } from "@/components/icons";
 
 interface QrScannerModalProps {
   isOpen: boolean;
@@ -358,16 +359,30 @@ export function QrScannerModal({
     };
   }, [isOpen, startCamera, stopCamera]);
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-[150] flex items-center justify-center bg-black/85 backdrop-blur-2xl p-4 sm:p-6 animate-in fade-in duration-200"
-    >
-      <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/15 bg-[#0e1217]/95 p-5 sm:p-6 text-white shadow-2xl">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="qr-scanner-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15, ease: "easeOut" }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+          className="dashboard-modal-overlay fixed inset-0 z-[150] flex items-center justify-center bg-black/85 p-4 sm:p-6 font-sans"
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Scan QR code"
+            initial={{ scale: 0.96, opacity: 0, y: 8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.96, opacity: 0, y: 8 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="dashboard-modal-surface relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/15 bg-[#0e1217]/95 p-5 sm:p-6 text-white shadow-2xl transform-gpu"
+          >
         {/* Ambient Top Glow */}
         <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-[#2775ca]/25 blur-3xl" />
         <div className="pointer-events-none absolute -left-16 -bottom-16 h-40 w-40 rounded-full bg-[#2775ca]/15 blur-3xl" />
@@ -396,7 +411,7 @@ export function QrScannerModal({
                     : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Zap className="h-3.5 w-3.5" />
+                <Sparkles className="h-3.5 w-3.5" />
               </button>
             )}
 
@@ -415,7 +430,7 @@ export function QrScannerModal({
         <div className="relative mt-4 aspect-square w-full overflow-hidden rounded-2xl border border-white/15 bg-black flex items-center justify-center shadow-inner">
           <video
             ref={videoRef}
-            className="h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-cover"
             playsInline
             autoPlay
             muted
@@ -457,7 +472,7 @@ export function QrScannerModal({
 
           {/* Camera Error / Permission Blocked State */}
           {errorMsg && (
-            <div className="p-6 text-center space-y-3 z-10">
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 z-10 max-w-xs mx-auto">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10 text-red-400">
                 <AlertCircle className="h-6 w-6" />
               </div>
@@ -480,8 +495,10 @@ export function QrScannerModal({
             Line the QR code up inside the frame.
           </p>
         </div>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

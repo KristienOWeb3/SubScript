@@ -91,7 +91,11 @@ scripts/lighthouse-suite.mjs
 .mainnet/
 /mainnet/
 docs/mainnet/private/
+docs/worklogs/
 *.private.env
 mainnet-secrets.*
+tmp/
+output/circle-grant-2026/
+
 
 

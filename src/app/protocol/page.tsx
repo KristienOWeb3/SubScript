@@ -10,10 +10,10 @@ import {
   ReceiptText,
   RefreshCcw,
   ShieldCheck,
+  Sparkles,
   TimerReset,
   WalletCards,
   Webhook,
-  Zap,
 } from "@/components/icons";
 
 function normalizePublicUrl(value: string | undefined) {
@@ -305,7 +305,7 @@ export default function ProtocolPage() {
       <section className="border-t border-black/10 px-6 py-16 sm:px-10 lg:px-16">
         <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-4">
           {[
-            [Zap, "1% merchant fee target", "Pricing is designed around transparent merchant-paid processing."],
+            [Sparkles, "1% merchant fee target", "Pricing is designed around transparent merchant-paid processing."],
             [RefreshCcw, "Retry-aware billing", "Cron, reconciliation, and failure-state routes support recovery flows."],
             [FileText, "Invoice-like links", "Payment links and external references cover collection while first-class invoices mature."],
             [ShieldCheck, "Consumer control", "The model is designed to reduce unwanted recurring charges, card penalties, and opaque charge disputes."],

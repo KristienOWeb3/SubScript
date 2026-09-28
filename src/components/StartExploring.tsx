@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Zap, CreditCard, Users, Heart } from "@/components/icons";
+import { Sparkles, CreditCard, Users, Heart } from "@/components/icons";
 
 const features = [
     {
@@ -51,7 +51,7 @@ export default function StartExploring() {
                                 "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)",
                         }}
                     >
-                        <Zap className="w-6 h-6 text-white" />
+                        <Sparkles className="w-6 h-6 text-white" />
                     </div>
                 </div>
             </div>

@@ -82,7 +82,12 @@ export async function POST(request: Request) {
         /* Build update object */
         const updateObj: any = { wallet_address: normalizedUser };
         if (shieldedPayoutsEnabled !== undefined) {
-            updateObj.shielded_payouts_enabled = shieldedPayoutsEnabled;
+            if (shieldedPayoutsEnabled === true) {
+                return NextResponse.json({
+                    error: "Confidential Batch Payouts are not available yet. Arc Privacy Sector is required for on-chain shielding."
+                }, { status: 400 });
+            }
+            updateObj.shielded_payouts_enabled = false;
         }
         if (viewKeyHash !== undefined) {
             updateObj.view_key_hash = viewKeyHash;

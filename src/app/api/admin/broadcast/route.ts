@@ -5,6 +5,7 @@ import { requireScope, requireRootAdmin } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { sendPushToWallet } from "@/lib/push";
 import { jsonOk } from "@/lib/http/json";
+import { normalizeNotificationActionUrl } from "@/lib/notifications/actionUrl";
 
 /* Admin broadcast: one push notification to every user, every merchant, or both.
  *
@@ -47,7 +48,8 @@ export async function POST(request: Request) {
         const audience = String(body?.audience || "") as Audience;
         const title = String(body?.title || "").trim();
         const messageBody = String(body?.body || "").trim();
-        const url = body?.url ? String(body.url).trim() : null;
+        const requestedUrl = body?.url ? String(body.url).trim() : null;
+        const url = normalizeNotificationActionUrl(requestedUrl);
         const testOnly = body?.testOnly === true;
 
         if (!["users", "merchants", "both"].includes(audience)) {
@@ -58,6 +60,9 @@ export async function POST(request: Request) {
         }
         if (title.length > 120 || messageBody.length > 400) {
             return NextResponse.json({ error: "Title must be under 120 characters and body under 400" }, { status: 400 });
+        }
+        if (requestedUrl && !url) {
+            return NextResponse.json({ error: "Notification links must point to an existing SubScript page." }, { status: 400 });
         }
 
         const payload = { title, body: messageBody, url: url || undefined, tag: "subscript-announcement" };

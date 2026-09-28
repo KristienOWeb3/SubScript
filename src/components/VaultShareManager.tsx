@@ -448,7 +448,7 @@ export default function VaultShareManager({
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
                                     onClick={() => setAddModalOpen(false)}
-                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                    className="fixed inset-0 bg-black/65 z-[100]"
                                 />
                                 <motion.div
                                     initial={{ opacity: 0, scale: 0.96, y: 16 }}
@@ -581,7 +581,7 @@ export default function VaultShareManager({
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
                                     onClick={() => setSelectedShare(null)}
-                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                    className="fixed inset-0 bg-black/65 z-[100]"
                                 />
                                 <motion.div
                                     initial={{ opacity: 0, scale: 0.96, y: 16 }}
@@ -716,7 +716,7 @@ export default function VaultShareManager({
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
                                     onClick={() => setConfirmModal(null)}
-                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                    className="fixed inset-0 bg-black/65 z-[100]"
                                 />
                                 <motion.div
                                     initial={{ opacity: 0, scale: 0.96, y: 16 }}
@@ -764,7 +764,7 @@ export default function VaultShareManager({
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
                                     onClick={() => setRecapModal(null)}
-                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                    className="fixed inset-0 bg-black/65 z-[100]"
                                 />
                                 <motion.div
                                     initial={{ opacity: 0, scale: 0.96, y: 16 }}

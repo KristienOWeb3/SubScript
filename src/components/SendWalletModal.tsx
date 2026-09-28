@@ -32,6 +32,8 @@ export default function SendWalletModal({
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [successTx, setSuccessTx] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
+    /* Inline validation — rules are invisible until the user breaks one. */
+    const [recipientValidationError, setRecipientValidationError] = useState<string | null>(null);
 
     /* The parent keeps this mounted and toggles `isOpen`, so state survives a close. Applying the
        prefill on open (rather than as an initial useState value) is what makes a second scan land. */
@@ -42,7 +44,29 @@ export default function SendWalletModal({
         }
     }, [isOpen, initialRecipient]);
 
-    if (!isOpen) return null;
+    /** Validate recipient and return sanitised string (spaces stripped). */
+    const validateWalletRecipient = (raw: string): string => {
+        const cleaned = raw.replace(/\s/g, "");
+        if (cleaned !== raw) {
+            setRecipientValidationError("Spaces are not allowed");
+        } else if (cleaned.length === 0) {
+            setRecipientValidationError(null);
+        } else if (cleaned.startsWith("0x")) {
+            const body = cleaned.slice(2);
+            if (!/^[a-fA-F0-9]*$/.test(body)) {
+                setRecipientValidationError("Invalid hexadecimal characters");
+            } else if (cleaned.length < 42) {
+                setRecipientValidationError("Address must be 42 characters");
+            } else if (cleaned.length > 42) {
+                setRecipientValidationError("Address must be 42 characters");
+            } else {
+                setRecipientValidationError(null);
+            }
+        } else {
+            setRecipientValidationError(null);
+        }
+        return cleaned;
+    };
 
     const numAmount = parseFloat(amount) || 0;
     const isValidAddress = Boolean(recipientAddress && recipientAddress.startsWith("0x") && recipientAddress.length === 42 && ethers.isAddress(recipientAddress));
@@ -90,15 +114,26 @@ export default function SendWalletModal({
 
     return (
         <AnimatePresence>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            {isOpen && (
+                <motion.div
+                    key="send-wallet-backdrop"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 font-sans"
+                    onClick={isSending ? undefined : onClose}
+                >
                 <motion.div
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="send-usdc-title"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="relative w-full max-w-md bg-[#FFFFF0] border border-black/15 rounded-3xl p-6 sm:p-7 shadow-2xl overflow-hidden text-black font-sans"
+                    initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="dashboard-modal-surface relative transform-gpu w-full max-w-md bg-[#FFFFF0] border border-black/15 rounded-3xl p-6 sm:p-7 shadow-2xl overflow-hidden text-black font-sans"
                 >
                     {/* Header */}
                     <div className="flex items-center justify-between pb-4 border-b border-black/10">
@@ -182,14 +217,21 @@ export default function SendWalletModal({
                                         type="text"
                                         placeholder="0x..."
                                         value={recipientAddress}
+                                        onKeyDown={(e) => { if (e.key === " ") { e.preventDefault(); setRecipientValidationError("Spaces are not allowed"); } }}
                                         onChange={(e) => {
-                                            setRecipientAddress(e.target.value);
+                                            const cleaned = validateWalletRecipient(e.target.value);
+                                            setRecipientAddress(cleaned);
                                             setErrorMsg(null);
                                         }}
                                         disabled={isSending}
                                         className="w-full px-4 py-3 rounded-xl bg-white border border-black/15 text-black placeholder:text-black/30 text-sm focus:outline-none focus:border-[#8AB4DB] transition-colors font-mono"
                                     />
                                 </div>
+                                {recipientValidationError && (
+                                    <p className="mt-1 text-[11px] font-medium text-red-600">
+                                        {recipientValidationError}
+                                    </p>
+                                )}
                             </div>
 
                             {/* Amount Input */}
@@ -269,7 +311,8 @@ export default function SendWalletModal({
                         </form>
                     )}
                 </motion.div>
-            </div>
+                </motion.div>
+            )}
         </AnimatePresence>
     );
 }

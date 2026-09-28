@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, BookOpen, Code, Zap } from "@/components/icons";
+import { ArrowRight, BookOpen, Code } from "@/components/icons";
 import { ApiTable, Callout, DocsPager, PageFooter } from "./_components/primitives";
 import { docsSections, sectionHref } from "./_components/sections";
 import { pagerFor } from "./_components/meta";
@@ -168,7 +168,7 @@ export default function DocsOverviewPage() {
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-black/60">{section.summary}</p>
                   <span className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#2775CA] opacity-0 transition group-hover:opacity-100">
-                    Read <Zap className="h-3 w-3" />
+                    Read <ArrowRight className="h-3 w-3" />
                   </span>
                 </Link>
               );

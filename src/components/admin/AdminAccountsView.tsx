@@ -33,7 +33,7 @@ type AccountItem = {
   alias: string | null;
   email: string | null;
   custodyType: string;
-  merchantTier: string | null;
+  merchantId: string | null;
   merchantVerified: boolean;
   kycStatus: string;
   createdAt: string;
@@ -76,7 +76,7 @@ type AccountDetail = {
     createdAt: string;
   } | null;
   merchant: {
-    tier: string;
+    merchantId: string;
     verified: boolean;
     availableBalanceUsdc: string;
     reservedBalanceUsdc: string;
@@ -553,7 +553,7 @@ export function AdminAccountsView() {
 
                   {accountDetail.merchant && (
                     <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Merchant Balances & Tier</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Merchant Balances & Identity</span>
                       <div className="grid grid-cols-3 gap-2 pt-1 text-center font-mono">
                         <div className="bg-emerald-50 rounded-lg p-2 border border-emerald-100">
                           <span className="text-[9px] text-emerald-600 block font-sans">AVAILABLE</span>
@@ -564,8 +564,8 @@ export function AdminAccountsView() {
                           <span className="font-bold text-slate-700">${accountDetail.merchant.reservedBalanceUsdc}</span>
                         </div>
                         <div className="bg-blue-50 rounded-lg p-2 border border-blue-100">
-                          <span className="text-[9px] text-blue-600 block font-sans">TIER</span>
-                          <span className="font-bold text-blue-700">{accountDetail.merchant.tier}</span>
+                          <span className="text-[9px] text-blue-600 block font-sans">MERCHANT ID</span>
+                          <span className="font-bold text-blue-700">{accountDetail.merchant.merchantId}</span>
                         </div>
                       </div>
                     </div>

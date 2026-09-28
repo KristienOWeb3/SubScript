@@ -4,6 +4,7 @@ import { requireScope } from "@/lib/admin/guard";
 import { requestIp } from "@/lib/admin/audit";
 import { jsonOk } from "@/lib/http/json";
 import { withAdminDbRetry } from "@/lib/admin/db";
+import { isMerchantId } from "@/lib/merchants/identity";
 
 /* Manual merchant verification — the badge payers are shown at checkout.
  *
@@ -18,7 +19,8 @@ import { withAdminDbRetry } from "@/lib/admin/db";
 
 const MERCHANT_SELECT = {
   walletAddress: true,
-  tier: true,
+  merchantId: true,
+  displayName: true,
   verified: true,
   profilePic: true,
   createdAt: true,
@@ -34,21 +36,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
     }
 
-    let merchantAddress = body.merchantAddress.trim().toLowerCase();
-
-    // Support DNS alias lookup (e.g. acme.sub)
-    if (merchantAddress.includes(".") && !/^0x[a-f0-9]{40}$/.test(merchantAddress)) {
-      const aliasRow = await withAdminDbRetry(() => prisma.addressAlias.findUnique({
-        where: { alias: merchantAddress },
-        select: { address: true },
+    const identifier = body.merchantAddress.trim().toLowerCase();
+    let merchantAddress = identifier;
+    if (isMerchantId(identifier)) {
+      const merchant = await withAdminDbRetry(() => prisma.merchant.findUnique({
+        where: { merchantId: identifier },
+        select: { walletAddress: true },
       }));
-      if (aliasRow?.address) {
-        merchantAddress = aliasRow.address.toLowerCase();
-      }
+      if (!merchant) return NextResponse.json({ error: "Merchant ID not found." }, { status: 404 });
+      merchantAddress = merchant.walletAddress.toLowerCase();
     }
 
     if (!/^0x[a-f0-9]{40}$/.test(merchantAddress)) {
-      return NextResponse.json({ error: "Enter a valid merchant wallet address or SubScript DNS name." }, { status: 400 });
+      return NextResponse.json({ error: "Enter a valid merchant ID or wallet address." }, { status: 400 });
     }
     const verified = body.verified;
 

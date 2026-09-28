@@ -144,6 +144,20 @@ test("merchant verification cannot manufacture a merchant or account role", () =
   assert.doesNotMatch(route, /merchant\.upsert/);
   assert.doesNotMatch(route, /accountRole\.upsert/);
   assert.match(route, /tx\.adminAuditLog\.create/);
+  assert.match(route, /isMerchantId\(identifier\)/);
+  assert.doesNotMatch(route, /addressAlias\.findUnique/);
+});
+
+test("admin commerce analytics exclude direct wallet transfers", () => {
+  const analytics = source("src/app/api/admin/analytics/route.ts");
+  const overview = source("src/app/api/admin/overview/route.ts");
+  const migration = source("supabase/migrations/20260926120000_add_receipt_source_type.sql");
+
+  assert.match(analytics, /COMMERCE_RECEIPT_SOURCES/);
+  assert.match(analytics, /sourceType: \{ in: \[\.\.\.COMMERCE_RECEIPT_SOURCES\] \}/);
+  assert.match(overview, /COMMERCE_RECEIPT_SOURCES/);
+  assert.match(migration, /'WALLET_TRANSFER'/);
+  assert.match(migration, /receipts_source_type_check/);
 });
 
 test("withdrawal holds cover user sends and role-specific sponsored transfers", () => {

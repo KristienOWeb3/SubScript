@@ -156,7 +156,7 @@ export function DonutMetricChart({
         : "No data to chart yet";
 
     return (
-        <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
             {(title || subtitle) && (
                 <div className="mb-4">
                     {title && <h3 className="text-sm font-bold tracking-tight text-[#0f172a]">{title}</h3>}
@@ -179,8 +179,8 @@ export function DonutMetricChart({
                     <p className="max-w-[260px] text-xs leading-relaxed text-[#64748b]">{emptyMessage}</p>
                 </div>
             ) : (
-                <div className="flex flex-col items-center justify-around gap-6 sm:flex-row">
-                    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+                <div className="flex flex-wrap items-center justify-around gap-6">
+                    <div className="relative flex max-w-full shrink-0 items-center justify-center" style={{ width: size, height: size }}>
                         <svg
                             width={size}
                             height={size}
@@ -251,7 +251,7 @@ export function DonutMetricChart({
                         </div>
                     </div>
 
-                    <ul className="max-w-[220px] flex-1 space-y-1">
+                    <ul className="w-full min-w-0 max-w-[220px] flex-1 basis-[180px] space-y-1">
                         {arcs.map((arc, idx) => {
                             const isActive = activeIdx === idx;
                             return (

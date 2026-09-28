@@ -53,7 +53,20 @@ export async function POST(request: Request) {
         const body = await request.json().catch(() => ({}));
         const { amountUsdc, successUrl, cancelUrl, externalReference } = body || {};
 
-        const checkoutUrl = `${buildCheckoutUrl(`/commit/${merchantAddress}`)}${
+        const merchant = await prisma.merchant.findUnique({
+            where: { walletAddress: merchantAddress },
+            select: { commitSlug: true },
+        });
+        if (!merchant) {
+            return apiError({
+                status: 404,
+                code: "merchant_not_found",
+                requestId,
+                message: "Merchant profile not found.",
+            });
+        }
+
+        const checkoutUrl = `${buildCheckoutUrl(`/commit/${merchant.commitSlug}`)}${
             amountUsdc ? `?amount=${encodeURIComponent(amountUsdc)}` : ""
         }`;
 

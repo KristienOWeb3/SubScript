@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bell, X, CheckCircle, RefreshCw, ShieldAlert, CreditCard, ArrowRightLeft } from "@/components/icons";
+import { normalizeNotificationActionUrl } from "@/lib/notifications/actionUrl";
 
 type Notification = {
     id: string;
@@ -87,6 +88,9 @@ export default function NotificationBell({
     const panelRef = useRef<HTMLDivElement | null>(null);
     /* Ids already being deleted, so a bubbled second click can't double-count. */
     const dismissingRef = useRef<Set<string>>(new Set());
+    /* A click means the notification was viewed. Guard repeated taps while the read receipt is
+       being persisted, especially for linked rows that start navigation immediately. */
+    const viewingRef = useRef<Set<string>>(new Set());
     /* Bridge notifications that have been on screen in an open panel. They are cleared on close. */
     const viewedTransientRef = useRef<Set<string>>(new Set());
 
@@ -204,6 +208,34 @@ export default function NotificationBell({
         }
     };
 
+    const markViewed = async (id: string) => {
+        if (viewingRef.current.has(id)) return;
+        const target = items.find((item) => item.id === id);
+        if (!target || target.readAt) return;
+        viewingRef.current.add(id);
+
+        const now = new Date().toISOString();
+        setItems((current) => current.map((item) => item.id === id ? { ...item, readAt: now } : item));
+        setUnread((current) => Math.max(0, current - 1));
+        hasMarkedReadRef.current = true;
+
+        try {
+            const response = await fetch("/api/notifications", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ audience, ids: [id] }),
+                keepalive: true,
+            });
+            if (!response.ok) throw new Error(String(response.status));
+        } catch (error) {
+            console.warn("Failed to mark notification viewed:", error);
+            setItems((current) => current.map((item) => item.id === id ? { ...item, readAt: null } : item));
+            setUnread((current) => current + 1);
+        } finally {
+            viewingRef.current.delete(id);
+        }
+    };
+
     const togglePanel = () => {
         const next = !open;
         if (next) {
@@ -246,7 +278,10 @@ export default function NotificationBell({
             hasMarkedReadRef.current = false;
             setItems((current) => current.filter((item) => !item.readAt));
             setUnread(0);
-            void fetch(`/api/notifications?audience=${audience}&allRead=true`, { method: "DELETE" }).catch((err) => {
+            void fetch(`/api/notifications?audience=${audience}&allRead=true`, {
+                method: "DELETE",
+                keepalive: true,
+            }).catch((err) => {
                 console.warn("Failed to delete read notifications on close:", err);
             });
         }
@@ -336,6 +371,7 @@ export default function NotificationBell({
                     <ul className="divide-y divide-black/5">
                         {items.map((item) => {
                             const isUnread = !item.readAt;
+                            const actionUrl = normalizeNotificationActionUrl(item.url);
                             const itemContent = (
                                 <div className="flex items-start gap-3.5 group">
                                     <div className="notification-panel-tile p-2 rounded-xl bg-black/[0.04] border border-black/5 shrink-0 group-hover:border-black/10 transition-colors">
@@ -367,15 +403,25 @@ export default function NotificationBell({
                                     data-unread={isUnread ? "true" : "false"}
                                     className={`notification-panel-row px-5 py-3.5 transition-all ${isUnread ? "bg-black/[0.02] hover:bg-black/[0.05]" : "hover:bg-black/[0.03]"}`}
                                 >
-                                    {item.url ? (
-                                        /* Following the link is the action here. Deleting on any row click
-                                           destroyed notifications people were only trying to read, with no
-                                           undo; transient bridge rows clear themselves on close instead. */
-                                        <a href={item.url} className="block" onClick={() => setOpen(false)}>
+                                    {actionUrl ? (
+                                        <a
+                                            href={actionUrl}
+                                            className="block"
+                                            onClick={() => {
+                                                void markViewed(item.id);
+                                                setOpen(false);
+                                            }}
+                                        >
                                             {itemContent}
                                         </a>
                                     ) : (
-                                        itemContent
+                                        <button
+                                            type="button"
+                                            className="block w-full text-left"
+                                            onClick={() => void markViewed(item.id)}
+                                        >
+                                            {itemContent}
+                                        </button>
                                     )}
                                 </li>
                             );

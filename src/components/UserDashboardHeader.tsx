@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User, Globe, Shield, AlertCircle } from "@/components/icons";
+import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User, Globe, Shield, AlertCircle, KycVerificationPendingIcon } from "@/components/icons";
 import NotificationBell from "@/components/dashboard/NotificationBell";
 
 interface UserDashboardHeaderProps {
@@ -98,8 +98,8 @@ export default function UserDashboardHeader({
                                             ? `Tier ${tier}. Open verification details`
                                             : `Tier ${tier}. Show tier label`
                                     }
-                                    className={`flex h-9 shrink-0 items-center justify-center overflow-hidden rounded-full border text-[10px] font-black uppercase transition-[width,padding,background-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${
-                                        mobileTierExpanded ? "w-[58px] px-2 tracking-wide" : "w-9 px-0"
+                                    className={`flex h-9 shrink-0 items-center justify-center gap-1.5 overflow-hidden rounded-full border text-[10px] font-black uppercase transition-[width,padding,background-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${
+                                        mobileTierExpanded ? "w-[72px] px-2 tracking-wide" : "w-9 px-0"
                                     } ${
                                         tier >= 1
                                             ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
@@ -107,7 +107,8 @@ export default function UserDashboardHeader({
                                     }`}
                                     title={tier >= 1 ? "Tier 1: Verified" : "Tier 0: Basic (Link email to unlock transactions)"}
                                 >
-                                    <span aria-hidden="true">{mobileTierExpanded ? `Tier ${tier}` : tier}</span>
+                                    <KycVerificationPendingIcon className="w-3.5 h-3.5 shrink-0" />
+                                    {mobileTierExpanded && <span aria-hidden="true">{`Tier ${tier}`}</span>}
                                 </button>
                                 {/* Address/Domain pill */}
                                 <button
@@ -183,7 +184,7 @@ export default function UserDashboardHeader({
                                         }`}
                                         title={tier >= 1 ? "Tier 1: Verified (Email linked / MCP)" : "Tier 0: Basic (Link email to unlock transactions)"}
                                     >
-                                        {tier >= 1 ? <Shield className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                                        <KycVerificationPendingIcon className="w-3.5 h-3.5 shrink-0" />
                                         <span>{tier >= 1 ? "Tier 1: Verified" : "Tier 0: Basic"}</span>
                                     </div>
 

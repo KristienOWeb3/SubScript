@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Server,
-  Zap,
   Power,
   RefreshCw,
   Loader2,
@@ -152,21 +151,51 @@ export function AdminSystemHealthCard() {
   }, [loadHealth, loadSettings]);
 
   const handleToggleSetting = async (field: SettingsField, currentValue: boolean) => {
+    if (updatingFlag) return;
     setUpdatingFlag(field);
     setNotice(null);
+    const nextValue = !currentValue;
+
+    // Optimistic UI update so switch animates immediately
+    setSettingsData((prev) =>
+      prev
+        ? {
+            ...prev,
+            settings: {
+              ...prev.settings,
+              [field]: nextValue,
+            },
+          }
+        : prev
+    );
+
     try {
       const res = await fetch("/api/admin/system/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: !currentValue }),
+        body: JSON.stringify({ [field]: nextValue }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Could not update that switch");
-      /* Re-read rather than trusting the response body. The old toggle rendered the value it had
-         just sent, which is why a switch that never persisted still looked like it worked. */
-      await loadSettings();
+      if (json.settings) {
+        setSettingsData((prev) =>
+          prev ? { ...prev, settings: json.settings } : prev
+        );
+      }
       setNotice(`Saved. ${json.changed?.length ? "" : "No change — it was already set that way."}`.trim());
     } catch (err: any) {
+      // Revert optimistic update on failure
+      setSettingsData((prev) =>
+        prev
+          ? {
+              ...prev,
+              settings: {
+                ...prev.settings,
+                [field]: currentValue,
+              },
+            }
+          : prev
+      );
       setNotice(`Couldn't save that: ${err.message}`);
     } finally {
       setUpdatingFlag(null);
@@ -355,14 +384,14 @@ export function AdminSystemHealthCard() {
                   aria-labelledby={`${entry.field}-label ${entry.field}-state`}
                   aria-describedby={`${entry.field}-description`}
                   aria-disabled={busy || !known}
-                  onClick={() => known && handleToggleSetting(entry.field, value)}
+                  onClick={() => known && !busy && handleToggleSetting(entry.field, Boolean(value))}
                   disabled={busy || !known}
-                  className="group flex w-[106px] shrink-0 items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775ca] focus-visible:ring-offset-2 disabled:cursor-not-allowed"
+                  className="group flex w-[116px] shrink-0 items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775ca] focus-visible:ring-offset-2 disabled:cursor-not-allowed"
                 >
                   <span
                     data-switch-track
                     aria-hidden="true"
-                    className={`relative h-6 w-11 shrink-0 rounded-full border shadow-inner transition-colors ${
+                    className={`relative h-6 w-11 shrink-0 rounded-full border shadow-inner transition-colors duration-200 ${
                       !known
                         ? "border-gray-300 bg-gray-200"
                         : alarming
@@ -372,7 +401,7 @@ export function AdminSystemHealthCard() {
                   >
                     <span
                       data-switch-thumb
-                      className={`absolute top-0.5 grid h-4.5 w-4.5 place-items-center rounded-full bg-white shadow-sm transition-transform ${
+                      className={`absolute top-0.5 grid h-4.5 w-4.5 place-items-center rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
                         known && value ? "translate-x-[20px]" : "translate-x-0.5"
                       }`}
                     >

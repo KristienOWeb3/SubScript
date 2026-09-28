@@ -131,3 +131,15 @@ test("the service worker displays and opens push notifications", () => {
     assert.match(worker, /addEventListener\("notificationclick"/);
     assert.match(worker, /openWindow/);
 });
+
+test("clicking a notification records a view and read rows are deleted when the panel closes", () => {
+    const bell = source("src/components/dashboard/NotificationBell.tsx");
+    const route = source("src/app/api/notifications/route.ts");
+
+    assert.match(bell, /const markViewed = async \(id: string\)/);
+    assert.match(bell, /JSON\.stringify\(\{ audience, ids: \[id\] \}\)/);
+    assert.match(bell, /onClick=\{\(\) => void markViewed\(item\.id\)\}/);
+    assert.match(bell, /allRead=true[\s\S]*method: "DELETE"[\s\S]*keepalive: true/);
+    assert.match(route, /readAt: \{ not: null \}/);
+    assert.match(route, /accountNotification\.deleteMany/);
+});

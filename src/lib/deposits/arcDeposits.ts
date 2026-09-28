@@ -7,6 +7,7 @@ import {
 } from "@/lib/contracts/constants";
 import { getArcRpcUrl } from "@/lib/cctp/relayer";
 import { prisma } from "@/lib/prisma";
+import type { ArcNetworkFeeHistoryMetadata } from "@/lib/transactions/arcNetworkFeeHistory";
 
 export interface ArcDepositItem {
     id: string;
@@ -26,9 +27,19 @@ export interface ArcDepositItem {
     network: string;
     direction: "inbound_deposit" | "outbound_send";
     incoming: boolean;
+    transactionType?: "ARC_NETWORK_FEE";
+    networkFee?: ArcNetworkFeeHistoryMetadata;
+    historyLabel?: string;
     isCctp?: boolean;
     originChainId?: number;
     originName?: string;
+}
+
+function formatHistoryMicros(micros: bigint): string {
+    const whole = micros / 1_000_000n;
+    const rawFraction = (micros % 1_000_000n).toString().padStart(6, "0");
+    const fraction = rawFraction.replace(/0+$/, "").padEnd(2, "0");
+    return `${whole.toString()}.${fraction}`;
 }
 
 const TRANSFER_EVENT_TOPIC = ethers.id("Transfer(address,address,uint256)");
@@ -127,9 +138,7 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                         ? rawValue / 10n ** BigInt(tokenDecimals - 6)
                         : rawValue * 10n ** BigInt(6 - tokenDecimals);
                     if (microsBigInt <= 0n) continue;
-                    const whole = microsBigInt / 1_000_000n;
-                    const fraction = (microsBigInt % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
-                    const amountFormatted = `${whole.toString()}.${fraction}`;
+                    const amountFormatted = formatHistoryMicros(microsBigInt);
 
                     const depositId = `arc-${direction}-${item.hash}${item.logIndex ? `-${item.logIndex}` : ""}`;
                     if (!deposits.some((d) => d.id === depositId || (d.txHash.toLowerCase() === item.hash.toLowerCase() && d.direction === direction))) {
@@ -189,9 +198,7 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
 
                     const timeMs = Number(item.timeStamp) * 1000 || Date.now();
                     const blockNum = Number(item.blockNumber) || 0;
-                    const whole = microsBigInt / 1_000_000n;
-                    const fraction = (microsBigInt % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
-                    const amountFormatted = `${whole.toString()}.${fraction}`;
+                    const amountFormatted = formatHistoryMicros(microsBigInt);
 
                     const depositId = `arc-${direction}-${item.hash}`;
                     if (!deposits.some((d) => d.id === depositId || (d.txHash.toLowerCase() === item.hash.toLowerCase() && d.direction === direction))) {
@@ -293,9 +300,7 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                             const microsBigInt = rawVal / 10n ** 12n;
                             if (microsBigInt <= 0n) continue;
 
-                            const whole = microsBigInt / 1_000_000n;
-                            const fraction = (microsBigInt % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
-                            const amountFormatted = `${whole.toString()}.${fraction}`;
+                            const amountFormatted = formatHistoryMicros(microsBigInt);
                             const txHash = log.transactionHash;
                             const direction = isIncoming ? "inbound_deposit" : "outbound_send";
 
@@ -328,6 +333,46 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
             }
         } catch (rpcErr) {
             console.warn("[arcDeposits] RPC fallback also failed:", rpcErr);
+        }
+    }
+
+    /* Apply durable fee type/linkage before identity enrichment. The ledger is server-only; the
+       history API exposes only the exact amount/hash/status and parent hashes required to render
+       the fee beneath its primary send. */
+    if (deposits.length > 0) {
+        try {
+            const feeRows = await prisma.$queryRaw<Array<{
+                fee_tx_hash: string | null;
+                fee_micros: bigint;
+                parent_transaction_hashes: string[];
+                recovery_status: string;
+            }>>`
+                SELECT fee_tx_hash, fee_micros, parent_transaction_hashes, recovery_status
+                  FROM arc_network_fee_recoveries
+                 WHERE sender_wallet = ${normalizedWallet}
+                 ORDER BY created_at DESC
+                 LIMIT 100
+            `;
+            const feeByHash = new Map(
+                feeRows
+                    .filter((fee) => fee.fee_tx_hash)
+                    .map((fee) => [fee.fee_tx_hash!.toLowerCase(), fee]),
+            );
+            for (const deposit of deposits) {
+                const fee = feeByHash.get(deposit.txHash.toLowerCase());
+                if (!fee) continue;
+                deposit.transactionType = "ARC_NETWORK_FEE";
+                deposit.networkFee = {
+                    type: "ARC_NETWORK_FEE",
+                    amountMicros: fee.fee_micros.toString(),
+                    txHash: fee.fee_tx_hash,
+                    charged: fee.recovery_status === "CHARGED",
+                    unrecovered: fee.recovery_status === "UNRECOVERED",
+                    parentTransactionHashes: fee.parent_transaction_hashes || [],
+                };
+            }
+        } catch (error) {
+            console.warn("[arcDeposits] Arc network-fee metadata unavailable:", error instanceof Error ? error.message : error);
         }
     }
 

@@ -7,7 +7,7 @@ import {
     ExternalLink,
     Loader2,
     RefreshCw,
-    Shield,
+    KycVerificationPendingIcon,
 } from "@/components/icons";
 
 type KycStatus =
@@ -196,7 +196,7 @@ export default function KycVerificationPanel({
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex items-start gap-3">
                     <div className={`rounded-2xl border border-white/10 bg-white/5 p-2.5 ${accentText}`}>
-                        <Shield className="h-5 w-5" />
+                        <KycVerificationPendingIcon className="h-5 w-5" />
                     </div>
                     <div>
                         <h3 className="text-xs font-black uppercase tracking-[0.14em] text-white">
@@ -233,7 +233,7 @@ export default function KycVerificationPanel({
             ) : !available ? (
                 <div className="mt-6 space-y-5">
                     <div className={`flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4`}>
-                        <Shield className={`mt-0.5 h-4 w-4 shrink-0 ${accentText}`} />
+                        <KycVerificationPendingIcon className={`mt-0.5 h-4 w-4 shrink-0 ${accentText}`} />
                         <div>
                             <p className="text-xs font-bold text-white">
                                 {unavailableMessage || "Identity verification (KYC) will be available on mainnet."}

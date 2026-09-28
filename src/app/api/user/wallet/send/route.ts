@@ -27,7 +27,11 @@ import {
     finalizeSpendingLimitOperation,
     releaseSpendingLimitOperation,
 } from "@/lib/spendingLimits";
-import { estimateArcNetworkFeeMicros, chargeNetworkFee } from "@/lib/sponsor/userPaidTransfer";
+import {
+    estimateArcNetworkFeeMicros,
+    chargeNetworkFee,
+    type ChargeNetworkFeeResult,
+} from "@/lib/sponsor/userPaidTransfer";
 import { readUsdcBalance } from "@/lib/vault/onchain";
 
 export const maxDuration = 120;
@@ -48,6 +52,18 @@ function formatAmount(amountMicros: bigint) {
     const whole = amountMicros / microsPerUsdc;
     const fraction = (amountMicros % microsPerUsdc).toString().padStart(6, "0").replace(/0+$/, "");
     return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+function serializeNetworkFee(result: ChargeNetworkFeeResult) {
+    return {
+        type: "ARC_NETWORK_FEE" as const,
+        amountUsdc: formatAmount(result.feeMicros),
+        amountMicros: result.feeMicros.toString(),
+        txHash: result.feeTxHash || null,
+        charged: result.charged,
+        unrecovered: Boolean(result.unrecovered),
+        recipientRole: "GAS_FEE_TREASURY" as const,
+    };
 }
 
 function normalizeRecipients(body: any): SendRecipient[] {
@@ -358,17 +374,25 @@ export async function POST(request: Request) {
            batch, only after transfers mined (never for a send that didn't happen), scaled to the
            settled count so a partial batch is fee'd only for the transfers that went through. A
            failure is logged inside chargeNetworkFee, never thrown — the sends are irreversible. */
-        let networkFeeMicros = BigInt(0);
+        let networkFeeResult: ChargeNetworkFeeResult = { charged: false, feeMicros: BigInt(0) };
         if (txs.length > 0) {
-            networkFeeMicros = txs.length === parsedRecipients.length
+            /* A partial batch is re-estimated for exactly the settled primary legs. Cap it at the
+               full pre-confirmation quote so changing RPC conditions can never increase the charge
+               after the user confirmed. */
+            const applicableFeeMicros = txs.length === parsedRecipients.length
                 ? feeEstimate.feeMicros
-                : (feeEstimate.feeMicros * BigInt(txs.length)) / BigInt(parsedRecipients.length);
-            await chargeNetworkFee({
+                : (await estimateArcNetworkFeeMicros(txs.length)).feeMicros;
+            const networkFeeMicros = applicableFeeMicros > feeEstimate.feeMicros
+                ? feeEstimate.feeMicros
+                : applicableFeeMicros;
+            networkFeeResult = await chargeNetworkFee({
                 wallet: fundingWallet,
                 feeMicros: networkFeeMicros,
                 requestKey: `wallet-send-fee:${normalizedSender}:${requestId}`,
+                parentTransactionHashes: txs.map((tx) => tx.txHash),
             });
         }
+        const networkFee = serializeNetworkFee(networkFeeResult);
 
         /*
          * Receipts for whatever actually settled, to both sides, whether the batch finished or
@@ -394,6 +418,7 @@ export async function POST(request: Request) {
                             merchantAddress: settled.receiver,
                             amountUsdc: settled.amountMicros,
                             title: "Wallet Transfer",
+                            sourceType: "WALLET_TRANSFER",
                         }).catch((err) => console.error("Failed to bind transfer receipt:", err));
                     }
                     await sendSettlementReceipts({
@@ -418,7 +443,9 @@ export async function POST(request: Request) {
                 success: false,
                 partial: sent > 0,
                 transfers: txs,
-                networkFeeUsdc: formatAmount(networkFeeMicros),
+                networkFee,
+                /* Backward-compatible amount field; new consumers must inspect charged/unrecovered. */
+                networkFeeUsdc: networkFee.amountUsdc,
                 failedRecipient: failure,
                 code: isPaymasterError ? "CIRCLE_PAYMASTER_POLICY_REQUIRED" : failure.code,
                 error: sent > 0
@@ -430,7 +457,9 @@ export async function POST(request: Request) {
         return NextResponse.json({
             success: true,
             transfers: txs,
-            networkFeeUsdc: formatAmount(networkFeeMicros),
+            networkFee,
+            /* Backward-compatible amount field; new consumers must inspect charged/unrecovered. */
+            networkFeeUsdc: networkFee.amountUsdc,
         }, { status: 200 });
     } catch (error: any) {
         /* A throw after the reservation but before the release path ran (a custody lookup that

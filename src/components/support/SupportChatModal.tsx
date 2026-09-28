@@ -8,15 +8,19 @@ import {
     MessageSquare,
     Loader2,
     Shield,
-    CheckCircle2,
     Lock,
     User,
-    Building2,
     RefreshCw,
     AlertCircle,
-    ChevronLeft,
 } from "@/components/icons";
-import type { SupportTicket, SupportTicketMessage } from "@/lib/support/tickets";
+import type { SupportTicket } from "@/lib/support/tickets";
+import {
+    normalizeSupportTicket,
+    normalizeSupportTickets,
+    supportTicketFingerprint,
+    supportTicketListFingerprint,
+    shouldShowInitialSupportLoader,
+} from "@/lib/support/clientRefresh";
 
 interface SupportChatModalProps {
     open: boolean;
@@ -35,7 +39,11 @@ export default function SupportChatModal({
 }: SupportChatModalProps) {
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
     const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [initialLoading, setInitialLoading] = useState(false);
+    const [hasLoaded, setHasLoaded] = useState(false);
+    const [initialError, setInitialError] = useState<string | null>(null);
+    const [refreshError, setRefreshError] = useState<string | null>(null);
+    const [manualRefreshing, setManualRefreshing] = useState(false);
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [inputMessage, setInputMessage] = useState("");
@@ -48,81 +56,192 @@ export default function SupportChatModal({
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const activeTicketIdRef = useRef<string | null>(null);
+    const ticketsFingerprintRef = useRef(supportTicketListFingerprint([]));
+    const activeTicketFingerprintRef = useRef(supportTicketFingerprint(null));
+    const hasLoadedRef = useRef(false);
+    const lifecycleRef = useRef(0);
+    const refreshInFlightRef = useRef<Promise<void> | null>(null);
+    const refreshAbortRef = useRef<AbortController | null>(null);
+    const selectionAbortRef = useRef<AbortController | null>(null);
+    const selectionRequestRef = useRef(0);
+    const activeMessageCountRef = useRef(0);
+    const listViewRef = useRef(false);
+
+    useEffect(() => {
+        activeTicketIdRef.current = activeTicket?.id || null;
+        activeMessageCountRef.current = activeTicket?.messages?.length ?? 0;
+    }, [activeTicket?.id, activeTicket?.messages?.length]);
 
     // Select and load specific ticket
     const selectTicket = useCallback(async (ticketId: string) => {
+        listViewRef.current = false;
+        activeTicketIdRef.current = ticketId;
+        const requestId = ++selectionRequestRef.current;
+        const lifecycle = lifecycleRef.current;
+        selectionAbortRef.current?.abort();
+        const controller = new AbortController();
+        selectionAbortRef.current = controller;
         try {
-            const res = await fetch(`/api/support/tickets/${ticketId}/messages`);
+            const res = await fetch(`/api/support/tickets/${encodeURIComponent(ticketId)}/messages`, {
+                cache: "no-store",
+                signal: controller.signal,
+            });
+            if (res.status === 401) {
+                setError("Authentication required to access support tickets. Please sign in.");
+                return;
+            }
             if (!res.ok) throw new Error("Failed to load conversation");
             const data = await res.json();
-            setActiveTicket(data.ticket);
+            if (
+                controller.signal.aborted ||
+                requestId !== selectionRequestRef.current ||
+                lifecycle !== lifecycleRef.current ||
+                activeTicketIdRef.current !== ticketId
+            ) return;
+            const nextTicket = normalizeSupportTicket(data.ticket);
+            const fingerprint = supportTicketFingerprint(nextTicket);
+            if (fingerprint !== activeTicketFingerprintRef.current) {
+                activeTicketFingerprintRef.current = fingerprint;
+                setActiveTicket(nextTicket);
+            }
             setIsCreating(false);
             setError(null);
             setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         } catch (err: any) {
+            if (err?.name === "AbortError") return;
+            if (requestId !== selectionRequestRef.current || lifecycle !== lifecycleRef.current) return;
             setError(err.message || "Failed to load ticket");
         }
     }, []);
 
-    // Fetch user tickets
-    const fetchTickets = useCallback(async () => {
-        try {
-            const res = await fetch("/api/support/tickets");
+    const refreshSupport = useCallback((mode: "initial" | "manual" | "background") => {
+        if (refreshInFlightRef.current) {
+            if (mode === "manual") {
+                setManualRefreshing(true);
+                void refreshInFlightRef.current.finally(() => setManualRefreshing(false));
+            }
+            return refreshInFlightRef.current;
+        }
+
+        if (mode === "background" && typeof document !== "undefined" && document.visibilityState === "hidden") {
+            return Promise.resolve();
+        }
+
+        const lifecycle = lifecycleRef.current;
+        const isInitial = mode === "initial" && !hasLoadedRef.current;
+        if (isInitial) {
+            setInitialLoading(true);
+            setInitialError(null);
+        }
+        if (mode === "manual") setManualRefreshing(true);
+
+        const controller = new AbortController();
+        refreshAbortRef.current = controller;
+        const request = (async () => {
+            const res = await fetch("/api/support/tickets", {
+                cache: "no-store",
+                signal: controller.signal,
+            });
+            if (res.status === 401) {
+                throw new Error("Authentication required to access support tickets. Please sign in.");
+            }
             if (!res.ok) throw new Error("Failed to load tickets");
             const data = await res.json();
-            setTickets(data.tickets || []);
-
-            if (initialTicketId) {
-                const found = (data.tickets || []).find((t: SupportTicket) => t.id === initialTicketId);
-                if (found) {
-                    await selectTicket(found.id);
-                }
-            } else if (data.tickets && data.tickets.length > 0 && !activeTicket && !isCreating) {
-                // Auto-select first active ticket
-                const firstActive = data.tickets.find((t: SupportTicket) => t.status === "OPEN" || t.status === "CLAIMED") || data.tickets[0];
-                await selectTicket(firstActive.id);
+            const loadedTickets = normalizeSupportTickets(Array.isArray(data.tickets) ? data.tickets : []);
+            let targetTicketId = listViewRef.current ? null : (activeTicketIdRef.current || initialTicketId || null);
+            if (!listViewRef.current && !targetTicketId && loadedTickets.length > 0) {
+                targetTicketId = (loadedTickets.find((ticket) => ticket.status === "OPEN" || ticket.status === "CLAIMED") || loadedTickets[0]).id;
             }
-        } catch (err: any) {
-            console.error("Error fetching support tickets:", err);
-        } finally {
-            setLoading(false);
-        }
-    }, [initialTicketId, activeTicket, isCreating, selectTicket]);
+
+            let loadedActiveTicket: SupportTicket | null = null;
+            if (targetTicketId) {
+                const detailRes = await fetch(`/api/support/tickets/${encodeURIComponent(targetTicketId)}/messages`, {
+                    cache: "no-store",
+                    signal: controller.signal,
+                });
+                if (!detailRes.ok) throw new Error("Failed to refresh the support conversation");
+                const detailData = await detailRes.json();
+                if (detailData?.ticket) loadedActiveTicket = normalizeSupportTicket(detailData.ticket);
+            }
+
+            if (controller.signal.aborted || lifecycle !== lifecycleRef.current) return;
+
+            const listFingerprint = supportTicketListFingerprint(loadedTickets);
+            if (listFingerprint !== ticketsFingerprintRef.current) {
+                ticketsFingerprintRef.current = listFingerprint;
+                setTickets(loadedTickets);
+            }
+            if (loadedActiveTicket && (targetTicketId === activeTicketIdRef.current || !activeTicketIdRef.current)) {
+                const activeFingerprint = supportTicketFingerprint(loadedActiveTicket);
+                if (activeFingerprint !== activeTicketFingerprintRef.current) {
+                    const previousMessageCount = activeMessageCountRef.current;
+                    activeTicketFingerprintRef.current = activeFingerprint;
+                    activeTicketIdRef.current = loadedActiveTicket.id;
+                    setActiveTicket(loadedActiveTicket);
+                    activeMessageCountRef.current = loadedActiveTicket.messages?.length ?? previousMessageCount;
+                }
+            }
+            hasLoadedRef.current = true;
+            setHasLoaded(true);
+            setInitialError(null);
+            setRefreshError(null);
+        })()
+            .catch((err: any) => {
+                if (err?.name === "AbortError" || lifecycle !== lifecycleRef.current) return;
+                const message = err?.message || "Failed to load support updates";
+                if (!hasLoadedRef.current) setInitialError(message);
+                else setRefreshError("Couldn’t refresh support updates. We’ll try again.");
+            })
+            .finally(() => {
+                if (lifecycle === lifecycleRef.current) {
+                    if (isInitial) setInitialLoading(false);
+                    if (mode === "manual") setManualRefreshing(false);
+                }
+                if (refreshInFlightRef.current === request) refreshInFlightRef.current = null;
+                if (refreshAbortRef.current === controller) refreshAbortRef.current = null;
+            });
+
+        refreshInFlightRef.current = request;
+        return request;
+    }, [initialTicketId]);
 
     useEffect(() => {
-        if (open) {
-            setLoading(true);
-            fetchTickets();
-
-            // Poll every 3 seconds for real-time chat updates
-            pollIntervalRef.current = setInterval(() => {
-                if (activeTicket?.id) {
-                    fetch(`/api/support/tickets/${activeTicket.id}/messages`)
-                        .then((res) => res.json())
-                        .then((data) => {
-                            if (data.ticket) {
-                                setActiveTicket((prev) => {
-                                    if (prev && prev.messages?.length !== data.ticket.messages?.length) {
-                                        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-                                    }
-                                    return data.ticket;
-                                });
-                            }
-                        })
-                        .catch(() => {});
-                }
-            }, 3000);
-        } else {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setActiveTicket(null);
-            setIsCreating(false);
-            setError(null);
+        if (!open) {
+            if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+            }
+            lifecycleRef.current += 1;
+            refreshAbortRef.current?.abort();
+            selectionAbortRef.current?.abort();
+            return;
         }
 
-        return () => {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        lifecycleRef.current += 1;
+        const initialTimer = window.setTimeout(() => void refreshSupport("initial"), 0);
+
+        pollIntervalRef.current = setInterval(() => void refreshSupport("background"), 3000);
+
+        const handleVisibilityOrFocus = () => {
+            if (typeof document !== "undefined" && document.visibilityState === "visible") {
+                void refreshSupport("background");
+            }
         };
-    }, [open, activeTicket?.id, fetchTickets]);
+
+        document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+        window.addEventListener("focus", handleVisibilityOrFocus);
+
+        return () => {
+            window.clearTimeout(initialTimer);
+            if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+            }
+            document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+            window.removeEventListener("focus", handleVisibilityOrFocus);
+        };
+    }, [open, refreshSupport]);
 
     // Send a message in active ticket
     const handleSendMessage = async (e?: React.FormEvent) => {
@@ -150,7 +269,10 @@ export default function SupportChatModal({
             }
 
             if (data.ticket) {
-                setActiveTicket(data.ticket);
+                const nextTicket = normalizeSupportTicket(data.ticket);
+                activeTicketFingerprintRef.current = supportTicketFingerprint(nextTicket);
+                activeTicketIdRef.current = nextTicket.id;
+                setActiveTicket(nextTicket);
                 setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
             }
         } catch (err: any) {
@@ -189,8 +311,11 @@ export default function SupportChatModal({
             setNewInitialMsg("");
             setIsCreating(false);
             if (data.ticket) {
-                setActiveTicket(data.ticket);
-                await fetchTickets();
+                const nextTicket = normalizeSupportTicket(data.ticket);
+                activeTicketFingerprintRef.current = supportTicketFingerprint(nextTicket);
+                activeTicketIdRef.current = nextTicket.id;
+                setActiveTicket(nextTicket);
+                await refreshSupport("background");
             }
         } catch (err: any) {
             setError(err.message || "Failed to create ticket");
@@ -201,21 +326,19 @@ export default function SupportChatModal({
 
     if (!open) return null;
 
-    const hasActiveTickets = tickets.some((t) => t.status === "OPEN" || t.status === "CLAIMED");
-
     return (
         <AnimatePresence>
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 sm:p-5 backdrop-blur-md font-sans"
+                className="dashboard-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 sm:p-5 font-sans"
             >
                 <motion.div
                     initial={{ scale: 0.94, y: 16 }}
                     animate={{ scale: 1, y: 0 }}
                     exit={{ scale: 0.94, y: 16 }}
-                    className="flex flex-col h-[90vh] max-h-[720px] w-full max-w-2xl rounded-3xl border border-black/10 bg-[#FFFFF0] text-[#111827] shadow-2xl overflow-hidden"
+                    className="dashboard-modal-surface flex flex-col h-[90vh] max-h-[720px] w-full max-w-2xl rounded-3xl border border-black/10 bg-[#FFFFF0] text-[#111827] shadow-2xl overflow-hidden"
                 >
                     {/* Header */}
                     <div className="flex items-center justify-between border-b border-black/10 bg-[#FFFFF0] px-5 py-4 shrink-0">
@@ -240,14 +363,26 @@ export default function SupportChatModal({
                                     type="button"
                                     onClick={() => {
                                         setActiveTicket(null);
+                                        listViewRef.current = true;
+                                        activeTicketIdRef.current = null;
+                                        activeTicketFingerprintRef.current = supportTicketFingerprint(null);
                                         setIsCreating(false);
-                                        fetchTickets();
                                     }}
                                     className="px-3 py-1.5 rounded-xl border border-black/10 bg-black/5 text-[10px] font-bold text-black/70 hover:bg-black/10 transition"
                                 >
                                     All Tickets
                                 </button>
                             )}
+                            <button
+                                type="button"
+                                onClick={() => void refreshSupport("manual")}
+                                disabled={manualRefreshing || initialLoading}
+                                aria-label="Refresh support updates"
+                                title="Refresh support updates"
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 hover:text-black disabled:cursor-wait disabled:opacity-50 transition"
+                            >
+                                <RefreshCw className={`h-4 w-4 ${manualRefreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+                            </button>
                             <button
                                 type="button"
                                 onClick={onClose}
@@ -260,43 +395,27 @@ export default function SupportChatModal({
 
                     {/* Content Body */}
                     <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between min-h-0 bg-[#FFFFF0]">
-                        {loading ? (
-                            <div className="flex h-full flex-col justify-between" aria-busy="true" aria-live="polite">
-                                {/* Shaped like the thread it is about to become — an incoming bubble
-                                    with an avatar, an outgoing one, then the banner — so the panel
-                                    does not jump when the real messages land. A centred spinner told
-                                    the user nothing about what was arriving and moved everything
-                                    when it left. */}
-                                <span className="sr-only">Loading your support conversation</span>
-                                <div className="mb-3 h-[52px] shrink-0 animate-pulse rounded-2xl border border-black/10 bg-black/5" />
-
-                                <div className="flex-1 space-y-4 py-2">
-                                    {[
-                                        { outgoing: false, width: "w-[65%]" },
-                                        { outgoing: true, width: "w-[48%]" },
-                                        { outgoing: false, width: "w-[72%]" },
-                                        { outgoing: true, width: "w-[38%]" },
-                                    ].map((row, index) => (
-                                        <div
-                                            key={index}
-                                            className={`flex animate-pulse items-end gap-2.5 ${row.outgoing ? "justify-end" : "justify-start"}`}
-                                            style={{ animationDelay: `${index * 90}ms` }}
-                                        >
-                                            {!row.outgoing && <div className="h-8 w-8 shrink-0 rounded-full bg-black/10" />}
-                                            <div className={`space-y-1.5 ${row.width}`}>
-                                                <div className={`h-2 w-16 rounded bg-black/10 ${row.outgoing ? "ml-auto" : ""}`} />
-                                                <div
-                                                    className={`h-12 rounded-[20px] bg-black/5 ${row.outgoing ? "rounded-br-[4px] bg-black/10" : "rounded-bl-[4px]"}`}
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="mt-2 flex shrink-0 animate-pulse items-center gap-2">
-                                    <div className="h-11 flex-1 rounded-2xl border border-black/10 bg-black/5" />
-                                    <div className="h-11 w-11 shrink-0 rounded-2xl bg-black/10" />
-                                </div>
+                        {refreshError && hasLoaded && (
+                            <div role="status" className="mb-3 shrink-0 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] font-medium text-amber-900">
+                                {refreshError}
+                            </div>
+                        )}
+                        {shouldShowInitialSupportLoader(initialLoading, hasLoaded) ? (
+                            <div className="flex h-full flex-col items-center justify-center gap-2 text-center" aria-busy="true" aria-live="polite">
+                                <Loader2 className="h-5 w-5 animate-spin text-[#2775CA]" aria-hidden="true" />
+                                <p className="text-xs font-semibold text-black/60">Loading support…</p>
+                            </div>
+                        ) : initialError && !hasLoaded ? (
+                            <div className="m-auto w-full max-w-sm rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-center">
+                                <AlertCircle className="mx-auto h-5 w-5 text-red-700" aria-hidden="true" />
+                                <p className="mt-2 text-xs font-semibold text-red-800">{initialError}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => void refreshSupport("initial")}
+                                    className="mt-3 rounded-xl bg-[#2775CA] px-4 py-2 text-xs font-bold text-white hover:bg-[#1f62ab]"
+                                >
+                                    Retry
+                                </button>
                             </div>
                         ) : isCreating ? (
                             /* Create Ticket View */
@@ -492,6 +611,24 @@ export default function SupportChatModal({
                                         Open an in-app ticket to message directly with platform admins and technical support.
                                     </p>
                                 </div>
+
+                                {error && (
+                                    <div className="w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-900 space-y-2 text-left">
+                                        <div className="flex items-center gap-2 font-bold">
+                                            <Lock className="h-4 w-4 shrink-0 text-amber-700" />
+                                            <span>Authentication Required</span>
+                                        </div>
+                                        <p className="text-black/70">{error}</p>
+                                        <div className="pt-1">
+                                            <a
+                                                href={`/signin?next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/support")}`}
+                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2775CA] text-white text-[11px] font-bold hover:bg-[#1f62ab] transition shadow-xs"
+                                            >
+                                                Sign In with Wallet or Email &rarr;
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="w-full space-y-2">
                                     <button

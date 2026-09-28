@@ -69,7 +69,11 @@ test("every section page declares its own metadata", () => {
 
 test("every section has a Markdown twin for agents", () => {
   for (const slug of declaredSlugs) {
-    assertDocumented(`  ${slug}: \``, markdown, "the Markdown twins");
+    assert.match(
+      markdown,
+      new RegExp("^  (?:" + slug + "|\\\"" + slug + "\\\"): \\x60", "m"),
+      "Expected the Markdown twins to define " + slug + ".",
+    );
   }
   /* The overview twin is keyed by the empty slug and served as /docs/index.md. */
   assertDocumented('"": `#', markdown, "the Markdown twins");
@@ -195,6 +199,21 @@ test("docs explain the identifiers developers must persist", () => {
   for (const identifier of ["intent.id", "externalReference", "receiptToken", "request_id"]) {
     assertDocumented(identifier);
   }
+});
+
+test("docs keep merchant identity roles separate", () => {
+  const identity = readFileSync(path.join(docsRoot, "merchant-identity", "page.tsx"), "utf8");
+  for (const required of [
+    "Merchant ID",
+    "Commit name",
+    "Display name",
+    "Merchant commit name",
+    "consumer peer payments",
+    "Never use it as a payment recipient",
+  ]) {
+    assertDocumented(required, identity, "the merchant identity page");
+  }
+  assert.match(identity, /Merchant IDs and DNS names are rejected as Commit/);
 });
 
 test("webhook example verifies raw bytes, timestamp, and constant-time signature", () => {

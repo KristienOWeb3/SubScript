@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { fetchArcUsdcDeposits } from "@/lib/deposits/arcDeposits";
 import { pgQuery } from "@/lib/serverPg";
-import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID, CCTP_CONFIG } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID, CCTP_CONFIG, GAS_FEE_TREASURY_ADDRESS, BRIDGE_FEE_TREASURY_ADDRESS } from "@/lib/contracts/constants";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { sweepAndBridge } from "@/lib/cctp/autoBridge";
+import { groupArcNetworkFeeTransfers } from "@/lib/transactions/arcNetworkFeeHistory";
 
 export async function GET(request: Request) {
     try {
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
                         net_amount_micros, fee_bps, fee_tx_hash, burn_tx_hash, mint_tx_hash, status,
                         attempt_count, error_message, created_at, updated_at
                    FROM cctp_bridge_transfers
-                  WHERE user_wallet = $1 OR recipient_address = $1
+                  WHERE LOWER(user_wallet) = $1 OR LOWER(recipient_address) = $1
                   ORDER BY created_at DESC
                   LIMIT 50`,
                 [normalizedWallet]
@@ -62,6 +63,7 @@ export async function GET(request: Request) {
                 fromAddress: tx.user_wallet,
                 toAddress: tx.recipient_address,
                 direction: tx.direction,
+                incoming: isIncoming,
                 originChainId: tx.origin_chain_id,
                 destinationChainId: tx.destination_chain_id,
                 originName,
@@ -69,6 +71,7 @@ export async function GET(request: Request) {
                 amountUsdc: micros.toString(),
                 amountFormatted,
                 timestamp: new Date(tx.created_at).getTime(),
+                routedAt: tx.updated_at ? new Date(tx.updated_at).getTime() : new Date(tx.created_at).getTime(),
                 status: tx.status,
                 isCctp: true,
                 senderName: null,
@@ -83,9 +86,17 @@ export async function GET(request: Request) {
             if (item.burnTxHash) seenTxHashes.add(item.burnTxHash.toLowerCase());
         }
 
-        const uniqueDirect = directDeposits.filter((d) => {
+        const groupedDirectDeposits = groupArcNetworkFeeTransfers(directDeposits, GAS_FEE_TREASURY_ADDRESS);
+        const treasuryLower = (GAS_FEE_TREASURY_ADDRESS || "").toLowerCase();
+        const bridgeTreasuryLower = (BRIDGE_FEE_TREASURY_ADDRESS || "").toLowerCase();
+        const uniqueDirect = groupedDirectDeposits.filter((d) => {
             const h = (d.txHash || "").toLowerCase();
-            return !seenTxHashes.has(h);
+            if (seenTxHashes.has(h)) return false;
+            const to = (d.toAddress || "").toLowerCase();
+            if (to === treasuryLower || to === bridgeTreasuryLower) return false;
+            if (d.historyLabel === "Transfer to SubScript treasury" || d.historyLabel === "Arc network fee") return false;
+            if (d.transactionType === "ARC_NETWORK_FEE") return false;
+            return true;
         });
 
         const allDeposits = [...cctpItems, ...uniqueDirect].sort((a, b) => b.timestamp - a.timestamp);

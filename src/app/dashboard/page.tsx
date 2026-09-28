@@ -11,17 +11,17 @@ import NotificationBell from "@/components/dashboard/NotificationBell";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import Skeleton from "@/components/ui/Skeleton";
 import { SkeletonCard, SkeletonRows, SkeletonStatGrid } from "@/components/ui/skeletons";
-import { getDashboardUrl } from "@/utils/navigation";
+import { APP_ROUTES, getDashboardUrl } from "@/utils/navigation";
 import { compressAvatarImage } from "@/utils/imageCompression";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import WithdrawModal from "@/components/WithdrawModal";
-import DepositModal from "@/components/DepositModal";
 import SendWalletModal from "@/components/SendWalletModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import { resolveScannedTarget } from "@/lib/qr/scanTargets";
 import ConfirmModal from "@/components/ConfirmModal";
 import MerchantDisplayNameModal from "@/components/dashboard/MerchantDisplayNameModal";
+import MerchantPreviewModal from "@/components/dashboard/MerchantPreviewModal";
 import DurationPicker from "@/components/DurationPicker";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import SupportChatModal from "@/components/support/SupportChatModal";
@@ -39,16 +39,19 @@ import {
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, CheckCircle, AlertTriangle,
-    PlugZap, Loader2, Award, Crown, ExternalLink, LogOut,
-    Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
+    Loader2, Award, Crown, ExternalLink, LogOut,
+    Wallet, Shield, BarChart3, Link2, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, ChevronRight, User, Share2,
-    ShieldCheck, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search, ChevronLeft, ArrowLeft
+    ShieldCheck, KycVerificationPendingIcon, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search, ChevronLeft, ArrowLeft,
+    Settings, CheckoutPlaybook, ThemePicker, TransactionLogs
 } from "@/components/icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { QRCode } from "react-qrcode-logo";
 import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
+import MerchantReceiveModal from "@/components/dashboard/MerchantReceiveModal";
+import { formatWalletError } from "@/lib/walletErrors";
 
 import {
 
@@ -59,6 +62,7 @@ import {
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI, CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
 import FinancialStatusBadge from "@/components/FinancialStatusBadge";
+import { COMMIT_LIVE_REFRESH_MS } from "@/lib/vault/liveRefresh";
 
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
@@ -70,18 +74,6 @@ const publicClient = createPublicClient({
 const ERC20_ABI = USDC_ERC20_ABI;
 const ROUTER_ABI = SUBSCRIPT_ROUTER_ABI;
 const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
-
-
-const tabs = [
-    { id: "overview", label: "Overview", icon: SquaresFour },
-    { id: "payment-links", label: "Payments", icon: Sliders },
-    { id: "payroll", label: "Payroll", icon: Building2 },
-    { id: "apikeys", label: "API Keys", icon: Key },
-    { id: "checkout", label: "Checkout Setup", icon: Code2 },
-    { id: "webhooks", label: "Webhooks", icon: Webhook },
-    { id: "advanced", label: "Advanced", icon: Zap },
-    { id: "settings", label: "Profile & DNS", icon: User },
-] as const;
 
 
 type TabId = "overview" | "advanced" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
@@ -321,6 +313,12 @@ export default function DashboardPage() {
             } else if (functionName === "registerViewKey") {
                 action = "registerViewKey";
                 serializedArgs = { viewKeyHash: args[0] };
+            } else if (functionName === "commitViewKey") {
+                action = "commitViewKey";
+                serializedArgs = { commitment: args[0] };
+            } else if (functionName === "revealViewKey") {
+                action = "revealViewKey";
+                serializedArgs = { viewKeyHash: args[0], salt: args[1] };
             } else {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
@@ -370,18 +368,6 @@ export default function DashboardPage() {
 
     useEffect(() => {
         setIsMounted(true);
-        if (typeof window !== "undefined") {
-            /* Check for upgrade success and show toast */
-            const urlParams = new URLSearchParams(window.location.search);
-            const tabParam = urlParams.get("tab");
-            if (tabParam && (tabs.some(t => t.id === tabParam) || tabParam === "offramp" || tabParam === "plans")) {
-                setActiveTab(tabParam as TabId);
-            }
-            const scrollParam = urlParams.get("scroll");
-            if (scrollParam === "dns") {
-                setActiveTab("settings");
-            }
-        }
     }, [realAddress, realIsConnected]);
 
     /* Detect browser local currency and fetch real-time exchange rate */
@@ -470,6 +456,7 @@ export default function DashboardPage() {
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [isSendWalletOpen, setIsSendWalletOpen] = useState(false);
+    const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
     const [isSendingWallet, setIsSendingWallet] = useState(false);
     const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
     const [scannedRecipient, setScannedRecipient] = useState("");
@@ -486,7 +473,6 @@ export default function DashboardPage() {
     const [showViewKey, setShowViewKey] = useState(false);
     const [copiedViewKey, setCopiedViewKey] = useState(false);
     const [isSavingConfidentiality, setIsSavingConfidentiality] = useState(false);
-    const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [settlementTimeframe, setSettlementTimeframe] = useState<string>('6M');
     const [balanceVisible, setBalanceVisible] = useState(true);
     const [timeframeOpen, setTimeframeOpen] = useState(false);
@@ -578,10 +564,6 @@ export default function DashboardPage() {
         await Promise.all([loadTier(), loadConfidentiality(), loadChainState()]);
     }, [address]);
 
-    const handleDepositSuccess = () => {
-        refetchBalancesAndTier();
-    };
-
     useEffect(() => {
         if (!address) return;
         refetchBalancesAndTier();
@@ -630,9 +612,17 @@ export default function DashboardPage() {
         if (typeof window !== "undefined") {
             const params = new URLSearchParams(window.location.search);
             const tab = params.get("tab");
-            if (tab === "advanced" || tab === "premium") {
+            const section = params.get("section");
+            if (params.get("scroll") === "dns") {
+                setActiveTab("settings");
+            } else if (tab === "advanced" || tab === "premium" || (tab === "settings" && section === "advanced")) {
                 setActiveTab("advanced");
-            } else if (tab && ["overview", "payment-links", "payroll", "apikeys", "checkout", "webhooks", "settings"].includes(tab)) {
+                if (tab !== "settings" || section !== "advanced") {
+                    params.set("tab", "settings");
+                    params.set("section", "advanced");
+                    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+                }
+            } else if (tab && ["overview", "payment-links", "payroll", "apikeys", "checkout", "webhooks", "settings", "offramp"].includes(tab)) {
                 setActiveTab(tab as TabId);
             }
         }
@@ -689,6 +679,8 @@ export default function DashboardPage() {
     const paymentSubTabsSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
+    const vaultRefreshInFlightRef = useRef(false);
+    const vaultSnapshotRef = useRef("");
     const [claimableAmount, setClaimableAmount] = useState("0");
     const [isVaultOpsLoading, setIsVaultOpsLoading] = useState(false);
     const [isClaimingVault, setIsClaimingVault] = useState(false);
@@ -697,24 +689,32 @@ export default function DashboardPage() {
     const [selectedApiKey, setSelectedApiKey] = useState("");
 
     const [vaultsError, setVaultsError] = useState<string | null>(null);
-    const fetchVaults = useCallback(async () => {
-        setIsVaultsLoading(true);
-        setVaultsError(null);
+    const fetchVaults = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+        if (vaultRefreshInFlightRef.current) return;
+        vaultRefreshInFlightRef.current = true;
+        if (!silent) setIsVaultsLoading(true);
+        if (!silent) setVaultsError(null);
         try {
-            const res = await fetch("/api/user/vault/config");
+            const res = await fetch("/api/user/vault/config", { cache: "no-store" });
             const data = await res.json().catch(() => null);
             if (res.ok && data?.success) {
-                setVaults(data.vaults || []);
+                const nextVaults = data.vaults || [];
+                const nextSnapshot = JSON.stringify(nextVaults);
+                if (nextSnapshot !== vaultSnapshotRef.current) {
+                    vaultSnapshotRef.current = nextSnapshot;
+                    setVaults(nextVaults);
+                }
             } else {
                 /* Don't render "no customers yet" over a failed load — that reads as
                    real business data (zero escrows) when it's actually an error. */
-                setVaultsError(data?.error || "Customer escrows could not be loaded. Retry with Refresh.");
+                if (!silent) setVaultsError(data?.error || "Customer escrows could not be loaded. Retry with Refresh.");
             }
         } catch (err) {
             console.error("Failed to load customer vaults:", err);
-            setVaultsError("Customer escrows could not be loaded. Retry with Refresh.");
+            if (!silent) setVaultsError("Customer escrows could not be loaded. Retry with Refresh.");
         } finally {
-            setIsVaultsLoading(false);
+            vaultRefreshInFlightRef.current = false;
+            if (!silent) setIsVaultsLoading(false);
         }
     }, []);
 
@@ -763,6 +763,18 @@ export default function DashboardPage() {
             fetchVaults();
             fetchVaultOps();
             fetchVaultApiKeys();
+
+            const refreshCommit = () => {
+                if (document.visibilityState === "visible") void fetchVaults({ silent: true });
+            };
+            const interval = window.setInterval(refreshCommit, COMMIT_LIVE_REFRESH_MS);
+            window.addEventListener("focus", refreshCommit);
+            document.addEventListener("visibilitychange", refreshCommit);
+            return () => {
+                window.clearInterval(interval);
+                window.removeEventListener("focus", refreshCommit);
+                document.removeEventListener("visibilitychange", refreshCommit);
+            };
         }
     }, [activeTab, subTab, address, fetchVaults, fetchVaultOps, fetchVaultApiKeys]);
 
@@ -797,6 +809,7 @@ export default function DashboardPage() {
     /* One-time merchant display-name onboarding. The authoritative gate is displayNameLocked from
        the server; the ref just stops it re-popping after "Decide later" within this page session. */
     const [showNameOnboarding, setShowNameOnboarding] = useState(false);
+    const [showCheckoutPreview, setShowCheckoutPreview] = useState(false);
     const nameOnboardingHandledRef = useRef(false);
     const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
     const [settingsTxCategory, setSettingsTxCategory] = useState<string>("all");
@@ -806,13 +819,6 @@ export default function DashboardPage() {
     const [settingsTxEndDate, setSettingsTxEndDate] = useState<string>("");
     const [settingsTxSearch, setSettingsTxSearch] = useState<string>("");
     const [isSettingsLoading, setIsSettingsLoading] = useState(false);
-    const [dnsDomain, setDnsDomain] = useState("");
-    const [dnsSuffix, setDnsSuffix] = useState(".hq");
-    const [dnsConfirmPending, setDnsConfirmPending] = useState<string | null>(null);
-    const [merchantAliasNextChange, setMerchantAliasNextChange] = useState<string | null>(null);
-    const [dnsLoading, setDnsLoading] = useState(false);
-    const [dnsSuccess, setDnsSuccess] = useState<string | null>(null);
-    const [dnsError, setDnsError] = useState<string | null>(null);
     const [uploadingPic, setUploadingPic] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
@@ -841,8 +847,6 @@ export default function DashboardPage() {
                 setSettingsTransactions(data.receipts);
                 if (data.settings.alias) {
                     const aliasParts = data.settings.alias.split(".");
-                    setDnsDomain(aliasParts[0]);
-                    setDnsSuffix("." + (aliasParts[1] || "hq"));
                 }
             }
         } catch (err) {
@@ -979,51 +983,6 @@ export default function DashboardPage() {
         }
     };
 
-    const handleRegisterDns = (e: React.FormEvent) => {
-        e.preventDefault();
-        setDnsError(null);
-        setDnsSuccess(null);
-
-        const prefix = dnsDomain.trim().toLowerCase();
-        if (!prefix) {
-            setDnsError("DNS alias cannot be empty");
-            return;
-        }
-        const cleanPrefix = prefix.split(".")[0];
-        /* Show a branded confirmation step (the name is locked for 365 days after this). */
-        setDnsConfirmPending(`${cleanPrefix}${dnsSuffix}`);
-    };
-
-    const confirmDnsRegistration = async () => {
-        const fullAlias = dnsConfirmPending;
-        if (!fullAlias) return;
-        setDnsLoading(true);
-        setDnsError(null);
-        setDnsSuccess(null);
-        try {
-            const res = await fetch("/api/merchant/alias", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ alias: fullAlias })
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                setDnsSuccess(`DNS Registered: ${fullAlias}`);
-                setUserSettings((prev: any) => ({ ...prev, alias: fullAlias }));
-                setMerchantAlias(fullAlias);
-                setDnsConfirmPending(null);
-            } else {
-                setDnsError(data.error || "Registration failed");
-            }
-        } catch (err) {
-            console.error("Error registering DNS:", err);
-            setDnsError("Registration failed");
-        } finally {
-            setDnsLoading(false);
-        }
-    };
-
-
     const [copiedText, setCopiedText] = useState<string | null>(null);
 
     const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -1050,6 +1009,7 @@ export default function DashboardPage() {
     const [webhookEndpoints, setWebhookEndpoints] = useState<any[]>([]);
     const [isWebhooksLoading, setIsWebhooksLoading] = useState(false);
     const [webhookEvents, setWebhookEvents] = useState<any[]>([]);
+    const [webhookEnvironment, setWebhookEnvironment] = useState<"LIVE" | "TEST">("LIVE");
     const [isEventsLoading, setIsEventsLoading] = useState(false);
     const [webhookUrlInput, setWebhookUrlInput] = useState("");
     const [isAddingWebhook, setIsAddingWebhook] = useState(false);
@@ -1381,15 +1341,17 @@ export default function DashboardPage() {
         }
     };
 
-    const fetchWebhookEvents = async () => {
+    const fetchWebhookEvents = async (env: "LIVE" | "TEST" = webhookEnvironment) => {
         setIsEventsLoading(true);
         try {
-            const res = await fetch("/api/webhooks/events");
+            const res = await fetch(`/api/webhooks/events?environment=${env}`);
             const data = await res.json();
             if (data.events) {
                 setWebhookEvents(data.events);
-                if (data.events.length > 0 && !selectedWebhook) {
+                if (data.events.length > 0) {
                     setSelectedWebhook(data.events[0].id);
+                } else {
+                    setSelectedWebhook("");
                 }
             }
         } catch (err) {
@@ -1563,7 +1525,6 @@ export default function DashboardPage() {
                 setMerchantAliasIsAnonymous(!!data.is_anonymous);
                 setAliasInput(data.alias || "");
                 setAliasIsAnonymousInput(!!data.is_anonymous);
-                setMerchantAliasNextChange(data.next_change_at || null);
             }
         } catch (err) {
             console.error("Error fetching merchant alias:", err);
@@ -1682,6 +1643,28 @@ export default function DashboardPage() {
 
     const handleDnsClick = () => {
         setActiveTab("settings");
+    };
+
+    const openMerchantAdvancedSettings = () => {
+        setMerchantSubView("menu");
+        setActiveTab("advanced");
+        if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.set("tab", "settings");
+            url.searchParams.set("section", "advanced");
+            window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+        }
+    };
+
+    const closeMerchantAdvancedSettings = () => {
+        setMerchantSubView("menu");
+        setActiveTab("settings");
+        if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.set("tab", "settings");
+            url.searchParams.delete("section");
+            window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+        }
     };
 
     const handleLogout = async () => {
@@ -2003,14 +1986,14 @@ export default function DashboardPage() {
             const res = await fetch("/api/webhooks/events/replay", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(eventId ? { eventId } : { latest: true }),
+                body: JSON.stringify(eventId ? { eventId } : { latest: true, environment: webhookEnvironment }),
             });
             const data = await res.json();
             if (data.success) {
-                setReplayStatus(`Webhook event successfully re-delivered. HTTP ${data.status} OK.`);
-                await fetchWebhookEvents();
+                setReplayStatus(`Webhook event successfully re-delivered. HTTP ${data.status || 200} OK.`);
+                await fetchWebhookEvents(webhookEnvironment);
             } else {
-                setReplayStatus(`Webhook re-delivery failed. HTTP ${data.status}.`);
+                setReplayStatus(`Webhook re-delivery failed: ${data.error || ("HTTP " + (data.status || 500))}`);
             }
             setTimeout(() => setReplayStatus(null), 4000);
         } catch (err) {
@@ -2036,7 +2019,7 @@ export default function DashboardPage() {
                 throw new Error(data.error || data.message || "Test webhook delivery failed.");
             }
             setReplayStatus(data.message || `${eventType} test event sent.`);
-            await Promise.all([fetchWebhookEndpoints(), fetchWebhookEvents()]);
+            await Promise.all([fetchWebhookEndpoints(), fetchWebhookEvents(webhookEnvironment)]);
         } catch (err: any) {
             setReplayStatus(err.message || "Network error sending test webhook.");
         } finally {
@@ -2108,14 +2091,15 @@ export default function DashboardPage() {
             refetchPayoutDest();
         } catch (err: any) {
             console.error("Reroute failed:", err);
-            setAdvancedError(err.shortMessage || err.message || "Reroute transaction failed");
+            setAdvancedError(formatWalletError(err));
         } finally {
             setIsRerouting(false);
         }
     };
 
     const handleToggleShielded = () => {
-        setShieldedEnabled(prev => !prev);
+        // Fail-closed: Confidential batch payouts cannot be toggled in preview mode
+        return;
     };
 
     const handleGenerateViewKey = () => {
@@ -2271,7 +2255,7 @@ export default function DashboardPage() {
     const agentIntegrationPrompt = useMemo(() => {
         return `I want to integrate the SubScript Protocol into this codebase.
 Please inspect the workspace. If the initialization package has NOT been run yet, please run it in the terminal first:
-npx @subscriptonarc/create
+npx @subscriptonarc/cli init
 
 This initialization tool installs the SubScript SDK, prompts for deployment parameters, writes SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET into .env.local, configures .cursorrules, and scaffolds both a server-side checkout intent route and a signed webhook route.
 
@@ -2286,7 +2270,7 @@ Please complete the following implementation tasks:
 1. Checkout Intent Creation: Locate the generated server route (for example, src/app/api/subscript/checkout/route.ts). From the pricing page, call that route with amountUsdc, title, description, externalReference, and an idempotencyKey. Store the returned intentId beside the logged-in user/order/subscription before redirecting the user to checkoutUrl.
 2. Webhook Fulfillment: Locate the generated webhook route (for example, src/app/api/webhooks/subscript/route.ts or an Express router). Keep raw-body x-subscript-signature verification enabled. When event.type === "payment.succeeded" (its alias "payment.success" is also accepted), use data.intent_id or data.checkout_session_id to find the local record, enforce idempotency with event.id, and unlock the matching plan exactly once using ${dbProvider === "none" ? "the detected database" : dbProvider}.
 3. User Session: Set up session recreation/persistence using ${sessionProvider === "none" ? "HTTP-only secure cookies or JWT" : sessionProvider} so the frontend can determine whether the logged-in user has an active paid subscription. Do not ask my app to know the payer wallet; SubScript maps wallet payment activity to the Checkout Intent.
-4. Payment Rail Boundary: Treat hosted checkout as Arc-native USDC only. Do not add Base, Solana, or CCTP checkout claims unless the SubScript docs in this repo explicitly say hosted CCTP memo settlement is live.
+4. Payment Rail Boundary: Treat hosted checkout as Arc-native USDC only. Do not add unsupported cross-chain checkout claims.
 5. Clean Code Practices: Keep SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET server-side only. Do not add emojis in comments or logs.`;
     }, [walletProvider, dbProvider, sessionProvider]);
 
@@ -3094,6 +3078,62 @@ Please complete the following implementation tasks:
             );
         }
 
+        const renderBusinessIdentityCard = () => (
+            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+                <div>
+                    <h3 className="text-sm font-semibold text-black">Business identity</h3>
+                    <p className="mt-1 text-xs text-black/55">Keep track of the three names attached to this merchant account.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                    <div className="min-w-0 rounded-2xl border border-black/10 bg-[#D4E3E8] p-4 flex flex-col justify-between">
+                        <div>
+                            <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Merchant ID</p>
+                            <p className="mt-1 truncate font-mono text-sm font-bold text-[#082824]">{userSettings?.merchantId || "—"}</p>
+                            <p className="mt-2 text-[10px] leading-relaxed text-black/55">Permanent internal account identity. Do not share it with customers.</p>
+                        </div>
+                        {userSettings?.merchantId && (
+                            <button type="button" onClick={() => handleCopy(userSettings.merchantId, "Merchant ID")} className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-semibold text-[#082824] hover:opacity-70">
+                                {copiedText === "Merchant ID" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} {copiedText === "Merchant ID" ? "Copied" : "Copy"}
+                            </button>
+                        )}
+                    </div>
+                    <div className="min-w-0 rounded-2xl border border-black/10 bg-white p-4 flex flex-col justify-between">
+                        <div>
+                            <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Commit name</p>
+                            <p className="mt-1 truncate font-mono text-sm font-bold text-[#082824]">{userSettings?.commitSlug || "—"}</p>
+                            <p className="mt-2 text-[10px] leading-relaxed text-black/55">Permanent public name used in your Vault Commit link.</p>
+                        </div>
+                        {userSettings?.commitSlug && (
+                            <div className="mt-3 flex items-center gap-3">
+                                <button type="button" onClick={() => handleCopy(userSettings.commitSlug, "Commit name")} className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-[#082824] hover:opacity-70">
+                                    {copiedText === "Commit name" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} {copiedText === "Commit name" ? "Copied" : "Copy"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    <div className="min-w-0 rounded-2xl border border-black/10 bg-white p-4 flex flex-col justify-between">
+                        <div>
+                            <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Display name</p>
+                            <p className="mt-1 truncate text-sm font-bold text-[#082824]">{userSettings?.displayName || "Not set"}</p>
+                            <p className="mt-2 text-[10px] leading-relaxed text-black/55">Customer-facing business name shown on checkout and receipts.</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowCheckoutPreview(true)}
+                                className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#2775CA] hover:underline"
+                            >
+                                <Eye className="h-3 w-3" />
+                                <span>Preview checkout & subscriptions</span>
+                            </button>
+                            <span className="text-black/25 text-xs">·</span>
+                            <a href="mailto:support@subscriptonarc.com" className="inline-flex text-[10px] font-semibold text-[#6f9bc4] underline underline-offset-2 hover:text-[#082824]">Request correction</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
         const renderBackHeader = (title: string, subtitle?: string) => (
             <div className="flex flex-col gap-1 mb-6">
                 <div className="flex items-center gap-3">
@@ -3115,10 +3155,17 @@ Please complete the following implementation tasks:
                 {/* 1. MAIN SETTINGS MENU HUB */}
                 {merchantSubView === "menu" && (
                     <div className="space-y-6">
-                        <div>
-                            <h1 className="text-xl font-bold text-[#082824] sm:text-2xl">Merchant Settings</h1>
-                            <p className="text-sm sm:text-base text-black/70 mt-1">Manage your business profile, theme, DNS namespace, and payouts.</p>
+                        <div className="flex items-start gap-3">
+                            <span className="mt-0.5 rounded-xl bg-[#082824]/10 p-2 text-[#082824]" aria-hidden="true">
+                                <Settings className="h-5 w-5" />
+                            </span>
+                            <div>
+                                <h1 className="text-xl font-bold text-[#082824] sm:text-2xl">Merchant Settings</h1>
+                                <p className="text-sm sm:text-base text-black/70 mt-1">Manage your business profile, merchant identity, payments and payouts, webhooks, advanced controls, and account safety.</p>
+                            </div>
                         </div>
+
+                        {renderBusinessIdentityCard()}
 
                         {/* Settings Menu Options List */}
                         <div className="border border-black/10 bg-[#FFFFF0] rounded-[34px] p-4 space-y-2 shadow-sm">
@@ -3152,7 +3199,7 @@ Please complete the following implementation tasks:
                                     </div>
                                     <div>
                                         <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Profile &amp; Branding</span>
-                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Logo, alias, payout destination, and cancellation feedback</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Logo, display name, commit name, merchant ID, payout destination, and cancellation feedback</span>
                                     </div>
                                 </div>
                                 <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
@@ -3166,29 +3213,11 @@ Please complete the following implementation tasks:
                             >
                                 <div className="flex items-center gap-3.5">
                                     <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <Sliders className="h-5 w-5" />
+                                        <ThemePicker className="h-5 w-5" />
                                     </div>
                                     <div>
                                         <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Appearance &amp; Theme</span>
                                         <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Switch between Light, Dark, and System mode</span>
-                                    </div>
-                                </div>
-                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
-                            </button>
-
-                            {/* SubScript DNS */}
-                            <button
-                                type="button"
-                                onClick={() => setMerchantSubView("dns")}
-                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
-                            >
-                                <div className="flex items-center gap-3.5">
-                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <Globe className="h-5 w-5" />
-                                    </div>
-                                    <div>
-                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">SubScript DNS</span>
-                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Register your business namespace (.hq / .biz)</span>
                                     </div>
                                 </div>
                                 <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
@@ -3202,7 +3231,7 @@ Please complete the following implementation tasks:
                             >
                                 <div className="flex items-center gap-3.5">
                                     <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <ShieldCheck className="h-5 w-5" />
+                                        <KycVerificationPendingIcon className="h-5 w-5" />
                                     </div>
                                     <div>
                                         <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">KYC Verification &amp; Tier</span>
@@ -3238,7 +3267,7 @@ Please complete the following implementation tasks:
                             >
                                 <div className="flex items-center gap-3.5">
                                     <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <Activity className="h-5 w-5" />
+                                        <TransactionLogs className="h-5 w-5" />
                                     </div>
                                     <div>
                                         <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Transaction Logs</span>
@@ -3279,6 +3308,25 @@ Please complete the following implementation tasks:
                                     <div>
                                         <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Security &amp; Wallet Recovery</span>
                                         <span className="block text-xs sm:text-sm text-black/60 mt-0.5">MPC custody and multi-sig controls</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+
+                            {/* Advanced Settings stays inside Merchant Settings. The internal view
+                                reuses the existing controls instead of maintaining a second copy. */}
+                            <button
+                                type="button"
+                                onClick={openMerchantAdvancedSettings}
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Settings className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Advanced Settings</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Payout routing, Arc confidentiality, governed access, and keeper operations</span>
                                     </div>
                                 </div>
                                 <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
@@ -3378,26 +3426,7 @@ Please complete the following implementation tasks:
                     <div className="space-y-6">
                         {renderBackHeader("Profile & Branding", "Manage your merchant logo, identity, and cancellation feedback question.")}
 
-                        {/* Business identity: immutable Merchant ID + admin-governed display name.
-                            Rendered without emojis or a lock icon by design. */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
-                            <h3 className="text-xs font-semibold text-black">Business identity</h3>
-                            <div className="p-4 rounded-2xl border border-black/10 bg-[#D4E3E8] flex items-center justify-between">
-                                <div>
-                                    <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Merchant ID</p>
-                                    <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{userSettings?.merchantId || "—"}</h4>
-                                </div>
-                                <span className="px-3 py-1.5 border border-black/15 bg-white text-black/70 text-[10px] font-semibold rounded-full select-none">
-                                    Permanent
-                                </span>
-                            </div>
-                            <p className="text-sm text-[#082824] font-sans leading-relaxed">
-                                <span className="font-semibold">Verified Business Display Name:</span>{" "}
-                                <span className="font-bold">{userSettings?.displayName || "Not set"}</span>{" "}
-                                (To request a change,{" "}
-                                <a href="mailto:support@subscriptonarc.com" className="text-[#8AB4DB] underline underline-offset-2 hover:text-[#6f9bc4]">contact SubScript Support</a>).
-                            </p>
-                        </div>
+                        {renderBusinessIdentityCard()}
 
                         <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
                             <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-black/10">
@@ -3482,101 +3511,6 @@ Please complete the following implementation tasks:
                                     </button>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* 4. SUBSCRIPT DNS SUBVIEW */}
-                {merchantSubView === "dns" && (
-                    <div className="space-y-6">
-                        {renderBackHeader("SubScript DNS", "Configure your business namespace on Arc.")}
-
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
-                            <h3 className="text-xs font-semibold text-black">SubScript DNS Registration (Business Name)</h3>
-                            <p className="text-[10px] leading-relaxed text-amber-900 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 font-sans">
-                                {merchantAliasNextChange
-                                    ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong>. You can change it again then. Business names cannot be unregistered.</>
-                                    : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully, because after a change you won&apos;t be able to switch again for a year.</>}
-                            </p>
-                            {userSettings?.alias ? (
-                                <div className="p-4 rounded-2xl border border-black/10 bg-[#D4E3E8] flex items-center justify-between">
-                                    <div>
-                                        <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Registered Alias</p>
-                                        <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{userSettings?.alias}</h4>
-                                    </div>
-                                    <span className="px-3 py-1.5 border border-black/15 bg-white text-black/70 text-[10px] font-semibold rounded-full select-none">
-                                        Permanent
-                                    </span>
-                                </div>
-                            ) : dnsConfirmPending ? (
-                                <div className="p-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 dark:bg-amber-400/10 dark:border-amber-400/30 space-y-4">
-                                    <div>
-                                        <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60 dark:text-white/60">Confirm DNS name</p>
-                                        <h4 className="font-mono text-lg font-bold text-[#082824] dark:text-white mt-1">{dnsConfirmPending}</h4>
-                                    </div>
-                                    <p className="text-[10px] leading-relaxed text-black/70">
-                                        This is locked for <strong>365 days</strong> once registered. Make sure it&apos;s right.
-                                    </p>
-                                    <div className="flex gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setDnsConfirmPending(null)}
-                                            disabled={dnsLoading}
-                                            className="flex-1 py-2.5 border border-black/15 bg-white hover:bg-black/5 text-black/70 text-[10px] font-semibold rounded-full transition-all"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={confirmDnsRegistration}
-                                            disabled={dnsLoading}
-                                            className="flex-1 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] text-[10px] font-semibold rounded-full transition-all flex items-center justify-center gap-2"
-                                        >
-                                            {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm & Register"}
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
-                                    <div className="space-y-1">
-                                        <label className="text-black/60 font-semibold text-[10px] tracking-wide">Domain Alias</label>
-                                        <div className="flex gap-2">
-                                            <div className="relative flex-1">
-                                                <input
-                                                    type="text"
-                                                    value={dnsDomain}
-                                                    onChange={(e) => setDnsDomain(e.target.value)}
-                                                    placeholder="my-company"
-                                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black focus:outline-none focus:border-[#8AB4DB] font-mono"
-                                                    required
-                                                />
-                                                <div className="absolute right-3 top-2.5 flex gap-1">
-                                                    <select
-                                                        value={dnsSuffix}
-                                                        onChange={(e) => setDnsSuffix(e.target.value)}
-                                                        className="bg-transparent text-black/60 text-xs font-bold border-none focus:outline-none cursor-pointer"
-                                                    >
-                                                        <option value=".hq" className="bg-white text-black">.hq</option>
-                                                        <option value=".biz" className="bg-white text-black">.biz</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <button
-                                                type="submit"
-                                                disabled={dnsLoading}
-                                                className="px-6 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full transition-all"
-                                            >
-                                                {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register"}
-                                            </button>
-                                        </div>
-                                        <p className="text-[10px] text-black/50">
-                                            Enterprise custom namespaces allow customers to identify your business link securely.
-                                        </p>
-                                    </div>
-                                </form>
-                            )}
-                            {dnsError && <p className="text-[10px] text-red-500">{dnsError}</p>}
-                            {dnsSuccess && <p className="text-[10px] text-emerald-600">{dnsSuccess}</p>}
                         </div>
                     </div>
                 )}
@@ -4332,8 +4266,7 @@ Please complete the following implementation tasks:
                         onToggleBalance={() => setBalanceVisible((visible) => !visible)}
                         onRefresh={handleManualRefreshBalances}
                         onSend={() => setIsSendWalletOpen(true)}
-                        onReceive={() => setIsDepositOpen(true)}
-                        onDeposit={() => setIsDepositOpen(true)}
+                        onReceive={() => setIsReceiveModalOpen(true)}
                         onWithdraw={() => setIsWithdrawOpen(true)}
                         onScanQr={() => setIsQrScannerOpen(true)}
                         onViewPlans={() => { setActiveTab("payment-links"); setSubTab("subscriptions"); }}
@@ -4363,11 +4296,18 @@ Please complete the following implementation tasks:
 
                 return (
                     <div className="space-y-8 text-black">
+                        <button
+                            type="button"
+                            onClick={closeMerchantAdvancedSettings}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-[#FFFFF0] px-4 py-2 text-xs font-bold text-[#082824] shadow-sm transition hover:bg-black/5"
+                        >
+                            <ChevronLeft className="h-4 w-4" /> Back to Merchant Settings
+                        </button>
                         {/* Advanced Settings Header Card */}
                         <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 shadow-sm">
                             <div className="flex items-start gap-4">
                                 <div className="p-3 rounded-2xl bg-[#082824]/5 dark:bg-white/10 text-[#082824] dark:text-white border border-black/10 dark:border-white/10">
-                                    <Sliders className="w-8 h-8" />
+                                    <Settings className="w-8 h-8" />
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-1">
@@ -4452,23 +4392,24 @@ Please complete the following implementation tasks:
                                 {/* Operational switch for Shielded Batch Payouts */}
                                 <div className="flex items-center justify-between bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
                                     <div>
-                                        <h4 className="text-xs font-semibold text-black mb-1">Confidential Batch Payouts <span className="text-black/50">(Preview)</span></h4>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <h4 className="text-xs font-semibold text-black">Confidential Batch Payouts — Preview</h4>
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                                                Not available yet
+                                            </span>
+                                        </div>
                                         <p className="text-[10px] text-black/60 leading-normal max-w-md font-sans">
-                                            Masks recipient addresses and transfer amounts in SubScript&apos;s batch event log. Note: the underlying USDC transfers are still recorded on Arc&apos;s public ledger today &mdash; full on-chain shielding activates once Arc&apos;s Privacy Sector (APS) is live.
+                                            SubScript is preparing privacy-enhanced batch payout tooling. Arc USDC transfers remain publicly visible on-chain.
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <button
-                                            onClick={handleToggleShielded}
-                                            className={`w-11 h-6 rounded-full p-1 transition-all duration-300 ${
-                                                shieldedEnabled ? "bg-[#8AB4DB]" : "bg-black/20"
-                                            }`}
+                                            type="button"
+                                            disabled
+                                            aria-disabled="true"
+                                            className="w-11 h-6 rounded-full p-1 bg-black/20 cursor-not-allowed opacity-60"
                                         >
-                                            <div
-                                                className={`w-4 h-4 rounded-full bg-white transition-all duration-300 transform ${
-                                                    shieldedEnabled ? "translate-x-5" : "translate-x-0"
-                                                }`}
-                                            />
+                                            <div className="w-4 h-4 rounded-full bg-white transition-all duration-300 transform translate-x-0" />
                                         </button>
                                     </div>
                                 </div>
@@ -4476,49 +4417,40 @@ Please complete the following implementation tasks:
                                 {/* Governed Access panel containing a generation button for the View Key */}
                                 <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 space-y-4">
                                     <div>
-                                        <h4 className="text-xs font-semibold text-black mb-1">Governed View Key</h4>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <h4 className="text-xs font-semibold text-black">Governed View Key</h4>
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                                                Preview Only
+                                            </span>
+                                        </div>
                                         <p className="text-[10px] text-black/60 leading-normal font-sans">
-                                            Generate and register a View Key. Its hash is stored on-chain and gates retrieval of your batch payout history. The key itself never leaves your browser; only its hash is registered.
+                                            Governed View Key registration will become active once Arc&apos;s Privacy Sector (APS) goes live. Key generation is disabled during preview mode.
                                         </p>
                                     </div>
 
                                     <div className="flex gap-3">
                                         <div className="relative flex-1">
                                             <input
-                                                type={showViewKey ? "text" : "password"}
-                                                value={viewKey}
+                                                type="text"
+                                                value=""
                                                 readOnly
-                                                placeholder="Click generate to create a View Key"
-                                                className="w-full bg-white border border-black/15 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-black focus:outline-none placeholder:text-black/30"
+                                                disabled
+                                                placeholder="View Key generation activates with Arc Privacy Sector"
+                                                className="w-full bg-white/50 border border-black/15 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-black/50 focus:outline-none placeholder:text-black/30 cursor-not-allowed"
                                             />
-                                            {viewKey && (
-                                                <button
-                                                    onClick={() => setShowViewKey(!showViewKey)}
-                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-black/40 hover:text-black transition-all"
-                                                >
-                                                    {showViewKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                                </button>
-                                            )}
                                         </div>
 
-                                        {viewKey ? (
+                                        <div className="flex items-center gap-2">
                                             <button
-                                                onClick={handleCopyViewKey}
-                                                className="px-4 bg-white border border-black/15 text-black rounded-xl hover:bg-black/5 transition-all flex items-center justify-center animate-none"
+                                                type="button"
+                                                disabled
+                                                aria-disabled="true"
+                                                className="px-5 py-3 border text-xs font-semibold rounded-full transition-all flex items-center gap-2 bg-black/10 text-black/40 border-transparent cursor-not-allowed opacity-60"
                                             >
-                                                {copiedViewKey ? <Check className="w-4 h-4 text-[#082824]" /> : <Copy className="w-4 h-4" />}
+                                                <Key className="w-3.5 h-3.5" />
+                                                Generate (Unavailable)
                                             </button>
-                                        ) : (
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={handleGenerateViewKey}
-                                                    className="px-5 py-3 border text-xs font-semibold rounded-full transition-all flex items-center gap-2 bg-[#8AB4DB] text-[#082824] hover:bg-[#7aa7d0] border-transparent"
-                                                >
-                                                    <Key className="w-3.5 h-3.5" />
-                                                    Generate
-                                                </button>
-                                            </div>
-                                        )}
+                                        </div>
                                     </div>
 
                                     {viewKey && !isViewKeyRegistered && (
@@ -4558,7 +4490,7 @@ Please complete the following implementation tasks:
                             {/* Manual Keeper Execution Control */}
                             <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-6">
                                 <h3 className="text-sm font-semibold text-[#082824] dark:text-white flex items-center gap-2">
-                                    <PlugZap className="w-4 h-4 text-[#082824] dark:text-emerald-400" />
+                                    <Activity className="w-4 h-4 text-[#082824] dark:text-emerald-400" />
                                     Keeper Force Execution
                                 </h3>
                                 <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
@@ -5004,7 +4936,7 @@ Please complete the following implementation tasks:
                             <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black flex flex-col justify-between shadow-sm">
                                 <div>
                                     <h2 className="text-lg sm:text-xl font-bold text-[#082824] mb-6 flex items-center gap-2.5">
-                                        <Sliders className="w-5 h-5 text-[#082824]" />
+                                        <CheckoutPlaybook className="w-5 h-5 text-[#082824]" />
                                         Checkout Configurator
                                     </h2>
                                     <div className="space-y-4 font-sans text-xs sm:text-sm">
@@ -5221,7 +5153,11 @@ Please complete the following implementation tasks:
                     );
                 }
 
-                const selectedPayload = webhookEvents.find(w => w.id === selectedWebhook);
+                const activeEndpointsForEnv = webhookEndpoints.filter(
+                    (ep) => (ep.environment || "LIVE") === webhookEnvironment && ep.active !== false
+                );
+                const hasActiveEndpoints = activeEndpointsForEnv.length > 0;
+                const selectedPayload = hasActiveEndpoints ? (webhookEvents.find(w => w.id === selectedWebhook) || null) : null;
                 const webhookActiveKey = apiKeys.find((key) => !key.revoked) || null;
                 const webhookKeyFingerprint = formatApiKeyFingerprint(webhookActiveKey?.secretKeyPlain)
                     || webhookActiveKey?.publishableKey
@@ -5268,7 +5204,7 @@ Please complete the following implementation tasks:
                                         disabled={isAddingWebhook || !webhookUrlInput}
                                         className="px-8 py-3.5 bg-[#000000] hover:bg-black/85 text-white rounded-full text-sm sm:text-base font-bold flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-40 shrink-0"
                                     >
-                                        {isAddingWebhook ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <PlugZap className="w-4 h-4" />}
+                                        {isAddingWebhook ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Webhook className="w-4 h-4" />}
                                         Add Endpoint
                                     </button>
                                 </div>
@@ -5399,62 +5335,140 @@ Please complete the following implementation tasks:
                             {/* Event Feed */}
                             <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm flex flex-col justify-between">
                                 <div>
-                                    <h2 className="text-lg sm:text-xl font-bold text-[#082824] mb-5 flex items-center gap-2.5">
-                                        <Webhook className="w-5 h-5 text-[#082824]" />
-                                        Live Webhook Deliveries
-                                    </h2>
+                                    <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
+                                        <h2 className="text-lg sm:text-xl font-bold text-[#082824] flex items-center gap-2.5">
+                                            <Webhook className="w-5 h-5 text-[#082824]" />
+                                            Webhook Deliveries
+                                        </h2>
+                                        <div className="inline-flex rounded-full border border-black/15 bg-white p-0.5 shadow-xs">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (webhookEnvironment !== "LIVE") {
+                                                        setWebhookEnvironment("LIVE");
+                                                        setWebhooksPage(0);
+                                                        setSelectedWebhook("");
+                                                        fetchWebhookEvents("LIVE");
+                                                    }
+                                                }}
+                                                className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+                                                    webhookEnvironment === "LIVE"
+                                                        ? "bg-[#082824] text-white shadow-xs"
+                                                        : "text-black/60 hover:text-black"
+                                                }`}
+                                            >
+                                                Live
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (webhookEnvironment !== "TEST") {
+                                                        setWebhookEnvironment("TEST");
+                                                        setWebhooksPage(0);
+                                                        setSelectedWebhook("");
+                                                        fetchWebhookEvents("TEST");
+                                                    }
+                                                }}
+                                                className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+                                                    webhookEnvironment === "TEST"
+                                                        ? "bg-[#082824] text-white shadow-xs"
+                                                        : "text-black/60 hover:text-black"
+                                                }`}
+                                            >
+                                                Test
+                                            </button>
+                                        </div>
+                                    </div>
                                     <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-                                        {isEventsLoading ? (
-                                            <div className="space-y-2.5">
-                                                {Array.from({ length: 4 }).map((_, i) => (
-                                                    <div key={i} className="p-4 rounded-2xl border border-black/10 bg-white flex justify-between items-center subscript-skeleton">
-                                                        <div className="space-y-1.5">
-                                                            <div className="h-4 w-36 rounded-full bg-[#082824]/20" />
-                                                            <div className="h-3 w-24 rounded-full bg-black/10" />
-                                                        </div>
-                                                        <div className="h-6 w-16 rounded-full bg-black/10" />
+                                        {(() => {
+                                            const activeEndpointsForEnv = webhookEndpoints.filter(
+                                                (ep) => (ep.environment || "LIVE") === webhookEnvironment && ep.active !== false
+                                            );
+                                            if (isEventsLoading) {
+                                                return (
+                                                    <div className="space-y-2.5">
+                                                        {Array.from({ length: 4 }).map((_, i) => (
+                                                            <div key={i} className="p-4 rounded-2xl border border-black/10 bg-white flex justify-between items-center subscript-skeleton">
+                                                                <div className="space-y-1.5">
+                                                                    <div className="h-4 w-36 rounded-full bg-[#082824]/20" />
+                                                                    <div className="h-3 w-24 rounded-full bg-black/10" />
+                                                                </div>
+                                                                <div className="h-6 w-16 rounded-full bg-black/10" />
+                                                            </div>
+                                                        ))}
                                                     </div>
-                                                ))}
-                                            </div>
-                                        ) : webhookEvents.length === 0 ? (
-                                            <div className="py-12 text-center text-black/50 font-sans text-sm space-y-3">
-                                                <Webhook className="w-10 h-10 mx-auto text-[#082824]/30" />
-                                                <p className="font-semibold">No webhook deliveries logged yet.</p>
-                                                <p className="text-xs text-black/40">Trigger events on-chain (like creating subscriptions) to see delivery reports here.</p>
-                                            </div>
-                                        ) : (
-                                            (() => {
-                                                const webhookPageSize = 5;
-                                                const paginatedWebhooks = webhookEvents.slice(webhooksPage * webhookPageSize, (webhooksPage + 1) * webhookPageSize);
-                                                return paginatedWebhooks.map((item) => (
-                                                    <button
-                                                        key={item.id}
-                                                        onClick={() => setSelectedWebhook(item.id)}
-                                                        className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
-                                                            selectedWebhook === item.id 
-                                                                ? "bg-[#D4E3E8] border-[#8AB4DB] shadow-sm"
-                                                                : "bg-white border-black/10 hover:bg-black/[0.03]"
-                                                        }`}
-                                                    >
-                                                        <div className="font-mono text-xs sm:text-sm space-y-1 max-w-[70%]">
-                                                            <p className="font-bold text-[#082824]">{item.event}</p>
-                                                            <p className="text-black/60 text-xs truncate">{item.endpointUrl}</p>
-                                                            <p className="text-black/40 text-xs">{item.time}</p>
+                                                );
+                                            }
+                                            if (activeEndpointsForEnv.length === 0) {
+                                                return (
+                                                    <div className="py-12 text-center text-black/50 font-sans text-sm space-y-3">
+                                                        <Webhook className="w-10 h-10 mx-auto text-[#082824]/30" />
+                                                        <p className="font-semibold">No {webhookEnvironment} webhook endpoints configured.</p>
+                                                        <p className="text-xs text-black/40">Register an endpoint above to start receiving webhook deliveries.</p>
+                                                    </div>
+                                                );
+                                            }
+                                            if (webhookEvents.length === 0) {
+                                                return (
+                                                    <div className="py-12 text-center text-black/50 font-sans text-sm space-y-3">
+                                                        <Webhook className="w-10 h-10 mx-auto text-[#082824]/30" />
+                                                        <p className="font-semibold">No {webhookEnvironment} webhook deliveries logged yet.</p>
+                                                        <p className="text-xs text-black/40">Trigger {webhookEnvironment.toLowerCase()} events to see delivery reports here.</p>
+                                                    </div>
+                                                );
+                                            }
+                                            const webhookPageSize = 5;
+                                            const paginatedWebhooks = webhookEvents.slice(webhooksPage * webhookPageSize, (webhooksPage + 1) * webhookPageSize);
+                                            return paginatedWebhooks.map((item) => (
+                                                <button
+                                                    key={item.id}
+                                                    onClick={() => setSelectedWebhook(item.id)}
+                                                    className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
+                                                        selectedWebhook === item.id 
+                                                            ? "bg-[#D4E3E8] border-[#8AB4DB] shadow-sm"
+                                                            : "bg-white border-black/10 hover:bg-black/[0.03]"
+                                                    }`}
+                                                >
+                                                    <div className="font-mono text-xs sm:text-sm space-y-1 max-w-[70%]">
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="font-bold text-[#082824]">{item.event}</span>
+                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                (item.environment || webhookEnvironment) === "LIVE"
+                                                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                                                    : "bg-amber-100 text-amber-800 border border-amber-300"
+                                                            }`}>
+                                                                {item.environment || webhookEnvironment}
+                                                            </span>
                                                         </div>
+                                                        <p className="text-black/60 text-xs truncate">{item.endpointUrl || item.url || (item.payload?.url ?? "")}</p>
+                                                        <p className="text-black/40 text-xs">{item.time}</p>
+                                                    </div>
+                                                    {typeof item.status === "number" ? (
                                                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                                                             item.status >= 200 && item.status < 300
-                                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30" 
+                                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30"
                                                                 : "bg-red-100 text-red-800 border border-red-300 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30"
                                                         }`}>
                                                             HTTP {item.status}
                                                         </span>
-                                                    </button>
-                                                ));
-                                            })()
-                                        )}
+                                                    ) : (
+                                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                                            item.deliveryStatus === "PENDING"
+                                                                ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                                                : item.deliveryStatus === "FAILED"
+                                                                ? "bg-red-100 text-red-800 border border-red-300"
+                                                                : "bg-black/5 text-black/60 border border-black/10"
+                                                        }`}>
+                                                            {item.deliveryStatus === "PENDING" ? "Pending" : item.deliveryStatus === "FAILED" ? "Failed" : "Not Delivered"}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            ));
+                                        })()}
                                     </div>
 
                                     {(() => {
+                                        if (!hasActiveEndpoints) return null;
                                         const webhookPageSize = 5;
                                         const totalPages = Math.ceil(webhookEvents.length / webhookPageSize);
                                         if (totalPages <= 1) return null;
@@ -5488,12 +5502,13 @@ Please complete the following implementation tasks:
                                 
                                 <div className="mt-6 pt-4 border-t border-black/10 text-xs text-black/60 flex items-center justify-between font-sans">
                                     <div className="flex items-center gap-2 font-semibold">
-                                        <span className="w-2.5 h-2.5 bg-[#8AB4DB] rounded-full" />
-                                        <span>Logged: {webhookEvents.length} events</span>
+                                        <span className={`w-2.5 h-2.5 ${hasActiveEndpoints && webhookEvents.length > 0 ? "bg-[#8AB4DB]" : "bg-black/20"} rounded-full`} />
+                                        <span>{hasActiveEndpoints ? `Logged: ${webhookEvents.length} events` : `0 deliveries logged`}</span>
                                     </div>
                                     <button
-                                        onClick={fetchWebhookEvents}
-                                        className="text-[#082824] font-bold hover:underline flex items-center gap-1.5"
+                                        onClick={() => fetchWebhookEvents(webhookEnvironment)}
+                                        disabled={!hasActiveEndpoints}
+                                        className="text-[#082824] font-bold hover:underline flex items-center gap-1.5 disabled:opacity-40 disabled:hover:no-underline disabled:cursor-not-allowed"
                                     >
                                         <RefreshCw className="w-3.5 h-3.5" /> Refresh logs
                                     </button>
@@ -5506,8 +5521,8 @@ Please complete the following implementation tasks:
                                     <span className="text-xs sm:text-sm font-bold text-[#082824] uppercase tracking-wider font-mono">Payload Inspector</span>
                                     <button
                                         onClick={() => handleReplayWebhook(selectedWebhook)}
-                                        disabled={isReplaying || !selectedWebhook}
-                                        className={`px-4 py-2 border border-black/15 bg-white rounded-full text-xs font-bold text-[#082824] hover:bg-black/5 flex items-center gap-1.5 shadow-sm ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
+                                        disabled={isReplaying || !selectedWebhook || !hasActiveEndpoints}
+                                        className={`px-4 py-2 border border-black/15 bg-white rounded-full text-xs font-bold text-[#082824] hover:bg-black/5 flex items-center gap-1.5 shadow-sm ${isReplaying || !selectedWebhook || !hasActiveEndpoints ? "opacity-50 cursor-not-allowed" : ""}`}
                                     >
                                         {isReplaying ? <Loader2 className="w-3.5 h-3.5 animate-spin text-black" /> : <RotateCw className="w-3.5 h-3.5 text-black" />}
                                         Replay
@@ -5522,7 +5537,7 @@ Please complete the following implementation tasks:
                                                 : "bg-red-50 text-red-800 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30"
                                         }`}>{replayStatus}</p>
                                     )}
-                                    {selectedPayload ? (
+                                    {hasActiveEndpoints && selectedPayload ? (
                                         <div className="space-y-4">
                                             <div>
                                                 <p className="text-black/60 text-xs uppercase tracking-wider mb-2 font-bold">JSON Payload</p>
@@ -5540,13 +5555,15 @@ Please complete the following implementation tasks:
                                             )}
                                         </div>
                                     ) : (
-                                        <span className="text-black/40">Select a webhook event to inspect</span>
+                                        <span className="text-black/40">
+                                            {!hasActiveEndpoints ? "No webhook deliveries to inspect" : "Select a webhook event to inspect"}
+                                        </span>
                                     )}
                                 </div>
                                 
                                 <div className="border-t border-black/10 px-6 sm:px-8 py-4 bg-[#D4E3E8]/40 text-xs text-black/70 flex justify-between font-mono font-semibold">
-                                    <span>Event ID: {selectedPayload?.id || "N/A"}</span>
-                                    <span>HTTP Status: {selectedPayload?.status || "N/A"}</span>
+                                    <span>Event ID: {hasActiveEndpoints && selectedPayload?.id ? selectedPayload.id : "N/A"}</span>
+                                    <span>HTTP Status: {hasActiveEndpoints && selectedPayload?.status ? selectedPayload.status : "N/A"}</span>
                                 </div>
                             </div>
                         </div>
@@ -5557,20 +5574,44 @@ Please complete the following implementation tasks:
     };
 
     const sidebarIdentityLabel =
-        merchantAlias || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Your account");
+        userSettings?.displayName || userSettings?.merchantId ||
+        (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Your account");
+
+    const replaceMerchantTabUrl = (tab: TabId) => {
+        if (typeof window === "undefined") return;
+        const url = new URL(window.location.href);
+        if (tab === "overview") {
+            url.searchParams.delete("tab");
+        } else {
+            url.searchParams.set("tab", tab === "advanced" ? "settings" : tab);
+        }
+        if (tab === "advanced") {
+            url.searchParams.set("section", "advanced");
+        } else {
+            url.searchParams.delete("section");
+        }
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    };
 
     const handleNavSelect = (id: string) => {
         if (id === "payment-links-subscriptions") {
             setActiveTab("payment-links");
             setSubTab("subscriptions");
+            replaceMerchantTabUrl("payment-links");
         } else if (id === "payment-links-one-time") {
             setActiveTab("payment-links");
             setSubTab("one-time");
+            replaceMerchantTabUrl("payment-links");
         } else if (id === "payment-links-commit") {
             setActiveTab("payment-links");
             setSubTab("commit");
+            replaceMerchantTabUrl("payment-links");
+        } else if (id === "settings") {
+            closeMerchantAdvancedSettings();
         } else {
-            setActiveTab(id as TabId);
+            const nextTab = id as TabId;
+            setActiveTab(nextTab);
+            replaceMerchantTabUrl(nextTab);
         }
     };
 
@@ -5592,8 +5633,8 @@ Please complete the following implementation tasks:
                 <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[28px] md:border md:border-black/10">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-                    <div className="liquid-glass border border-white/10 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-6 relative overflow-hidden bg-[#0d0d0d] shadow-2xl">
+                <div className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4">
+                    <div className="dashboard-modal-surface liquid-glass border border-white/10 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-6 relative overflow-hidden bg-[#0d0d0d] shadow-2xl">
                         <div className="space-y-2">
                             <span className="inline-flex p-3 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 mb-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -5615,10 +5656,10 @@ Please complete the following implementation tasks:
                                 if (sessionAlert === "role_missing") {
                                     window.location.href = getDashboardUrl("USER", "/signup?completeRole=1");
                                 } else if (sessionAlert === "wrong_role") {
-                                    window.location.href = getDashboardUrl("USER", "/user");
+                                    window.location.href = getDashboardUrl("USER", APP_ROUTES.userDashboard);
                                 } else {
                                     await fetch("/api/auth/logout", { method: "POST" });
-                                    window.location.href = getDashboardUrl("USER", "/signin");
+                                    window.location.href = getDashboardUrl("USER", APP_ROUTES.login);
                                 }
                             }}
                             className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
@@ -5642,7 +5683,7 @@ Please complete the following implementation tasks:
                                 isLoading={Boolean(isLoading)}
                                 onOpenSettings={() => {
                                     setMerchantSubView("menu");
-                                    setActiveTab("settings");
+                                    closeMerchantAdvancedSettings();
                                 }}
                             />
                         </div>
@@ -5651,13 +5692,6 @@ Please complete the following implementation tasks:
                         </h1>
                     </div>
                     <div className="flex items-center gap-2.5 shrink-0">
-                        <button
-                            onClick={() => setActiveTab("advanced")}
-                            title="Advanced Settings"
-                            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFFFF0] dark:bg-[#1f2023] text-[#082824] dark:text-white hover:brightness-95 transition shadow-sm border border-black/10 dark:border-white/10"
-                        >
-                            <Sliders className="h-4 w-4 text-[#082824] dark:text-white" />
-                        </button>
                         <div className="relative">
                             <NotificationBell audience="MERCHANT" accent="#082824" className="merchant-light-bell" />
                         </div>
@@ -5783,21 +5817,36 @@ Please complete the following implementation tasks:
                     }
                 }}
             />
-            <DepositModal
-                isOpen={isDepositOpen}
-                onClose={() => setIsDepositOpen(false)}
-                isEmbeddedWallet={!!embeddedWallet}
-                depositAddress={address || ""}
-                onSuccess={handleDepositSuccess}
+            <MerchantReceiveModal
+                open={isReceiveModalOpen}
+                onClose={() => setIsReceiveModalOpen(false)}
+                merchantAddress={activeMerchantAddress || address || ""}
+                balance={walletBalance}
+                onRefreshBalance={handleManualRefreshBalances}
+                isRefreshing={isRefreshingBalances}
             />
-            {activeQrCodeLink && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md font-sans">
+            <AnimatePresence>
+                {activeQrCodeLink && (
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, filter: "blur(1.5px)" }}
-                        animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-                        exit={{ opacity: 0, scale: 0.95, filter: "blur(1.5px)" }}
-                        className="liquid-glass border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative space-y-6 text-center"
+                        key="qr-code-overlay"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 font-sans"
+                        onClick={() => {
+                            setActiveQrCodeLink(null);
+                            setActiveQrCodeTitle("");
+                        }}
                     >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                            transition={{ duration: 0.15, ease: "easeOut" }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="dashboard-modal-surface bg-[#060608]/95 border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative space-y-6 text-center transform-gpu"
+                        >
                         {/* Close button */}
                         <button
                             onClick={() => {
@@ -5865,8 +5914,9 @@ Please complete the following implementation tasks:
                             </div>
                         </div>
                     </motion.div>
-                </div>
+                </motion.div>
             )}
+        </AnimatePresence>
             {confirmModal && (
                 <ConfirmModal
                     open={confirmModal.open}
@@ -5882,7 +5932,7 @@ Please complete the following implementation tasks:
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
                                 <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
-                                    <Zap className="w-5 h-5 text-[#8AB4DB] fill-[#8AB4DB]/25 shrink-0" />
+                                    <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
                                     <span className="text-xs font-bold uppercase tracking-wider text-white">
                                         {toastMessage}
                                     </span>

@@ -8,14 +8,13 @@ import { useRouter } from "next/navigation";
 import {
     ArrowLeft, Plus, Pause, Play, Trash2, Users, Calendar,
     Shield, ShieldOff, Loader2, CheckCircle, AlertTriangle,
-    DollarSign, Clock, Building2, Lock, Crown, Zap, Activity,
-    BarChart3, Link2, Sliders, User, Key, Code2, Webhook, PlugZap
+    DollarSign, Clock, Building2, Lock, Crown, Activity,
+    BarChart3, Link2, Sliders, Key, Code2, Webhook, Settings, CheckoutPlaybook
 } from "@/components/icons";
 import DashboardHeader from "@/components/DashboardHeader";
 import Skeleton from "@/components/ui/Skeleton";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import WithdrawModal from "@/components/WithdrawModal";
-import DepositModal from "@/components/DepositModal";
 import ConfirmModal from "@/components/ConfirmModal";
 import { createPublicClient, http, formatUnits } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
@@ -40,17 +39,16 @@ const USDC_ADDRESS = USDC_NATIVE_GAS_ADDRESS;
 
 const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
-    { id: "advanced", label: "Advanced", icon: Sliders },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2, href: "/merchant/payroll" },
     { id: "apikeys", label: "API Keys", icon: Key },
-    { id: "checkout", label: "Checkout Setup", icon: Code2 },
+    { id: "checkout", label: "Checkout Setup", icon: CheckoutPlaybook },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
-    { id: "settings", label: "Profile & DNS", icon: User },
+    { id: "settings", label: "Settings", icon: Settings },
 ] as const;
 
-type TabId = "overview" | "advanced" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks" | "settings";
+type TabId = "overview" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks" | "settings";
 
 const publicClient = createPublicClient({
     chain: activeArcChain,
@@ -204,7 +202,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     const [walletBalance, setWalletBalance] = useState(0);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
-    const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [isWithdrawing, setIsWithdrawing] = useState(false);
     const [withdrawSuccess, setWithdrawSuccess] = useState(false);
     /* Stable x-request-id per withdrawal destination. Minted once, reused by every retry, and
@@ -521,10 +518,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
         } finally {
             setIsWithdrawing(false);
         }
-    };
-
-    const handleDepositSuccess = () => {
-        refetchBalancesAndTier();
     };
 
     /* ------------------------------------------------------------------ */
@@ -881,9 +874,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 <DashboardHeader
                     embeddedWallet={embeddedWallet}
                     onDisconnect={handleLogout}
-                    onDepositSuccess={handleDepositSuccess}
                     promptFlowMode={promptFlowMode}
-                    onDeposit={() => setIsDepositOpen(true)}
                     activeTab="payroll"
                     onBackToOverview={() => router.push("/merchant")}
                 />
@@ -1013,10 +1004,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                 {showCreateForm && (
                                                     <motion.div
                                                         key="create-form"
-                                                        initial={{ opacity: 0, height: 0, filter: "blur(1.5px)" }}
-                                                        animate={{ opacity: 1, height: "auto", filter: "blur(0px)" }}
-                                                        exit={{ opacity: 0, height: 0, filter: "blur(1.5px)" }}
-                                                        transition={{ duration: 0.35 }}
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: "auto" }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        transition={{ duration: 0.2, ease: "easeOut" }}
                                                         className="overflow-hidden mb-6"
                                                     >
                                                         <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm relative overflow-hidden mb-6">
@@ -1067,29 +1058,26 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                                                 {/* Shielded toggle */}
                                                                 <div>
-                                                                    <label className="text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 mb-2 block font-sans">Privacy Mode</label>
-                                                                    <div
-                                                                        className={`flex items-center gap-3 cursor-pointer px-4 py-3.5 rounded-xl border transition-all ${
-                                                                            formShielded
-                                                                                ? "border-black/10 dark:border-white/10 bg-[#D4E3E8] dark:bg-white/10 text-[#082824] dark:text-white shadow-sm"
-                                                                                : "border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] text-black/60 dark:text-white/60 hover:brightness-95"
-                                                                        }`}
-                                                                        onClick={() => setFormShielded((prev) => !prev)}
-                                                                    >
-                                                                        {formShielded ? (
-                                                                            <Shield size={18} className="text-[#082824] dark:text-white" />
-                                                                        ) : (
-                                                                            <ShieldOff size={18} className="text-black/40 dark:text-white/40" />
-                                                                        )}
-                                                                        <span className="text-xs font-bold uppercase tracking-wider font-sans">
-                                                                            {formShielded ? "Confidential (Preview)" : "Standard (Public)"}
+                                                                    <div className="flex items-center justify-between mb-2">
+                                                                        <label className="text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 block font-sans">
+                                                                            Privacy Mode
+                                                                        </label>
+                                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                                                            Not available yet
                                                                         </span>
                                                                     </div>
-                                                                    {formShielded && (
-                                                                        <p className="text-[10px] text-black/50 dark:text-white/40 leading-normal mt-2 font-sans">
-                                                                            Masks recipient and amount metadata in SubScript&apos;s batch event log. The underlying USDC transfers stay visible on Arc&apos;s public ledger &mdash; full on-chain privacy activates when Arc&apos;s Privacy Sector (APS) goes live.
-                                                                        </p>
-                                                                    )}
+                                                                    <div
+                                                                        className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-black/10 dark:border-white/10 bg-[#FFFFF0]/60 dark:bg-[#1f2023]/60 text-black/40 dark:text-white/40 cursor-not-allowed"
+                                                                        aria-disabled="true"
+                                                                    >
+                                                                        <ShieldOff size={18} className="text-black/40 dark:text-white/40" />
+                                                                        <span className="text-xs font-bold uppercase tracking-wider font-sans">
+                                                                            Confidential Batch Payouts — Preview
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-[10px] text-black/50 dark:text-white/40 leading-normal mt-2 font-sans">
+                                                                        SubScript is preparing privacy-enhanced batch payout tooling. Arc USDC transfers remain publicly visible on-chain.
+                                                                    </p>
                                                                 </div>
                                                             </div>
 
@@ -1121,9 +1109,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                     {formRecipients.map((recipient) => (
                                                                         <motion.div
                                                                             key={recipient.id}
-                                                                            initial={{ opacity: 0, x: -10, filter: "blur(1.2px)" }}
-                                                                            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-                                                                            exit={{ opacity: 0, x: 10, filter: "blur(1.2px)" }}
+                                                                            initial={{ opacity: 0, x: -10 }}
+                                                                            animate={{ opacity: 1, x: 0 }}
+                                                                            exit={{ opacity: 0, x: 10 }}
+                                                                            transition={{ duration: 0.15, ease: "easeOut" }}
                                                                             className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-2 items-center"
                                                                         >
                                                                             <input
@@ -1280,10 +1269,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                         return (
                                                             <motion.div
                                                                 key={campaign.id}
-                                                                initial={{ opacity: 0, y: 15, filter: "blur(1.5px)" }}
-                                                                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                                                                transition={{ delay: index * 0.05 }}
-                                                                className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm relative overflow-hidden mb-6"
+                                                                initial={{ opacity: 0, y: 15 }}
+                                                                animate={{ opacity: 1, y: 0 }}
+                                                                transition={{ duration: 0.15, ease: "easeOut", delay: index * 0.05 }}
+                                                                className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm relative overflow-hidden mb-6 transform-gpu"
                                                             >
                                                                 {/* Top title and status details */}
                                                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
@@ -1416,18 +1405,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 }}
                 isWithdrawing={isWithdrawing}
             />
-            <DepositModal
-                isOpen={isDepositOpen}
-                onClose={() => setIsDepositOpen(false)}
-                isEmbeddedWallet={!!embeddedWallet}
-                depositAddress={address || ""}
-                onSuccess={handleDepositSuccess}
-            />
-
             {/* High-fidelity glassmorphic toast notification */}
             {toast.visible && (
                 <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 border border-black/10 dark:border-white/10 bg-white dark:bg-[#1f2023] rounded-2xl px-6 py-4 flex items-center gap-3 shadow-lg font-sans">
-                    <Zap className="w-5 h-5 text-[#8AB4DB] fill-[#8AB4DB]/25 shrink-0" />
+                    <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
                     <span className="text-xs font-bold uppercase tracking-wider text-[#082824] dark:text-white">
                         {toast.message}
                     </span>
@@ -1468,10 +1449,10 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
             <AnimatePresence>
                 {expanded && (
                     <motion.div
-                        initial={{ opacity: 0, height: 0, filter: "blur(1.5px)" }}
-                        animate={{ opacity: 1, height: "auto", filter: "blur(0px)" }}
-                        exit={{ opacity: 0, height: 0, filter: "blur(1.5px)" }}
-                        transition={{ duration: 0.25 }}
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
                         className="overflow-hidden"
                     >
                         <div className="mt-3 bg-black/[0.02] dark:bg-white/[0.03] rounded-2xl border border-black/10 dark:border-white/10 p-4 font-sans">

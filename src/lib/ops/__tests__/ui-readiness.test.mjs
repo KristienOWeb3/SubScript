@@ -13,13 +13,13 @@ test("the mobile tier control expands before opening verification details", () =
     assert.match(header, /if \(!mobileTierExpanded\)[\s\S]*setMobileTierExpanded\(true\)[\s\S]*return/);
     assert.match(header, /type="button"[\s\S]*aria-expanded=\{mobileTierExpanded\}/);
     assert.match(header, /onTierDetails\(\)[\s\S]*onTabChange\("dns"\)/);
-    assert.match(header, /mobileTierExpanded \? `Tier \$\{tier\}` : tier/);
+    assert.match(header, /(?:mobileTierExpanded \? `Tier \$\{tier\}` : tier|mobileTierExpanded && <span[^>]*>\{`Tier \$\{tier\}`\}<\/span>)/);
 
     assert.match(dashboard, /<HomeHeader[\s\S]*onTierDetails=\{\(\) => \{[\s\S]*setActiveTab\("dns"\)[\s\S]*setAccountSubView\("kyc"\)/);
     assert.match(dashboard, /const \[tierExpanded, setTierExpanded\] = useState\(false\)/);
     assert.match(dashboard, /if \(!tierExpanded\)[\s\S]*setTierExpanded\(true\)[\s\S]*return;[\s\S]*onTierDetails\(\)/);
     assert.match(dashboard, /aria-expanded=\{tierExpanded\}/);
-    assert.match(dashboard, /tierExpanded \? `Tier \$\{tier\}` : tier/);
+    assert.match(dashboard, /(?:tierExpanded \? `Tier \$\{tier\}` : tier|tierExpanded && <span[^>]*>\{`Tier \$\{tier\}`\}<\/span>)/);
 });
 
 test("every runtime control is rendered as a labelled visual switch", () => {

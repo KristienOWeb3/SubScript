@@ -25,6 +25,10 @@ const faqGroups: Array<{ heading: string; id: string; items: Array<[string, stri
         "Does the merchant need to track wallets?",
         "No. The merchant should track Checkout Intent IDs. SubScript maps wallet payment activity to the off-chain intent and sends the signed result.",
       ],
+      [
+        "Which merchant name should I use?",
+        "Use the Display name for customer-facing branding, the immutable Commit name for /commit links and the user Commit form, and the immutable Merchant ID only for administration, verification, audit, or support. DNS names are for consumer P2P identity and are not merchant identifiers.",
+      ],
     ],
   },
   {

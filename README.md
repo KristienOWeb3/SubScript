@@ -58,6 +58,7 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 **For merchants**
 - Hosted checkout, payment links, and recurring billing
 - Signed webhooks for reliable order fulfillment
+- Three-purpose identity: immutable Merchant ID for administration, immutable Commit name for public vault links, and a governed Display name for customer-facing branding
 - **Pay‑per‑use commit vaults** — customers escrow a merchant‑set commit once; usage (API calls, tokens, sessions, per‑item) accrues and is drawn from escrow each cycle
 - Invoice‑style collection and a transparent 1% fee
 - Privacy Premium surfaces for confidential commercial flows
@@ -65,7 +66,7 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 **For developers**
 - One lifecycle: create intent → bounded authorization → receipt binding → on‑chain verification → webhook
 - One-time Checkout Intents (`/api/intent`, `GET /api/intent/:id`), recurring plans (`/api/v1/plans`), subscriptions (`/api/v1/subscriptions`), payment links (`/api/payment-links`), metered vault status/reporting (`/api/user/vault/status`, `/api/user/vault/report-usage`), and a typed CLI
-- DNS‑style aliases for human‑readable payment identities
+- DNS‑style aliases for consumer peer payments; merchant verification and Commit lookup use Merchant ID and Commit name respectively
 
 ### Billing endpoint rule
 
@@ -142,6 +143,7 @@ curl -X POST https://www.subscriptonarc.com/api/intent \
 ## Documentation
 
 - Developer docs: [`/docs`](https://subscriptonarc.com/docs)
+- Merchant identity: [`/docs/merchant-identity`](https://subscriptonarc.com/docs/merchant-identity)
 - Quickstart: [`/quickstart.md`](https://subscriptonarc.com/quickstart.md)
 - OpenAPI 3.1 spec: [`/openapi.json`](https://subscriptonarc.com/openapi.json)
 - LLM index: [`/llms.txt`](https://subscriptonarc.com/llms.txt) · full context: [`/llms-full.txt`](https://subscriptonarc.com/llms-full.txt)

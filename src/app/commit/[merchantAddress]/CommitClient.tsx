@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import DepositModal from "@/components/DepositModal";
 import {
-    Loader2, CheckCircle, AlertTriangle, ArrowRight, Lock, Shield, ShieldAlert, Zap, MessageSquare, RefreshCw
+    Loader2, CheckCircle, AlertTriangle, ArrowRight, Lock, Shield, ShieldAlert, MessageSquare, RefreshCw, Plus
 } from "@/components/icons";
 
 type MerchantInfo = {
     address: string;
+    commitSlug: string;
     name: string;
     alias: string | null;
     verified: boolean;
@@ -24,12 +26,14 @@ type SessionInfo = {
 
 export default function CommitClient({
     merchantAddress,
+    commitSlug,
     initialMerchant,
     initialAmount,
     successUrl,
     cancelUrl,
 }: {
     merchantAddress: string;
+    commitSlug: string;
     initialMerchant: MerchantInfo | null;
     initialAmount: string;
     successUrl?: string;
@@ -48,6 +52,8 @@ export default function CommitClient({
     const [commitPendingNote, setCommitPendingNote] = useState<string | null>(null);
     const [committedTxHash, setCommittedTxHash] = useState<string | null>(null);
     const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false);
+    const [topUpOpen, setTopUpOpen] = useState(false);
+    const [isInsufficientBalance, setIsInsufficientBalance] = useState(false);
 
     const commitRequestKey = useRef<string | null>(null);
     const commitInFlight = useRef(false);
@@ -158,11 +164,15 @@ export default function CommitClient({
     }, []);
 
     const handleSignIn = () => {
-        const next = `/commit/${merchantAddress}?amount=${encodeURIComponent(amountUsdc)}`;
+        const next = `/commit/${commitSlug}?amount=${encodeURIComponent(amountUsdc)}`;
         router.push(`/signin?next=${encodeURIComponent(next)}`);
     };
 
     const handleCommit = async () => {
+        if (merchant && !merchant.verified && !acknowledgedUnverified) {
+            setCommitError("Please check the box to acknowledge this merchant is unverified before committing funds.");
+            return;
+        }
         if (isCommitting || commitInFlight.current) return;
         commitInFlight.current = true;
         setIsCommitting(true);
@@ -291,7 +301,7 @@ export default function CommitClient({
                     <div className="rounded-2xl border border-black/10 bg-[#D4E3E8] p-5 flex justify-between items-center">
                         <div>
                             <span className="text-[10px] font-bold uppercase tracking-wider text-[#082824]/60 flex items-center gap-1.5">
-                                <Zap className="w-3.5 h-3.5 text-[#2775CA]" /> Initial Escrow
+                                <Lock className="w-3.5 h-3.5 text-[#2775CA]" /> Initial Escrow
                             </span>
                             <p className="text-xs text-[#082824]/70 mt-0.5">Metered billing balance</p>
                         </div>
@@ -355,14 +365,7 @@ export default function CommitClient({
                                 </div>
                             )}
 
-                            {commitError && (
-                                <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-left">
-                                    <span className="text-red-900 text-xs font-bold uppercase tracking-wide block">Commitment Failed</span>
-                                    <p className="text-red-800 text-xs font-mono mt-1 leading-normal break-words">{commitError}</p>
-                                </div>
-                            )}
-
-                            {acknowledgedUnverified && (
+                            {merchant && !merchant.verified && (
                                 <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl text-left space-y-2">
                                     <span className="text-amber-900 text-xs font-bold flex items-center gap-1.5">
                                         <AlertTriangle className="w-4 h-4 text-amber-600" /> Unverified Merchant Notice
@@ -370,6 +373,38 @@ export default function CommitClient({
                                     <p className="text-xs text-amber-800 leading-relaxed">
                                         This merchant is not yet verified on SubScript. Only commit funds if you trust this business.
                                     </p>
+                                    <label className="flex items-center gap-2 pt-1 text-xs text-amber-950 font-medium cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={acknowledgedUnverified}
+                                            onChange={(e) => {
+                                                setAcknowledgedUnverified(e.target.checked);
+                                                if (commitError?.includes("unverified")) setCommitError(null);
+                                            }}
+                                            className="rounded border-amber-400 text-[#082824] focus:ring-[#082824] h-4 w-4"
+                                        />
+                                        <span>I trust this merchant and understand the risk</span>
+                                    </label>
+                                </div>
+                            )}
+
+                            {commitError && (
+                                <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-left space-y-3">
+                                    <div>
+                                        <span className="text-red-900 text-xs font-bold uppercase tracking-wide block">Commitment Failed</span>
+                                        <p className="text-red-800 text-xs font-mono mt-1 leading-normal break-words">{commitError}</p>
+                                    </div>
+                                    {isInsufficientBalance && (
+                                        <div className="pt-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => setTopUpOpen(true)}
+                                                className="inline-flex items-center gap-2 px-4 py-2 bg-[#2775CA] hover:bg-[#1f62ab] text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow-sm"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" /> Top up and try again
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -408,6 +443,19 @@ export default function CommitClient({
                     </div>
                 </div>
             </div>
-        </div>
+        
+            <DepositModal
+                isOpen={topUpOpen}
+                onClose={() => setTopUpOpen(false)}
+                isEmbeddedWallet={session?.isEmbedded}
+                isTier1={Boolean(session?.email) || session?.isEmbedded}
+                depositAddress={session?.wallet || ""}
+                onSuccess={() => {
+                    setTopUpOpen(false);
+                    setIsInsufficientBalance(false);
+                    setCommitError(null);
+                    handleRefresh();
+                }}
+            /></div>
     );
 }

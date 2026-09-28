@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "@/components/icons";
+import { Loader2, AlertCircle, X } from "@/components/icons";
 import { getCookie, setCookie, deleteCookie } from "cookies-next/client";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
 import {
@@ -33,6 +33,7 @@ type CircleGoogleWalletButtonProps = {
         provider?: string;
         role?: string | null;
     }) => void;
+    onError?: (error: string | null) => void;
     variant?: "full" | "icon";
     disabled?: boolean;
 };
@@ -98,16 +99,36 @@ function getAuthIntent() {
 
 const LOGIN_WATCHDOG_MS = 90_000;
 
-/* Appended to every failure message. A stale bootstrap is the usual cause of an intermittent
-   failure here, and reloading is the one action that reliably clears it. */
-const RETRY_HINT = "Refresh and try again.";
+function formatGoogleErrorMessage(message: string): string {
+    const trimmed = (message || "").trim();
+    if (!trimmed) return "Google sign-in is temporarily unavailable. Please try again.";
 
-function withRetryHint(message: string) {
-    const trimmed = message.trim();
-    if (!trimmed) return RETRY_HINT;
-    if (trimmed.includes(RETRY_HINT)) return trimmed;
-    const punctuated = /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-    return `${punctuated} ${RETRY_HINT}`;
+    const lower = trimmed.toLowerCase();
+
+    // Check for local development unconfigured state
+    if (lower.includes("circle") || lower.includes("not configured") || lower.includes("isn't configured") || lower.includes("missing:")) {
+        const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+        if (isLocal) {
+            return "Google sign-in is not configured locally. Please sign in with email OTP or connect a Web3 wallet.";
+        }
+        return "Google sign-in is temporarily unavailable. Please sign in with email or connect a Web3 wallet.";
+    }
+
+    if (lower.includes("closed") || lower.includes("popup") || lower.includes("didn't finish") || lower.includes("cancelled") || lower.includes("canceled")) {
+        return "Google sign-in was closed before completing. Please try again.";
+    }
+
+    if (lower.includes("rate limit") || lower.includes("too many")) {
+        return "Too many sign-in attempts. Please wait a moment and try again.";
+    }
+
+    const cleaned = trimmed.replace(/Circle Google/gi, "Google");
+    if (cleaned.includes("try again") || cleaned.includes("try signing in")) {
+        return cleaned;
+    }
+
+    const punctuated = /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
+    return `${punctuated} Please try again.`;
 }
 
 type CircleBootstrap = {
@@ -128,9 +149,9 @@ async function loadCircleBootstrap(): Promise<CircleBootstrap> {
     const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
     const config: CircleGoogleConfig & { error?: string } = await configRes
         .json()
-        .catch(() => ({ error: "Circle Google login is not configured or temporarily unavailable." } as any));
+        .catch(() => ({ error: "Google sign-in is temporarily unavailable." } as any));
     if (!configRes.ok) {
-        throw new Error(config.error || "Circle Google login is not configured.");
+        throw new Error(config.error || "Google sign-in is temporarily unavailable.");
     }
 
     let deviceToken = "";
@@ -231,7 +252,12 @@ function GoogleColorSpinner({ className = "w-4 h-4" }: { className?: string }) {
     );
 }
 
-export default function CircleGoogleWalletButton({ onSuccess, variant = "full", disabled = false }: CircleGoogleWalletButtonProps) {
+export default function CircleGoogleWalletButton({
+    onSuccess,
+    onError,
+    variant = "full",
+    disabled = false,
+}: CircleGoogleWalletButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [devEmailInput, setDevEmailInput] = useState("");
@@ -251,7 +277,9 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
             preloadedDataRef.current = null;
             clearCircleSession();
             setIsLoading(false);
-            setError(withRetryHint("Google sign-in didn't finish. Close the Google window if it's still open."));
+            const msg = formatGoogleErrorMessage("Google sign-in was closed before completing.");
+            setError(msg);
+            onError?.(msg);
         }, LOGIN_WATCHDOG_MS);
     };
 
@@ -271,7 +299,9 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
         preloadedDataRef.current = null;
         clearCircleSession();
         stopLoading();
-        setError(withRetryHint(message));
+        const friendlyMessage = formatGoogleErrorMessage(message);
+        setError(friendlyMessage);
+        onError?.(friendlyMessage);
     };
 
     useEffect(() => {
@@ -362,6 +392,7 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
     const handleDevQuickLogin = async (overrideEmail?: string) => {
         setIsLoading(true);
         setError(null);
+        onError?.(null);
         try {
             const email = (overrideEmail || devEmailInput || "developer@subscript.io").trim();
             const res = await fetch("/api/auth/circle/wallet/complete", {
@@ -395,6 +426,7 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
         if (disabled) return;
         setIsLoading(true);
         setError(null);
+        onError?.(null);
         armWatchdog();
 
         try {
@@ -483,9 +515,21 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
                     )}
                 </button>
 
-                {error ? (
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 z-50 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-900 text-center shadow-lg">
-                        <p>{error}</p>
+                {/* Only render fallback popup if parent provided no onError handler */}
+                {!onError && error ? (
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 z-50 rounded-2xl border border-red-200 bg-red-50/95 backdrop-blur-md p-3 text-xs text-red-900 text-left shadow-xl space-y-2">
+                        <div className="flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                            <p className="flex-1 leading-relaxed">{error}</p>
+                            <button
+                                type="button"
+                                onClick={() => setError(null)}
+                                className="text-red-400 hover:text-red-700 transition p-0.5"
+                                title="Dismiss"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
                     </div>
                 ) : null}
             </div>
@@ -508,9 +552,21 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
                 <span>{isLoading ? "Signing in with Google..." : "Continue with Google"}</span>
             </button>
 
-            {error ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-900 text-center leading-relaxed font-sans space-y-2">
-                    <p>{error}</p>
+            {/* If parent provided no onError handler, render clean alert inline */}
+            {!onError && error ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-900 leading-relaxed font-sans space-y-2">
+                    <div className="flex items-start gap-2 text-left">
+                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        <p className="flex-1 leading-relaxed">{error}</p>
+                        <button
+                            type="button"
+                            onClick={() => setError(null)}
+                            className="text-red-400 hover:text-red-700 transition p-0.5"
+                            title="Dismiss"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                     {isDev && (
                         <div className="pt-2 border-t border-red-200/60 flex flex-col gap-2">
                             <p className="text-[11px] font-bold text-red-800 uppercase tracking-wider">

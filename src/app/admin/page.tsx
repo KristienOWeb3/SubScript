@@ -79,8 +79,8 @@ import { AdminReferralsView } from "@/components/admin/AdminReferralsView";
 
 type Merchant = {
   walletAddress: string;
+  merchantId: string;
   merchantName: string;
-  tier: string;
   verified: boolean;
   profilePic?: string | null;
   createdAt: string;
@@ -1160,6 +1160,7 @@ export default function AdminDashboardPage() {
   const filteredMerchants = merchants.filter(
     (m) =>
       m.merchantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.merchantId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.walletAddress.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const activeTabLabel =
@@ -1562,7 +1563,7 @@ export default function AdminDashboardPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search name or address..."
+                  placeholder="Search name, ID or address..."
                   className={`${INPUT} pl-9`}
                 />
               </div>
@@ -1574,7 +1575,7 @@ export default function AdminDashboardPage() {
                 type="text"
                 value={manualMerchantAddress}
                 onChange={(e) => setManualMerchantAddress(e.target.value)}
-                placeholder="Enter merchant wallet address or SubScript DNS name (e.g. acme.sub or 0x...)"
+                placeholder="Enter merchant ID (merc_...) or wallet address"
                 className={`${INPUT} flex-1`}
                 required
               />
@@ -1594,7 +1595,7 @@ export default function AdminDashboardPage() {
                   <tr className="border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-[#64748b]">
                     <th className="py-3 px-3">Merchant</th>
                     <th className="py-3 px-3">Wallet Address</th>
-                    <th className="py-3 px-3">Tier</th>
+                    <th className="py-3 px-3">Merchant ID</th>
                     <th className="py-3 px-3">Status</th>
                     <th className="py-3 px-3 text-right">Action</th>
                   </tr>
@@ -1661,7 +1662,7 @@ export default function AdminDashboardPage() {
                         </td>
                         <td className="py-3.5 px-3">
                           <span className="rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[9px] font-bold text-slate-700">
-                            {merchant.tier}
+                            {merchant.merchantId}
                           </span>
                         </td>
                         <td className="py-3.5 px-3">
@@ -1925,7 +1926,7 @@ export default function AdminDashboardPage() {
                   <div>
                     <span className={LABEL}>Direct KYC Upgrade &amp; Approval</span>
                     <p className="mt-1 text-[11px] text-[#475569]">
-                      Instantly upgrade and approve KYC for any user or merchant using their wallet address or SubScript DNS name (e.g. <code className="text-emerald-700 font-bold">name.sub</code>). Approval persists across future DNS changes as it is anchored to the underlying wallet address. Records acting admin actor and timestamp in audit logs.
+                      Emergency manual approval accepts a wallet address or immutable merchant ID. Provider-backed KYC/KYB decisions should arrive through a signed webhook and update the tier automatically. Every manual override records the acting admin and timestamp.
                     </p>
                   </div>
                 </div>
@@ -2321,7 +2322,7 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Dual Sidebar Layout: SubSidebar on Left, Section View on Right */}
-            <div className="flex flex-col lg:flex-row items-start gap-6">
+            <div className="flex flex-col xl:flex-row items-start gap-6">
               {/* Analytics Sub-Sidebar */}
               <AnalyticsSubSidebar
                 activeSection={analyticsSection}
@@ -2413,14 +2414,6 @@ export default function AdminDashboardPage() {
                   : "Merchant signup is open to anyone right now. Turn this on and only the emails you grant below can open a merchant account — every other signup becomes a user account."}{" "}
                 A user account is never upgraded to a merchant account, in either mode.
               </p>
-
-              {!maEnforcement?.isMainnet && (
-                <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-900">
-                  <span className="font-bold">This is a mainnet control.</span> You&apos;re on
-                  testnet — grant emails now so the queue is ready, but leave the switch off until
-                  mainnet.
-                </p>
-              )}
 
               {maEnforcement?.source === "env" ? (
                 <p className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-[#475569]">

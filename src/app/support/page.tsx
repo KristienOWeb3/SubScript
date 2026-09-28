@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ArrowLeft, HelpCircle, MessageSquare, Shield } from "@/components/icons";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { ArrowLeft, HelpCircle, MessageSquare, Shield, Lock, AlertCircle } from "@/components/icons";
 import SupportChatModal from "@/components/support/SupportChatModal";
 
 const channels = [
@@ -69,12 +70,82 @@ const faqs = [
   },
 ];
 
-export default function SupportPage() {
+function SupportPageContent() {
+  const searchParams = useSearchParams();
+  const ticketParam = searchParams.get("ticket") || null;
   const [supportChatOpen, setSupportChatOpen] = useState(false);
+  const [auth, setAuth] = useState<{
+    checked: boolean;
+    loggedIn: boolean;
+    wallet: string | null;
+    role: "USER" | "MERCHANT";
+  }>({
+    checked: false,
+    loggedIn: false,
+    wallet: null,
+    role: "USER",
+  });
+  const [showAuthBanner, setShowAuthBanner] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch("/api/auth/session")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!isMounted) return;
+        const loggedIn = Boolean(data?.loggedIn);
+        setAuth({
+          checked: true,
+          loggedIn,
+          wallet: data?.wallet || null,
+          role: data?.role === "MERCHANT" ? "MERCHANT" : "USER",
+        });
+
+        if (ticketParam) {
+          if (loggedIn) {
+            setSupportChatOpen(true);
+          } else {
+            setShowAuthBanner(true);
+          }
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setAuth({
+          checked: true,
+          loggedIn: false,
+          wallet: null,
+          role: "USER",
+        });
+        if (ticketParam) {
+          setShowAuthBanner(true);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [ticketParam]);
+
+  const returnPath = ticketParam ? `/support?ticket=${encodeURIComponent(ticketParam)}` : "/support";
+
+  const handleOpenChat = () => {
+    if (auth.checked && !auth.loggedIn) {
+      setShowAuthBanner(true);
+      return;
+    }
+    setSupportChatOpen(true);
+  };
 
   return (
     <main className="min-h-screen w-full bg-[#FFFFF0] text-[#111827] font-sans selection:bg-[#2775CA]/20 selection:text-black">
-      <SupportChatModal open={supportChatOpen} onClose={() => setSupportChatOpen(false)} />
+      <SupportChatModal
+        open={supportChatOpen}
+        onClose={() => setSupportChatOpen(false)}
+        currentWallet={auth.wallet}
+        userRole={auth.role}
+        initialTicketId={ticketParam}
+      />
 
       {/* Top Header Navigation */}
       <header className="sticky top-0 z-30 w-full border-b border-black/10 bg-[#FFFFF0]/90 backdrop-blur-md">
@@ -91,18 +162,29 @@ export default function SupportPage() {
           </Link>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/signin"
-              className="text-xs font-semibold text-black/70 hover:text-black transition-colors"
-            >
-              Sign In
-            </Link>
-            <Link
-              href="/signup"
-              className="px-3.5 py-2 text-xs font-bold text-white bg-[#2775CA] hover:bg-[#1f62ab] rounded-xl shadow-sm transition-all"
-            >
-              Get Started
-            </Link>
+            {auth.loggedIn ? (
+              <Link
+                href={auth.role === "MERCHANT" ? "/dashboard" : "/dashboard/user"}
+                className="px-3.5 py-2 text-xs font-bold text-white bg-[#2775CA] hover:bg-[#1f62ab] rounded-xl shadow-sm transition-all"
+              >
+                Dashboard
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href={`/signin?next=${encodeURIComponent(returnPath)}`}
+                  className="text-xs font-semibold text-black/70 hover:text-black transition-colors"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  href={`/signup?next=${encodeURIComponent(returnPath)}`}
+                  className="px-3.5 py-2 text-xs font-bold text-white bg-[#2775CA] hover:bg-[#1f62ab] rounded-xl shadow-sm transition-all"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -129,16 +211,61 @@ export default function SupportPage() {
             plus a receipt ID or transaction hash if it&apos;s about a payment — and we can usually
             resolve things in one reply.
           </p>
+
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => setSupportChatOpen(true)}
+              onClick={handleOpenChat}
               className="inline-flex items-center gap-2 rounded-xl bg-[#2775CA] px-5 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#1f62ab] active:scale-[0.99]"
             >
               <MessageSquare className="h-4 w-4" />
               Start In-App Support Chat
             </button>
           </div>
+
+          {/* Actionable Authentication Notice */}
+          {(showAuthBanner || (ticketParam && !auth.loggedIn && auth.checked)) && (
+            <div className="mt-6 rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/5 p-5 shadow-xs transition-all">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
+                  <Lock className="h-5 w-5" />
+                </div>
+                <div className="space-y-2 flex-1">
+                  <h3 className="text-sm font-bold text-[#111827]">
+                    {ticketParam ? "Sign in to access your support ticket" : "Sign in to open an in-app support ticket"}
+                  </h3>
+                  <p className="text-xs text-black/70 leading-relaxed max-w-xl">
+                    Account-linked tickets protect payments and sensitive billing details. Sign in with the wallet or email associated with your account to view this conversation and message SubScript Support.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3 pt-1">
+                    <Link
+                      href={`/signin?next=${encodeURIComponent(returnPath)}`}
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#2775CA] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm hover:bg-[#1f62ab] transition"
+                    >
+                      Sign In with Wallet or Email
+                    </Link>
+                    <Link
+                      href={`/signup?next=${encodeURIComponent(returnPath)}`}
+                      className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-black/70 hover:bg-black/5 transition"
+                    >
+                      Create Account
+                    </Link>
+                  </div>
+                  <p className="text-[11px] text-black/50 pt-1">
+                    Unable to sign in? Email us directly at{" "}
+                    <a href="mailto:support@subscriptonarc.com" className="font-semibold text-[#2775CA] hover:underline">
+                      support@subscriptonarc.com
+                    </a>{" "}
+                    or reach us via the{" "}
+                    <a href="https://t.me/subscriptsupport" target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2775CA] hover:underline">
+                      Telegram support group
+                    </a>.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 p-4 text-xs leading-relaxed text-[#1d599b] flex items-center gap-2">
             <Shield className="w-4 h-4 shrink-0 text-[#2775CA]" />
             <span>
@@ -158,7 +285,7 @@ export default function SupportPage() {
               {ch.isChat ? (
                 <button
                   type="button"
-                  onClick={() => setSupportChatOpen(true)}
+                  onClick={handleOpenChat}
                   className="inline-flex items-center gap-1 text-left font-mono text-xs font-bold text-[#2775CA] hover:underline"
                 >
                   Open Live Ticket Chat &rarr;
@@ -233,5 +360,19 @@ export default function SupportPage() {
         </div>
       </footer>
     </main>
+  );
+}
+
+export default function SupportPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen w-full bg-[#FFFFF0] flex items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#2775CA] border-t-transparent" />
+        </div>
+      }
+    >
+      <SupportPageContent />
+    </Suspense>
   );
 }

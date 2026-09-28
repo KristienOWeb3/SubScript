@@ -12,9 +12,9 @@ import {
   RefreshCcw,
   Server,
   ShieldCheck,
+  Sparkles,
   Terminal,
   Webhook,
-  Zap,
 } from "@/components/icons";
 
 export type DocsGroup = "Essentials" | "Platform" | "Build" | "Reference";
@@ -47,7 +47,7 @@ export const docsSections: DocsSection[] = [
     title: "5-minute quickstart",
     summary:
       "Create your first sandbox Checkout Intent, redirect the payer, and fulfill from a signed webhook.",
-    icon: Zap,
+    icon: Sparkles,
     group: "Essentials",
   },
   {
@@ -55,6 +55,14 @@ export const docsSections: DocsSection[] = [
     title: "Core concepts",
     summary:
       "The four identifiers, the payment lifecycle, and why micro-USDC amounts are always integer strings.",
+    icon: KeyRound,
+    group: "Essentials",
+  },
+  {
+    slug: "merchant-identity",
+    title: "Merchant identity",
+    summary:
+      "When to use Merchant ID, Commit name, Display name, and why consumer DNS names stay separate.",
     icon: KeyRound,
     group: "Essentials",
   },

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction, requestIp } from "@/lib/admin/audit";
 import { jsonOk } from "@/lib/http/json";
+import { isMerchantId } from "@/lib/merchants/identity";
 import {
     isAdminTransitionAllowed,
     kindForAccountRole,
@@ -40,6 +41,19 @@ const MIN_REASON_LENGTH = 10;
 const MANUAL_PROVIDER = "manual_admin";
 const DEFAULT_APPROVAL_MONTHS = 12;
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
+
+async function resolveKycTarget(rawTarget: string): Promise<string> {
+    if (WALLET_RE.test(rawTarget)) return rawTarget.toLowerCase();
+    if (isMerchantId(rawTarget)) {
+        const merchant = await withAdminDbRetry(() => prisma.merchant.findUnique({
+            where: { merchantId: rawTarget.toLowerCase() },
+            select: { walletAddress: true },
+        }));
+        if (!merchant) throw new KycReviewError(`No merchant found for ID "${rawTarget}".`, 404);
+        return merchant.walletAddress.toLowerCase();
+    }
+    throw new KycReviewError("Enter a valid wallet address or merchant ID (merc_...).", 400);
+}
 
 class KycReviewError extends Error {
     constructor(
@@ -273,9 +287,7 @@ export async function POST(request: Request) {
 type Admin = { wallet: string; isRoot: boolean };
 
 /**
- * Directly upgrades / approves KYC for a user or merchant by DNS alias or wallet address in one step.
- * Preserves KYC status permanently across future DNS alias changes because the verification is
- * keyed to the underlying wallet address.
+ * Directly upgrades / approves KYC for a user by wallet or merchant by immutable merchant ID.
  * Records the admin actor, action timestamp, reason, and updates audit logs.
  */
 async function handleUpgradeKyc(request: Request, admin: Admin, body: Record<string, unknown>) {
@@ -287,23 +299,10 @@ async function handleUpgradeKyc(request: Request, admin: Admin, body: Record<str
         );
     }
     if (!rawTarget) {
-        throw new KycReviewError("walletAddress or DNS alias is required", 400);
+        throw new KycReviewError("walletAddress or merchant ID is required", 400);
     }
 
-    let walletAddress = rawTarget;
-    if (!WALLET_RE.test(rawTarget)) {
-        if (!rawTarget.includes(".")) {
-            throw new KycReviewError("Enter a valid 0x address or SubScript DNS name (e.g. name.sub)", 400);
-        }
-        const aliasRow = await withAdminDbRetry(() => prisma.addressAlias.findUnique({
-            where: { alias: rawTarget },
-            select: { address: true },
-        }));
-        if (!aliasRow) {
-            throw new KycReviewError(`No account found for DNS name "${rawTarget}".`, 404);
-        }
-        walletAddress = aliasRow.address.toLowerCase();
-    }
+    const walletAddress = await resolveKycTarget(rawTarget);
 
     const reason = cleanReason(body.reason);
 
@@ -390,7 +389,7 @@ async function handleUpgradeKyc(request: Request, admin: Admin, body: Record<str
                     accountRole: account.role,
                     provider: MANUAL_PROVIDER,
                     reason,
-                    dnsAlias: rawTarget.includes(".") ? rawTarget : null,
+                    merchantId: isMerchantId(rawTarget) ? rawTarget : null,
                 },
             },
         });
@@ -415,7 +414,7 @@ async function handleUpgradeKyc(request: Request, admin: Admin, body: Record<str
             countryCode,
             requestedLevel,
             reason,
-            dnsAlias: rawTarget.includes(".") ? rawTarget : null,
+            merchantId: isMerchantId(rawTarget) ? rawTarget : null,
             expiresAt: expiresAt.toISOString(),
         },
         request,
@@ -523,26 +522,10 @@ async function handleCreateManual(request: Request, admin: Admin, body: Record<s
     }
     const rawTarget = typeof body.walletAddress === "string" ? body.walletAddress.trim().toLowerCase() : "";
     if (!rawTarget) {
-        throw new KycReviewError("walletAddress must be an address or a SubScript DNS name", 400);
+        throw new KycReviewError("walletAddress must be an address or merchant ID", 400);
     }
 
-    let walletAddress = rawTarget;
-    if (!WALLET_RE.test(rawTarget)) {
-        if (!rawTarget.includes(".")) {
-            throw new KycReviewError(
-                "walletAddress must be a 0x-prefixed 40-character address, or a SubScript DNS name such as name.sub",
-                400,
-            );
-        }
-        const aliasRow = await withAdminDbRetry(() => prisma.addressAlias.findUnique({
-            where: { alias: rawTarget },
-            select: { address: true },
-        }));
-        if (!aliasRow) {
-            throw new KycReviewError(`No account owns the DNS name "${rawTarget}".`, 404);
-        }
-        walletAddress = aliasRow.address.toLowerCase();
-    }
+    const walletAddress = await resolveKycTarget(rawTarget);
 
     const reason = cleanReason(body.reason);
 
