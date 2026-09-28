@@ -288,10 +288,15 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       // The Webhooks tab renders the "Webhook Deliveries" heading directly — the dashboard
       // has NO [role="tab"] elements, so the previous [role="tab"] waits timed out deterministically.
       // Wait idiomatically for the actual heading instead.
-      await expect(page.getByRole("heading", { name: "Webhook Deliveries", exact: true })).toBeVisible({ timeout: 30000 });
+      const deliveriesHeading = page.getByRole("heading", { name: "Webhook Deliveries", exact: true });
+      await expect(deliveriesHeading).toBeVisible({ timeout: 30000 });
+
+      // The delivery viewer intentionally defaults to LIVE. This fixture is a TEST event,
+      // so select its environment before looking for the seeded delivery.
+      await deliveriesHeading.locator("..").getByRole("button", { name: "Test", exact: true }).click();
       
       // Select payment failed event via its unique ID
-      await page.click('button:has-text("evt_03")');
+      await page.getByRole("button", { name: /evt_03/ }).click();
       
       // Check payload inspector updates
       const jsonInspector = page.locator("pre code").first();
