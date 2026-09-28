@@ -164,7 +164,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
                 Top Active Merchants
               </h3>
               <p className="text-xs text-[#64748b]">
-                Key volume drivers with instant alias & address copy
+                Confirmed commerce volume only; wallet transfers are excluded
               </p>
             </div>
           </div>
@@ -177,7 +177,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
                   <th className="py-2.5 px-3">Wallet Address</th>
                   <th className="py-2.5 px-3 text-right">Volume</th>
                   <th className="py-2.5 px-3 text-right">Payments</th>
-                  <th className="py-2.5 px-3">Tier</th>
+                  <th className="py-2.5 px-3">Merchant ID</th>
                   <th className="py-2.5 px-3">Status</th>
                   <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
@@ -236,7 +236,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
                     </td>
                     <td className="py-3 px-3">
                       <span className="rounded-full bg-[#f1f5f9] border border-[#e2e8f0] px-2 py-0.5 text-[9px] font-bold text-[#64748b]">
-                        {m.tier}
+                        {m.merchantId}
                       </span>
                     </td>
                     <td className="py-3 px-3">

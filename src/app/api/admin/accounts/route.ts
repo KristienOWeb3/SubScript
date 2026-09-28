@@ -148,7 +148,7 @@ export async function GET(request: Request) {
         // Batch fetch merchants
         const merchants = await prisma.merchant.findMany({
             where: { walletAddress: { in: addresses } },
-            select: { walletAddress: true, tier: true, verified: true, availableBalanceUsdc: true },
+            select: { walletAddress: true, merchantId: true, verified: true, availableBalanceUsdc: true },
         });
         const merchantMap = new Map(merchants.map((m) => [m.walletAddress.toLowerCase(), m]));
 
@@ -176,7 +176,7 @@ export async function GET(request: Request) {
                 alias,
                 email: resolvedEmail,
                 custodyType,
-                merchantTier: merch?.tier || null,
+                merchantId: merch?.merchantId || null,
                 merchantVerified: merch?.verified || false,
                 kycStatus: r.kycVerification?.status || "UNVERIFIED",
                 createdAt: r.createdAt,

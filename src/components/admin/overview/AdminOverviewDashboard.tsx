@@ -103,6 +103,9 @@ export function AdminOverviewDashboard({
         (typeof m.merchantName === "string" ? m.merchantName : "")
           .toLowerCase()
           .includes(merchantSearch.toLowerCase()) ||
+        (typeof m.merchantId === "string" ? m.merchantId : "")
+          .toLowerCase()
+          .includes(merchantSearch.toLowerCase()) ||
         (typeof m.walletAddress === "string" ? m.walletAddress : "")
           .toLowerCase()
           .includes(merchantSearch.toLowerCase())
@@ -290,7 +293,7 @@ export function AdminOverviewDashboard({
               <tr className="border-b border-[#f1f5f9] text-[10px] font-black uppercase tracking-wider text-[#64748b]">
                 <th className="py-2.5 px-3">Merchant</th>
                 <th className="py-2.5 px-3">Wallet Address</th>
-                <th className="py-2.5 px-3">Tier</th>
+                <th className="py-2.5 px-3">Merchant ID</th>
                 <th className="py-2.5 px-3">Status</th>
                 <th className="py-2.5 px-3 text-right">Action</th>
               </tr>
@@ -362,7 +365,7 @@ export function AdminOverviewDashboard({
                     </td>
                     <td className="py-3 px-3">
                       <span className="rounded-full bg-[#f1f5f9] border border-[#e2e8f0] px-2 py-0.5 text-[9px] font-bold text-[#64748b]">
-                        {merchant.tier || "Unassigned"}
+                        {merchant.merchantId || "Unassigned"}
                       </span>
                     </td>
                     <td className="py-3 px-3">

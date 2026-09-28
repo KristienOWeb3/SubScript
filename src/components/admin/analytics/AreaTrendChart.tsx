@@ -264,7 +264,7 @@ export function AreaTrendChart({
                     <svg
                         width={width}
                         height={height}
-                        className="block overflow-visible rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#2775ca] focus-visible:ring-offset-2"
+                        className="block max-w-full rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#2775ca] focus-visible:ring-offset-2"
                         style={{ touchAction: "pan-y" }}
                         role="img"
                         aria-label={summary}

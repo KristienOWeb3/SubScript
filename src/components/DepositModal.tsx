@@ -473,32 +473,33 @@ export default function DepositModal({
     return (
         <AnimatePresence>
             {isOpen && (
-                <>
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
+                <motion.div
+                    key="deposit-modal-wrapper"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 font-sans"
+                >
+                    <div
                         onClick={resetAndClose}
-                        className="fixed inset-0 bg-black/65 backdrop-blur-sm z-50"
+                        className="fixed inset-0 bg-black/75 -z-10"
                     />
 
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="deposit-modal-title"
+                        data-modal="deposit"
+                        initial={{ opacity: 0, scale: 0.96, y: 8 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 font-sans"
+                        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        className="dashboard-modal-surface deposit-modal transform-gpu bg-[#FFFFF0] dark:bg-[#18191c] border border-black/15 dark:border-white/15 rounded-3xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-2xl relative text-[#082824] dark:text-[#f4f4f5]"
+                        onClick={(e) => e.stopPropagation()}
                     >
-                        <div
-                            role="dialog"
-                            aria-modal="true"
-                            aria-labelledby="deposit-modal-title"
-                            data-modal="deposit"
-                            className="deposit-modal bg-[#FFFFF0] dark:bg-[#18191c] border border-black/15 dark:border-white/15 rounded-3xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-2xl relative text-[#082824] dark:text-[#f4f4f5]"
-                            onClick={(e) => e.stopPropagation()}
-                        >
                             {/* Fixed Modal Header */}
-                            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-black/10 dark:border-white/10 shrink-0 bg-[#FFFFF0]/95 dark:bg-[#18191c]/95 backdrop-blur-md">
+                            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-black/10 dark:border-white/10 shrink-0 bg-[#FFFFF0] dark:bg-[#18191c]">
                                 <div className="flex items-center gap-2">
                                     {step === "address" && bridgeStatus !== "bridging" && (
                                         <button
@@ -561,7 +562,7 @@ export default function DepositModal({
                                                 const isArc = chain.isArc;
                                                 const routeId = isArc ? "arc" : chain.chainId === 501 ? "solana" : String(chain.chainId);
                                                 const gasStatus = routeGasStatus?.[routeId] ?? null;
-                                                const gasDepleted = !isArc && !chain.disabled && gasStatus !== null && !gasStatus.available;
+                                                const gasDepleted = !isArc && !chain.disabled && (gasStatus === null || !gasStatus.available);
                                                 if (chain.disabled) {
                                                     return (
                                                         <div
@@ -842,9 +843,8 @@ export default function DepositModal({
                                     </div>
                                 )}
                             </div>
-                        </div>
                     </motion.div>
-                </>
+                </motion.div>
             )}
         </AnimatePresence>
     );

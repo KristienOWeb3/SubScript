@@ -1,45 +1,35 @@
 import type { Metadata } from "next";
-import { createClient } from "@supabase/supabase-js";
+import { cache } from "react";
+import { notFound } from "next/navigation";
 import CommitClient from "./CommitClient";
-import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
+import { prisma } from "@/lib/prisma";
+import { isCommitSlug, resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
 type PageProps = {
     params: Promise<{ merchantAddress: string }>;
     searchParams: Promise<{ amount?: string; successUrl?: string; cancelUrl?: string }>;
 };
 
-async function getMerchant(address: string) {
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-    if (!supabaseUrl || !supabaseServiceKey) return null;
+const WALLET_RE = /^0x[a-f0-9]{40}$/;
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const normalized = address.toLowerCase();
+const getMerchant = cache(async (identifier: string) => {
+    const normalized = identifier.trim().toLowerCase();
+    const merchantData = isCommitSlug(normalized)
+        ? await prisma.merchant.findUnique({ where: { commitSlug: normalized } })
+        : WALLET_RE.test(normalized)
+            ? await prisma.merchant.findUnique({ where: { walletAddress: normalized } })
+            : null;
 
-    // The alias lookup here is address RESOLUTION only (the URL segment may be a .hq/.biz handle),
-    // never the source of the merchant's name — that comes from merchants.display_name below.
-    const { data: aliasData } = await supabase
-        .from("address_aliases")
-        .select("address, alias")
-        .or(`address.eq.${normalized},alias.ilike.${normalized}`)
-        .maybeSingle();
-
-    const resolvedAddress = (aliasData?.address || normalized).toLowerCase();
-
-    const { data: merchantData } = await supabase
-        .from("merchants")
-        .select("wallet_address, tier, verified, display_name")
-        .eq("wallet_address", resolvedAddress)
-        .maybeSingle();
-
+    if (!merchantData) return null;
     return {
-        address: resolvedAddress,
-        name: resolveMerchantDisplayName(merchantData?.display_name),
+        address: merchantData.walletAddress,
+        commitSlug: merchantData.commitSlug,
+        name: resolveMerchantDisplayName(merchantData.displayName),
         alias: null,
-        verified: merchantData?.verified ?? false,
-        tier: merchantData?.tier || "FREE",
+        verified: merchantData.verified,
+        tier: merchantData.tier,
     };
-}
+});
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
     const { merchantAddress } = await params;
@@ -65,10 +55,12 @@ export default async function PublicCommitPage({ params, searchParams }: PagePro
     const { merchantAddress } = await params;
     const { amount, successUrl, cancelUrl } = await searchParams;
     const merchant = await getMerchant(merchantAddress);
+    if (!merchant) notFound();
 
     return (
         <CommitClient
-            merchantAddress={merchantAddress.toLowerCase()}
+            merchantAddress={merchant.address}
+            commitSlug={merchant.commitSlug}
             initialMerchant={merchant}
             initialAmount={amount || "2.00"}
             successUrl={successUrl}

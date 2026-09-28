@@ -22,6 +22,7 @@ import {
   ARC_CCTP_ENABLED,
   ARC_TOKEN_MESSENGER_ADDRESS,
   BRIDGE_FEE_TREASURY_ADDRESS,
+  GAS_FEE_TREASURY_ADDRESS,
   CCTP_CONFIG,
   SOLANA_CCTP_CONFIG,
 } from "@/lib/contracts/constants";
@@ -46,13 +47,16 @@ import SendSingleModal from "@/components/SendSingleModal";
 import DepositModal from "@/components/DepositModal";
 import { ChainLogo } from "@/components/ChainLogo";
 import SupportChatModal from "@/components/support/SupportChatModal";
+import TransactionAvatar from "@/components/dashboard/TransactionAvatar";
+import { classifyTransactionDirection } from "@/lib/transactions/identity";
+import { formatTransactionDateTime, formatTransactionSubtitle } from "@/lib/transactions/format";
 
 import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
 import AccountHoldModal from "@/components/dashboard/AccountHoldModal";
-import { getDashboardUrl } from "@/utils/navigation";
+import { APP_ROUTES, getDashboardUrl } from "@/utils/navigation";
 import { compressAvatarImage } from "@/utils/imageCompression";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
@@ -95,6 +99,7 @@ import {
   Share2,
   Shield,
   ShieldCheck,
+  KycVerificationPendingIcon,
   ShieldAlert,
   AlertTriangle,
   Clock,
@@ -106,6 +111,11 @@ import {
   X,
   Activity,
   Sliders,
+  Settings,
+  ThemePicker,
+  SpendAnalysis,
+  Transactions,
+  NotificationBadge,
   Eye,
   EyeOff,
   RefreshCw,
@@ -127,7 +137,8 @@ import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import { accountDisplayName } from "@/lib/identityDisplay";
 import { resolveMerchantDisplayName, isMerchantId } from "@/lib/merchants/identity";
-import { recordOptimisticTx } from "@/lib/optimisticTx";
+import { recordOptimisticTx, readOptimisticTxs, reconcileOptimisticTxs, type OptimisticTx } from "@/lib/optimisticTx";
+import { COMMIT_LIVE_REFRESH_MS } from "@/lib/vault/liveRefresh";
 
 const comingSoonUserSettings = new Set(["securityShieldEnabled", "securityMultiSigEnabled"]);
 
@@ -354,44 +365,6 @@ const looksLikeWalletAddress = (value: string | null | undefined) => {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value.trim());
 };
 
-function getTransactionAvatarInfo(tx: {
-  pic?: string | null;
-  dnsName?: string | null;
-  name?: string | null;
-  incoming?: boolean;
-  kind?: string;
-  detail?: string;
-}): { type: "pfp"; picUrl: string } | { type: "letter"; letter: string; isDns: boolean } {
-  if (tx.pic) {
-    return { type: "pfp", picUrl: tx.pic };
-  }
-
-  let dns = tx.dnsName;
-  if (!dns && tx.name) {
-    const atMatch = tx.name.match(/@([a-zA-Z0-9_.-]+)/);
-    if (atMatch && atMatch[1]) {
-      dns = atMatch[1];
-    }
-  }
-
-  if (dns) {
-    const clean = dns.replace(/^@/, "").trim();
-    const firstAlpha = clean.match(/[a-zA-Z]/);
-    if (firstAlpha) {
-      return { type: "letter", letter: firstAlpha[0].toUpperCase(), isDns: true };
-    }
-    if (clean.length > 0) {
-      return { type: "letter", letter: clean[0].toUpperCase(), isDns: true };
-    }
-  }
-
-  const isDeposit = Boolean(tx.incoming) || Boolean(tx.detail && tx.detail.toLowerCase().includes("deposit"));
-  if (isDeposit) {
-    return { type: "letter", letter: "D", isDns: false };
-  }
-  return { type: "letter", letter: "S", isDns: false };
-}
-
 /* An alias-less peer used to fall through to accountDisplayName(null), which is the constant
    "SubScript account" — so three contacts without a registered DNS name all rendered as the same
    string in the inbox and could not be told apart. The shortened address is the only identifier
@@ -429,7 +402,9 @@ const dmRequestDurationOptions = [
 const formatUsdc = (amount: string | null) => {
   if (!amount) return "0.00";
   const numeric = Number(amount);
-  return Number.isFinite(numeric) ? (numeric / 1_000_000).toFixed(2) : "0.00";
+  return Number.isFinite(numeric)
+    ? (numeric / 1_000_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+    : "0.00";
 };
 
 /* Display amounts on the overview cards and activity rows, in USDC or in the local-currency estimate
@@ -578,6 +553,8 @@ export default function UserDashboard() {
     onCancel?: () => void;
     requiredMatchText?: string;
     matchPlaceholder?: string;
+    keepOpenOnConfirm?: boolean;
+    isLoading?: boolean;
   } | null>(null);
 
   const triggerToast = (message: string) => {
@@ -711,6 +688,7 @@ export default function UserDashboard() {
     amountUsdc: string;
     amountFormatted: string;
     timestamp: number;
+    routedAt?: number;
     blockNumber?: number;
     status: string;
     senderName?: string | null;
@@ -724,7 +702,24 @@ export default function UserDashboard() {
     destName?: string;
     burnTxHash?: string;
     mintTxHash?: string;
+    historyLabel?: string;
+    transactionType?: "ARC_NETWORK_FEE";
+    networkFee?: {
+      type: "ARC_NETWORK_FEE";
+      amountMicros: string;
+      txHash: string | null;
+      charged: boolean;
+      unrecovered: boolean;
+      parentTransactionHashes: string[];
+      legacyInferred?: boolean;
+    };
   }>>([]);
+  const [optimisticTxs, setOptimisticTxs] = useState<OptimisticTx[]>([]);
+
+  useEffect(() => {
+    setOptimisticTxs(readOptimisticTxs());
+  }, []);
+
   const [allTxOpen, setAllTxOpen] = useState(false);
   const [allTxSearch, setAllTxSearch] = useState("");
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
@@ -919,6 +914,8 @@ export default function UserDashboard() {
   // Prepaid Metered Vault States
   const [vaults, setVaults] = useState<any[]>([]);
   const [isVaultsLoading, setIsVaultsLoading] = useState(false);
+  const vaultRefreshInFlightRef = useRef(false);
+  const vaultSnapshotRef = useRef("");
   const [configVaultOpen, setConfigVaultOpen] = useState(false);
   const [topupVaultOpen, setTopupVaultOpen] = useState(false);
   const [editingVault, setEditingVault] = useState<any | null>(null);
@@ -1023,6 +1020,31 @@ export default function UserDashboard() {
     }
   }, [activeTab, fetchReferrals]);
 
+  const depositsFetchInFlightRef = useRef(false);
+  const lastDepositsJsonRef = useRef<string>("");
+
+  const loadDepositsSilently = useCallback(async () => {
+    if (depositsFetchInFlightRef.current) return;
+    depositsFetchInFlightRef.current = true;
+    try {
+      const depositsRes = await fetch("/api/user/deposits", { cache: "no-store" }).catch(() => null);
+      if (depositsRes && depositsRes.ok) {
+        const depData = await depositsRes.json().catch(() => ({}));
+        if (depData.success && Array.isArray(depData.deposits)) {
+          const nextJson = JSON.stringify(depData.deposits);
+          if (nextJson !== lastDepositsJsonRef.current) {
+            lastDepositsJsonRef.current = nextJson;
+            setDeposits(depData.deposits);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to silently refresh deposits:", e);
+    } finally {
+      depositsFetchInFlightRef.current = false;
+    }
+  }, []);
+
   const loadUserSettings = async () => {
     setIsSettingsLoading(true);
     try {
@@ -1040,7 +1062,13 @@ export default function UserDashboard() {
         if (data.settings?.alias) setRegisteredDomain(data.settings.alias);
       }
       if (depData.success && Array.isArray(depData.deposits)) {
+        lastDepositsJsonRef.current = JSON.stringify(depData.deposits);
         setDeposits(depData.deposits);
+        const serverHashes: Array<string | null | undefined> = [
+          ...depData.deposits.map((d: any) => d.txHash || d.burnTxHash),
+          ...dms.map((m) => m.txHash),
+        ];
+        setOptimisticTxs(reconcileOptimisticTxs(serverHashes));
       }
     } catch (err) {
       console.error("Failed to load user settings:", err);
@@ -1049,17 +1077,28 @@ export default function UserDashboard() {
     }
   };
 
-  const loadVaults = async () => {
-    setIsVaultsLoading(true);
+  const loadVaults = async ({
+    silent = false,
+    includeHalt = true,
+  }: { silent?: boolean; includeHalt?: boolean } = {}) => {
+    if (vaultRefreshInFlightRef.current) return;
+    vaultRefreshInFlightRef.current = true;
+    if (!silent) setIsVaultsLoading(true);
     try {
       const [res, haltRes] = await Promise.all([
-        fetch("/api/user/vault/config").catch(() => null),
-        fetch("/api/user/commit/halt").catch(() => null),
+        fetch("/api/user/vault/config", { cache: "no-store" }).catch(() => null),
+        includeHalt
+          ? fetch("/api/user/commit/halt", { cache: "no-store" }).catch(() => null)
+          : Promise.resolve(null),
       ]);
       if (res && res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data.success && Array.isArray(data.vaults)) {
-          setVaults(data.vaults);
+          const nextSnapshot = JSON.stringify(data.vaults);
+          if (nextSnapshot !== vaultSnapshotRef.current) {
+            vaultSnapshotRef.current = nextSnapshot;
+            setVaults(data.vaults);
+          }
         }
       }
       if (haltRes && haltRes.ok) {
@@ -1071,7 +1110,8 @@ export default function UserDashboard() {
     } catch (err) {
       console.error("Failed to load metered vaults:", err);
     } finally {
-      setIsVaultsLoading(false);
+      vaultRefreshInFlightRef.current = false;
+      if (!silent) setIsVaultsLoading(false);
     }
   };
 
@@ -1141,8 +1181,16 @@ export default function UserDashboard() {
     functionName: "balanceOf",
     args: userWallet ? [userWallet as `0x${string}`] : undefined,
     chainId: activeArcChain.id,
-    query: { enabled: Boolean(userWallet) },
+    query: { enabled: Boolean(userWallet), refetchInterval: 5000 },
   });
+
+  const prevUsdcBalanceRef = useRef<bigint | undefined>(usdcBalance);
+  useEffect(() => {
+    if (usdcBalance !== undefined && prevUsdcBalanceRef.current !== undefined && usdcBalance !== prevUsdcBalanceRef.current) {
+      void loadDepositsSilently();
+    }
+    prevUsdcBalanceRef.current = usdcBalance;
+  }, [usdcBalance, loadDepositsSilently]);
 
   /* Every chain a deposit can start from, straight out of CCTP_CONFIG, so adding a chain there shows
      up in the Deposit sheet without a second edit. One balanceOf per chain, batched. This replaced a
@@ -1277,6 +1325,7 @@ export default function UserDashboard() {
           loadDms(),
           loadSubscriptions(),
           loadUserSettings(),
+          loadDepositsSilently(),
           refetchUsdc().catch(console.error),
         ]);
       }
@@ -1285,8 +1334,11 @@ export default function UserDashboard() {
       if (event.key === "subscript_payment_settled") refreshAll();
     };
     const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") void loadDms();
-    }, 8000);
+      if (document.visibilityState === "visible") {
+        void loadDms();
+        void loadDepositsSilently();
+      }
+    }, 5000);
     window.addEventListener("focus", refreshAll);
     window.addEventListener("storage", handleStorage);
     document.addEventListener("visibilitychange", refreshAll);
@@ -1300,6 +1352,33 @@ export default function UserDashboard() {
     // whenever the authenticated wallet changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userWallet, loadDms]);
+
+  /* The commit API mirrors confirmed state before returning, so this focused poll is the final
+     cross-dashboard hop. It only runs on the visible Commit screen, stays silent to avoid modal
+     or card flicker, and refreshes immediately when the tab regains focus. */
+  useEffect(() => {
+    if (!userWallet || activeTab !== "commit") return;
+
+    const refreshCommit = (includeHalt = false) => {
+      if (document.visibilityState === "visible") {
+        void loadVaults({ silent: true, includeHalt });
+      }
+    };
+    const handleFocus = () => refreshCommit(true);
+    const handleVisibility = () => refreshCommit(true);
+
+    refreshCommit(true);
+    const interval = window.setInterval(() => refreshCommit(false), COMMIT_LIVE_REFRESH_MS);
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+    // loadVaults is page-local; active tab and wallet changes recreate this focused poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, userWallet]);
 
   const loadRegisteredDns = async (walletAddress: string) => {
     try {
@@ -1448,14 +1527,40 @@ export default function UserDashboard() {
     setPlanManagerError(null);
   }, [selectedDmPeer]);
 
-  const handleLogout = async () => {
+  const [logoutLoading, setLogoutLoading] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+
+  const clearSensitiveClientState = () => {
+    if (typeof window === "undefined") return;
+    const walletKey = userWallet?.toLowerCase();
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      if (walletKey) localStorage.removeItem(`subscript_read_dms_${walletKey}`);
+      localStorage.removeItem("subscript_circle_auth_intent");
+    } catch { /* storage can be disabled; the server session is still authoritative */ }
+    try {
+      if (walletKey) sessionStorage.removeItem(`subscript_viewkey_${walletKey}`);
+      sessionStorage.removeItem("subscript_circle_auth_intent");
+    } catch { /* storage can be disabled; the server session is still authoritative */ }
+  };
+
+  const handleLogout = async () => {
+    if (logoutLoading) return;
+    setLogoutLoading(true);
+    setLogoutError(null);
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "We couldn’t log you out. Please try again.");
+      }
+      clearSensitiveClientState();
+      disconnect();
+      redirectTo(getDashboardUrl("USER", APP_ROUTES.login), "Signing you out...");
     } catch (e) {
       console.error("Logout request error:", e);
+      setLogoutError(e instanceof Error ? e.message : "We couldn’t log you out. Please try again.");
+      setLogoutLoading(false);
     }
-    disconnect();
-    redirectTo(getDashboardUrl("USER", "/signin"), "Signing you out...");
   };
 
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
@@ -1463,14 +1568,16 @@ export default function UserDashboard() {
     setConfirmModal({
       open: true,
       title: "Delete your account?",
-      description: "This erases your profile, alias, and settings, and signs you out everywhere. Your payment receipts remain part of the shared ledger. Active subscriptions must be cancelled and vault funds withdrawn before deleting. This cannot be undone.",
+      description: "This permanently anonymizes your user profile, alias, email identity, and settings, then ends every session. Blockchain transactions, payment receipts, invoices, audit records, and records required for financial or legal compliance remain. Active subscriptions must be cancelled and vault funds withdrawn first. Merchant-owned plans, customers, payouts, and other merchant resources are not deleted here; merchant closure requires support so obligations can be wound down safely. This cannot be undone.",
       confirmLabel: "Delete Account",
       variant: "danger",
       requiredMatchText: "DELETE",
       matchPlaceholder: "Type DELETE",
+      keepOpenOnConfirm: true,
       onConfirm: async () => {
-        setConfirmModal(null);
+        if (deleteAccountLoading) return;
         setDeleteAccountLoading(true);
+        setConfirmModal((current) => current ? { ...current, isLoading: true } : current);
         try {
           const res = await fetch("/api/user/account", { method: "DELETE" });
           const data = await res.json().catch(() => ({}));
@@ -1479,12 +1586,14 @@ export default function UserDashboard() {
             return;
           }
           await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+          clearSensitiveClientState();
           disconnect();
-          redirectTo(getDashboardUrl("USER", "/signup"), "Deleting your account...");
+          redirectTo(getDashboardUrl("USER", APP_ROUTES.accountDeletionComplete), "Closing your account...");
         } catch {
           triggerToast("Account deletion failed. Please try again.");
         } finally {
           setDeleteAccountLoading(false);
+          setConfirmModal((current) => current ? { ...current, isLoading: false } : current);
         }
       },
       onCancel: () => setConfirmModal(null),
@@ -1522,7 +1631,18 @@ export default function UserDashboard() {
       (err as any).settledTransfers = data.transfers || [];
       throw err;
     }
-    return data.transfers as { receiverAddress: string; amountUsdc: string; txHash: string }[];
+    return {
+      transfers: data.transfers as { receiverAddress: string; amountUsdc: string; txHash: string }[],
+      networkFee: data.networkFee as {
+        type: "ARC_NETWORK_FEE";
+        amountUsdc: string;
+        amountMicros: string;
+        txHash: string | null;
+        charged: boolean;
+        unrecovered: boolean;
+        recipientRole: "GAS_FEE_TREASURY";
+      } | undefined,
+    };
   };
 
   const runAction = async (key: string, task: () => Promise<void>) => {
@@ -1860,7 +1980,7 @@ export default function UserDashboard() {
       let txHash: string | undefined;
 
       if (isEmbeddedWalletSession) {
-        const transfers = await sendFromEmbeddedWallet({
+        const { transfers } = await sendFromEmbeddedWallet({
           receiverAddress: requesterAddress,
           amountUsdc: humanAmount,
           /* A peer request is paid at most once — keying on the DM id makes any retry of
@@ -2246,22 +2366,23 @@ export default function UserDashboard() {
         && usdcBalance !== undefined
         && Number(vaultActionAmount) > walletBalance) {
       setVaultActionError(
-        `Insufficient Arc balance. You have ${walletBalance.toFixed(2)} USDC available.`,
+        "Insufficient balance. top up and try again",
       );
       return;
     }
     const acknowledgedUnverified = opts?.acknowledgedUnverified === true;
     setVaultActionBusy(true);
     try {
-      // Customer-facing vault setup accepts a friendly SubScript name only.
+      // Customer-facing vault setup accepts a friendly merchant commit name.
       let merchantAddress = vaultActionMerchant.trim();
       if (!vaultActionMerchantLocked && merchantAddress.startsWith("0x")) {
-        throw new Error("Enter the merchant's SubScript name instead of a wallet address.");
+        throw new Error(vaultActionMode === "commit" ? "Enter the merchant's commit name instead of a wallet address." : "Enter the merchant's name instead of a wallet address.");
       }
       if (!merchantAddress.startsWith("0x")) {
-        const response = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(merchantAddress)}`);
+        const merchantCommitOnly = vaultActionMode === "commit" ? "&merchantCommitOnly=true" : "";
+        const response = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(merchantAddress)}${merchantCommitOnly}`);
         const data = await response.json().catch(() => ({}));
-        if (!data.success || !data.address) throw new Error("Could not find that merchant name.");
+        if (!data.success || !data.address) throw new Error(vaultActionMode === "commit" ? "Could not find that merchant commit name." : "Could not find that merchant name.");
         merchantAddress = data.address;
       }
 
@@ -2577,11 +2698,6 @@ export default function UserDashboard() {
       return null;
     }
     const lower = trimmed.toLowerCase();
-    // Merchant (.hq/.biz) names are intentionally NOT resolvable for users — a user can only pay a
-    // merchant via their payment link/request, or an on-chain address they looked up themselves.
-    if (lower.endsWith(".hq") || lower.endsWith(".biz")) {
-      return null;
-    }
     if (lower.endsWith(".sub")) {
       try {
         const res = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(lower)}`);
@@ -2627,13 +2743,6 @@ export default function UserDashboard() {
         } finally {
           setSingleResolving(false);
         }
-        return;
-      }
-
-      // Merchant (.hq/.biz) names aren't resolvable for users — only .sub (user) names are.
-      if (trimmed.endsWith(".hq") || trimmed.endsWith(".biz")) {
-        setSingleResolved({ address: null, alias: trimmed, profilePic: null });
-        setSingleResolving(false);
         return;
       }
 
@@ -2804,6 +2913,7 @@ export default function UserDashboard() {
          browser wallet signs them itself in withdrawCrossChainFromBrowserWallet. */
       if (selectedNetwork !== "arc") {
         const amountMicros = parseUnits(limitDecimals(singleAmount, 6), 6);
+        let burnTxHash: string | undefined;
 
         if (isEmbeddedWalletSession) {
           const res = await fetch("/api/user/cctp/withdraw", {
@@ -2817,31 +2927,52 @@ export default function UserDashboard() {
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || "We couldn't start that withdrawal.");
+          burnTxHash = data.burnTxHash;
         } else {
-          await withdrawCrossChainFromBrowserWallet({
+          const result = await withdrawCrossChainFromBrowserWallet({
             destinationChainId: selectedNetwork === "solana" ? "solana" : Number(selectedNetwork),
             recipientAddress: recipientAddr,
             amountMicros,
           });
+          burnTxHash = result?.burnTxHash;
+        }
+
+        if (burnTxHash) {
+          recordOptimisticTx({
+            txHash: burnTxHash,
+            recipientAddress: recipientAddr,
+            recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
+            amountUsdc: singleAmount,
+          });
+          setOptimisticTxs(readOptimisticTxs());
         }
 
         setSingleSendStatus("Sent. The receiving address will have the funds in about five minutes.");
         setSingleRecipient("");
         setSingleAmount("");
-        await refetchUsdc().catch(console.error);
+        await Promise.all([
+          refetchUsdc().catch(console.error),
+          loadUserSettings().catch(console.error),
+        ]);
         return;
       }
 
       if (isEmbeddedWalletSession) {
         singleSendRequestKey.current ||= crypto.randomUUID();
-        const transfers = await sendFromEmbeddedWallet({
+        const { transfers, networkFee } = await sendFromEmbeddedWallet({
           receiverAddress: singleResolved!.address!,
           amountUsdc: singleAmount,
           requestKey: singleSendRequestKey.current,
         });
         singleSendRequestKey.current = null;
         const txHash = transfers[0]?.txHash;
-        setSingleSendStatus("Sent! Funds delivered on Arc.");
+        setSingleSendStatus(
+          networkFee?.charged
+            ? `$${singleAmount} was sent to ${formatAddress(recipientAddr)}. A separate $${networkFee.amountUsdc} Arc network fee was charged.`
+            : networkFee?.unrecovered
+              ? `$${singleAmount} was sent to ${formatAddress(recipientAddr)}. The Arc network fee could not be recovered and was not charged.`
+              : `$${singleAmount} was sent to ${formatAddress(recipientAddr)}.`,
+        );
         /* Only recorded when the embedded wallet returned a hash. reconcileOptimisticTxs()
            matches on hash alone, so a hashless row could never be retired and would sit next to
            the confirmed DM entry reading "Sending" for the full five-minute TTL. */
@@ -2852,6 +2983,7 @@ export default function UserDashboard() {
             recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
             amountUsdc: singleAmount,
           });
+          setOptimisticTxs(readOptimisticTxs());
         }
         setSingleRecipient("");
         setSingleAmount("");
@@ -2871,6 +3003,7 @@ export default function UserDashboard() {
           await loadDms().catch(() => {});
         }
         await refetchUsdc().catch(console.error);
+        void loadDepositsSilently();
         return;
       }
 
@@ -2910,6 +3043,7 @@ export default function UserDashboard() {
         recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
         amountUsdc: singleAmount,
       });
+      setOptimisticTxs(readOptimisticTxs());
       setSingleRecipient("");
       setSingleAmount("");
       if (txHash) {
@@ -2928,6 +3062,7 @@ export default function UserDashboard() {
         await loadDms().catch(() => {});
       }
       refetchUsdc().catch(console.error);
+      void loadDepositsSilently();
     } catch (err: any) {
       if (err.message?.includes("User rejected the request")) {
         setSingleSendStatus("Transaction signature was rejected by user.");
@@ -2969,7 +3104,7 @@ export default function UserDashboard() {
 
       if (isEmbeddedWalletSession) {
         batchSendRequestKey.current ||= crypto.randomUUID();
-        const transfers = await sendFromEmbeddedWallet({
+        const { transfers } = await sendFromEmbeddedWallet({
           recipients: resolvedRows.map((row) => ({
             receiverAddress: row.address,
             amountUsdc: row.amount,
@@ -3619,6 +3754,32 @@ export default function UserDashboard() {
      recover amounts by stripping non-digits out of the formatted `amountLabel`, which silently
      mis-parsed anything with a thousands separator and had no way to tell a credit from a debit. */
   const rawRecentTransactions = [
+    ...optimisticTxs.map((tx) => {
+      const isDns = Boolean(
+        tx.recipientLabel &&
+        !tx.recipientLabel.startsWith("0x") &&
+        tx.recipientLabel !== "Recipient"
+      );
+      const dnsName = isDns ? tx.recipientLabel.replace(/^@/, "").trim() : null;
+      const usdVal = Number(tx.amountUsdcMicros) / 1_000_000;
+      const localVal = usdVal * exchangeRate;
+      const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+      return {
+        id: tx.id,
+        kind: "transfers" as const,
+        name: tx.recipientLabel || "Recipient",
+        dnsName,
+        pic: null as string | null,
+        detail: "Sending • Awaiting confirmation",
+        amountLabel: `-${formatUsdc(tx.amountUsdcMicros)}`,
+        localAmountLabel: `-${localLabel}`,
+        amountUsdc: usdVal,
+        status: "PENDING",
+        time: tx.createdAt,
+        incoming: false,
+        txHash: tx.txHash ?? undefined,
+      };
+    }),
     ...subscriptions.map((s) => {
       const usdVal = Number(s.amountCapUsdc) / 1_000_000;
       const localVal = usdVal * exchangeRate;
@@ -3649,20 +3810,27 @@ export default function UserDashboard() {
       .map((d) => {
         const isWithdrawal = d.messageType === "WITHDRAWAL" || d.messageType === "WITHDRAW";
         const isPeerTransfer = d.messageType === "PEER_TRANSFER" || d.messageType === "PEER_PAYMENT";
+        const isSubscriptionDebit = d.messageType === "DEBIT_SUCCESS" || (d.title || "").toLowerCase().includes("subscription");
         /* A settlement receipt is sent BY the merchant TO the payer, so the viewer is the receiver
            even though the money left them. The sign already accounted for that; the counterparty
            did not — `incoming ? senderName : receiverName` resolved to the receiver, i.e. the
            viewer's own name, so a checkout row showed the payer instead of who they paid. */
         const isSettlementReceipt = d.messageType === "DEBIT_SUCCESS" || d.messageType === "PAYMENT_SUCCESS";
-        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isSettlementReceipt && !isWithdrawal;
+        const incoming = !isSettlementReceipt && !isWithdrawal && classifyTransactionDirection({
+          authenticatedAddress: userWallet,
+          fromAddress: d.senderAddress,
+          toAddress: d.receiverAddress,
+          fallback: "outgoing",
+        }) === "incoming";
         const counterpartyIsSender = isSettlementReceipt || incoming;
         const usdVal = Number(d.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
         const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
 
-        let kind: "one-time" | "transfers" | "withdrawals" = "one-time";
+        let kind: "one-time" | "transfers" | "withdrawals" | "recurring" = "one-time";
         if (isWithdrawal) kind = "withdrawals";
         else if (isPeerTransfer) kind = "transfers";
+        else if (isSubscriptionDebit) kind = "recurring";
 
         const rawCounterparty = counterpartyIsSender ? d.senderName : d.receiverName;
         const isSubscriptDns = Boolean(
@@ -3681,8 +3849,10 @@ export default function UserDashboard() {
           dnsName,
           pic: counterpartyIsSender ? d.senderProfilePic : d.receiverProfilePic,
           detail: isWithdrawal
-            ? "SubScript Balance Withdrawal"
-            : d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
+            ? "SubScript Balance Withdrawal • " + formatTransactionDateTime(d.createdAt)
+            : incoming
+            ? "USDC Deposit • " + formatTransactionDateTime(d.createdAt)
+            : "USDC Transfer • " + formatTransactionDateTime(d.createdAt),
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
           localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
           amountUsdc: usdVal,
@@ -3693,17 +3863,35 @@ export default function UserDashboard() {
         };
       }),
     ...deposits
-      .filter((d) => !dms.some((dm) => dm.txHash && dm.txHash.toLowerCase() === d.txHash.toLowerCase()))
+      .filter((d) => {
+        if (dms.some((dm) => dm.txHash && dm.txHash.toLowerCase() === d.txHash.toLowerCase())) return false;
+        const to = (d.toAddress || "").toLowerCase();
+        const treasuryLower = (GAS_FEE_TREASURY_ADDRESS || "").toLowerCase();
+        const bridgeTreasuryLower = (BRIDGE_FEE_TREASURY_ADDRESS || "").toLowerCase();
+        if (to === treasuryLower || to === bridgeTreasuryLower) return false;
+        if (d.historyLabel === "Transfer to SubScript treasury" || d.historyLabel === "Arc network fee") return false;
+        if (d.transactionType === "ARC_NETWORK_FEE") return false;
+        return true;
+      })
       .map((d) => {
         const usdVal = Number(d.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
         const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
         const isCctp = Boolean(d.isCctp);
         const isWithdrawal = d.direction === "outbound_withdrawal";
-        const incoming = isCctp ? !isWithdrawal : (d.incoming !== undefined ? Boolean(d.incoming) : d.direction !== "outbound_send");
+        const incoming = isCctp
+          ? !isWithdrawal
+          : classifyTransactionDirection({
+              authenticatedAddress: userWallet,
+              fromAddress: d.fromAddress,
+              toAddress: d.toAddress,
+              fallback: d.incoming !== undefined
+                ? (d.incoming ? "incoming" : "outgoing")
+                : (d.direction === "outbound_send" ? "outgoing" : "incoming"),
+            }) === "incoming";
         const kind: "transfers" | "withdrawals" = isWithdrawal ? "withdrawals" : "transfers";
 
-        let name = incoming
+        let name = d.historyLabel || (incoming
           ? (d.senderName
               ? `Deposit from @${d.senderName}`
               : d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000"
@@ -3713,33 +3901,29 @@ export default function UserDashboard() {
               ? `Sent to @${d.receiverName}`
               : d.toAddress && d.toAddress !== "0x0000000000000000000000000000000000000000"
               ? `Sent to ${formatAddress(d.toAddress)}`
-              : "Sent USDC");
-        let detail = incoming ? "USDC Deposit • Arc Network" : "USDC Transfer • Arc Network";
+              : "Sent USDC"));
         let status = "CONFIRMED";
 
         if (isCctp) {
           const isConfirmed = d.status === "completed" || Boolean(d.mintTxHash);
           status = isConfirmed ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
           if (isWithdrawal) {
-            const destAbbr = formatChainAbbr(d.destName || d.destinationChainId);
             const target = d.toAddress ? formatAddress(d.toAddress) : "";
-            name = target ? `Sent to ${target} ${destAbbr}`.trim() : `Sent to ${d.destName || "External Chain"}`;
-            detail = isConfirmed 
-              ? `Withdrawal confirmed • ${d.destName || "External Chain"}` 
-              : d.status === "failed" 
-              ? "Withdrawal failed" 
-              : `Pending relay • ${d.destName || "External Chain"}`;
+            name = target ? `Sent to ${target}` : `Sent to ${d.destName || "External Chain"}`;
           } else {
-            const originAbbr = formatChainAbbr(d.originName || d.originChainId);
             const origin = d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000" ? formatAddress(d.fromAddress) : "";
-            name = origin ? `Deposit from ${origin} ${originAbbr}`.trim() : `Deposit from ${d.originName || "External Chain"}`;
-            detail = isConfirmed
-              ? `Deposit confirmed • ${d.originName || "External Chain"}`
-              : d.status === "failed"
-              ? "Deposit failed"
-              : `Pending arrival • ${d.originName || "External Chain"}`;
+            name = origin ? `Deposit from ${origin}` : `Deposit from ${d.originName || "External Chain"}`;
           }
         }
+
+        const detail = formatTransactionSubtitle({
+          isCctp,
+          incoming,
+          originName: d.originName,
+          destName: d.destName,
+          timestamp: d.timestamp,
+          routedAt: d.routedAt,
+        });
 
         const rawDns = incoming ? d.senderName : d.receiverName;
         const dnsName = rawDns && !rawDns.startsWith("0x") ? rawDns.replace(/^@/, "").trim() : null;
@@ -3758,6 +3942,7 @@ export default function UserDashboard() {
           time: d.timestamp,
           incoming,
           txHash: d.txHash,
+          networkFee: d.networkFee,
         };
       }),
     ...(settingsTransactions || [])
@@ -3783,7 +3968,7 @@ export default function UserDashboard() {
           name: r.counterpartyName || formatAddress(incoming ? r.payerAddress : r.merchantAddress) || "SubScript Transaction",
           dnsName,
           pic: null as string | null,
-          detail: cleanMemo,
+          detail: incoming ? "USDC Deposit " + formatTransactionDateTime(r.createdAt) : "USDC Transfer " + formatTransactionDateTime(r.createdAt),
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(r.amountUsdc)}`,
           localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
           amountUsdc: usdVal,
@@ -3806,7 +3991,7 @@ export default function UserDashboard() {
 
   const filteredTransactions = recentTransactions.filter((t) => {
     if (txFilter === "all") return true;
-    if (txFilter === "deposits") return t.incoming && t.detail.toLowerCase().includes("deposit");
+    if (txFilter === "deposits") return t.incoming && (t.detail.toLowerCase().includes("deposit") || t.name.toLowerCase().includes("deposit"));
     return t.kind === txFilter;
   });
 
@@ -3835,7 +4020,7 @@ export default function UserDashboard() {
               ...(isAdmin ? [{ id: "admin", label: "Admin", icon: Shield, href: "/admin" }] : []),
             ]}
             footerItems={[
-              { id: "dns", label: "Settings", icon: Sliders },
+              { id: "dns", label: "Settings", icon: Settings },
               { id: "support", label: "Help center", icon: HelpCircle, href: "/support", newTab: true },
             ]}
             activeId={activeTab}
@@ -3849,13 +4034,6 @@ export default function UserDashboard() {
               fallback: registeredDomain ? registeredDomain[0].toUpperCase() : "S",
               onClick: () => setActiveTab("dns"),
               title: registeredDomain || "Your account",
-            }}
-            promo={{
-              badge: "New",
-              title: "New Campaign Unlocked",
-              body: "Run your own affiliate program with zero overhead",
-              ctaLabel: "Try it",
-              onCta: () => setActiveTab("referrals"),
             }}
             accent="#FFFFF0"
             panelColor="#353935"
@@ -3942,15 +4120,7 @@ export default function UserDashboard() {
               ? "h-full min-h-0 flex-1 flex flex-col overflow-hidden"
               : "min-h-[500px]"
           }`}>
-            {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here. Gating the
-                incoming tab on the outgoing tab's exit spring (mode="wait") dropped the presence
-                whenever a re-render or second tap landed mid-exit on slow mobile frames, leaving
-                the content area permanently blank. */}
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 16, filter: "blur(1.5px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              transition={{ type: "spring", stiffness: 450, damping: 32 }}
+            <div
               className={activeTab === "inbox" || isActiveMobileDm ? "h-full min-h-0 flex-1 flex flex-col overflow-hidden" : "min-h-0"}
             >
             {activeTab === "home" && (
@@ -4161,29 +4331,16 @@ export default function UserDashboard() {
                     ) : (
                       filteredTransactions.slice(0, 6).map((tx) => (
                         <div key={tx.id} className="flex items-center gap-3 py-3">
-                          <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
-                            {(() => {
-                              const avatar = getTransactionAvatarInfo(tx);
-                              if (avatar.type === "pfp") {
-                                return <img src={avatar.picUrl} alt={tx.name} className="h-full w-full object-cover" />;
-                              }
-                              return (
-                                <span className={`text-sm font-black ${
-                                  avatar.isDns 
-                                    ? "text-[#ccff00]" 
-                                    : avatar.letter === "D" 
-                                      ? "text-emerald-400" 
-                                      : "text-amber-400"
-                                }`}>
-                                  {avatar.letter}
-                                </span>
-                              );
-                            })()}
-                          </div>
+                          <TransactionAvatar
+                            direction={tx.incoming ? "incoming" : "outgoing"}
+                            displayName={tx.name}
+                            identityName={tx.dnsName}
+                            profilePic={tx.pic}
+                          />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-black text-white">{tx.name}</p>
                             <p className="truncate text-[10px] font-bold text-white/40">
-                              {tx.detail} • {new Date(tx.time).toLocaleString()}
+                              {tx.detail}
                             </p>
                           </div>
                           <div className="text-right shrink-0">
@@ -4286,8 +4443,6 @@ export default function UserDashboard() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (expandedCommitAction !== "commit") return setExpandedCommitAction("commit");
-                          setExpandedCommitAction(null);
                           openVaultCommit();
                         }}
                         className={`flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-black/30 bg-[#D5E3EE] text-black transition-all duration-300 ${expandedCommitAction === "commit" ? "w-44 px-3" : "w-12"}`}
@@ -4591,17 +4746,17 @@ export default function UserDashboard() {
                     </div>
 
                     {/* Active thread message bubble display (right column in blueprint) */}
-                    <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-4 min-h-0 justify-between">
-                      <AnimatePresence mode="wait">
+                    <div className="flex-1 flex flex-col overflow-hidden border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-4 min-h-0 justify-between">
+                      <AnimatePresence mode="wait" initial={false}>
                         {selectedDmPeer ? (
                           isOpenedDmLoading ? (
                             <motion.div
                               key={`loading-${selectedDmPeer}`}
-                              initial={{ opacity: 0, scale: 0.98 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.98 }}
-                              transition={{ duration: 0.15 }}
-                              className="flex flex-col h-full overflow-hidden"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.15, ease: "easeOut" }}
+                              className="flex flex-col h-full overflow-hidden transform-gpu"
                             >
                               <OpenedDmSkeleton
                                 isMerchant={isMerchantThread}
@@ -4611,11 +4766,11 @@ export default function UserDashboard() {
                           ) : isMerchantThread ? (
                             <motion.div
                               key={selectedDmPeer}
-                              initial={{ opacity: 0, scale: 0.96, y: 12, filter: "blur(1.5px)" }}
-                              animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
-                              exit={{ opacity: 0, scale: 0.96, y: -12, filter: "blur(1.5px)" }}
-                              transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                              className="flex flex-col h-full overflow-hidden"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.15, ease: "easeOut" }}
+                              className="flex flex-col h-full overflow-hidden transform-gpu"
                             >
                               <SubscriptionDetailView
                                 peerAddress={selectedDmPeer}
@@ -4641,11 +4796,11 @@ export default function UserDashboard() {
                           ) : (
                             <motion.div
                               key={selectedDmPeer}
-                              initial={{ opacity: 0, scale: 0.96, y: 12, filter: "blur(1.5px)" }}
-                              animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
-                              exit={{ opacity: 0, scale: 0.96, y: -12, filter: "blur(1.5px)" }}
-                              transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                              className="flex flex-col h-full justify-between overflow-hidden"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.15, ease: "easeOut" }}
+                              className="flex flex-col h-full justify-between overflow-hidden transform-gpu"
                             >
                               {/* Desktop Chat Pane Header */}
                             <div
@@ -4829,17 +4984,18 @@ export default function UserDashboard() {
                         )
                       ) : (
                         <motion.div
-                            key="no-chat"
-                            initial={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
-                            animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-                            exit={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
-                            className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3"
-                          >
-                            <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
-                            <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Pick a subscription or a person</h3>
-                            <p className="text-xs max-w-xs leading-relaxed text-white/45">See receipts, requests, and payment history.</p>
-                          </motion.div>
-                        )}
+                          key="no-chat"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.15, ease: "easeOut" }}
+                          className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3 transform-gpu"
+                        >
+                          <MessageSquare className="w-12 h-12 text-white/15" />
+                          <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Pick a subscription or a person</h3>
+                          <p className="text-xs max-w-xs leading-relaxed text-white/45">See receipts, requests, and payment history.</p>
+                        </motion.div>
+                      )}
                       </AnimatePresence>
                     </div>
                   </div>
@@ -4988,7 +5144,20 @@ export default function UserDashboard() {
                         <strong className="block text-amber-950 dark:text-amber-300 font-black uppercase tracking-wider text-[10px] mb-0.5">
                           BATCH SEND ONLY SUPPORTS THE ARC NETWORK!
                         </strong>
-                        Batch payouts are settled exclusively on Arc. To send USDC across chains (e.g. Base, Ethereum, Arbitrum, Polygon), use <strong className="text-amber-950 dark:text-amber-100 font-bold">Single Send</strong>.
+                        Batch payouts are settled exclusively on Arc. To send USDC across chains (e.g. Base, Ethereum, Arbitrum, Polygon), use{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDmPeer(null);
+                            setSingleRecipient("");
+                            setSingleAmount("");
+                            setSingleSendStatus(null);
+                            setSendSingleModalOpen(true);
+                          }}
+                          className="inline font-bold text-amber-950 underline decoration-amber-700/50 underline-offset-2 transition hover:text-[#2775CA] dark:text-amber-100 dark:hover:text-[#8AB4DB] cursor-pointer"
+                        >
+                          Single Send.
+                        </button>
                       </div>
                     </div>
                     {batchRows.map((row, index) => (
@@ -5177,7 +5346,12 @@ export default function UserDashboard() {
                 {/* 1. MAIN MENU VIEW */}
                 {accountSubView === "menu" && (
                   <div className="space-y-6">
-                    <SectionTitle title="Account Settings" subtitle="Manage your identity, spending limits, and security." />
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 rounded-xl bg-[#2775CA]/10 p-2 text-[#2775CA]" aria-hidden="true">
+                        <Settings className="h-5 w-5" />
+                      </span>
+                      <SectionTitle title="Account Settings" subtitle="Manage your identity, spending limits, and security." />
+                    </div>
 
                     {/* Refer & Earn Banner */}
                     <div 
@@ -5242,7 +5416,7 @@ export default function UserDashboard() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
-                            <Sliders className="h-4 w-4" />
+                            <ThemePicker className="h-4 w-4" />
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-black uppercase tracking-wide">Appearance &amp; Theme</span>
@@ -5258,7 +5432,7 @@ export default function UserDashboard() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
-                            <Shield className="h-4 w-4" />
+                            <KycVerificationPendingIcon className="h-4 w-4" />
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-black uppercase tracking-wide">KYC Verification</span>
@@ -5274,7 +5448,7 @@ export default function UserDashboard() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
-                            <TrendingUp className="h-4 w-4" />
+                            <SpendAnalysis className="h-4 w-4" />
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-black uppercase tracking-wide">Spend Analysis</span>
@@ -5290,7 +5464,7 @@ export default function UserDashboard() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
-                            <Activity className="h-4 w-4" />
+                            <Transactions className="h-4 w-4" />
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-black uppercase tracking-wide">Transactions</span>
@@ -5306,7 +5480,7 @@ export default function UserDashboard() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
-                            <Sliders className="h-4 w-4" />
+                            <NotificationBadge className="h-4 w-4" />
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-black uppercase tracking-wide">Notifications</span>
@@ -5349,21 +5523,22 @@ export default function UserDashboard() {
                       </button>
 
                       <button
-                        onClick={handleDeleteAccount}
-                        disabled={deleteAccountLoading}
-                        className="w-full text-left p-4 hover:bg-red-500/[0.08] rounded-2xl flex items-center justify-between transition-all group disabled:opacity-50"
+                        onClick={() => void handleLogout()}
+                        disabled={logoutLoading}
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group disabled:opacity-50"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 group-hover:bg-red-500/20 transition-all">
-                            {deleteAccountLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />}
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
+                            {logoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-red-600 uppercase tracking-wide">Delete Account</span>
-                            <span className="block text-[9px] text-red-600/70 font-sans mt-0.5 font-normal normal-case">Permanently erase your profile and sign out</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Log out</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">End this session and return to sign in</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-red-600/40 group-hover:text-red-600 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
+                      {logoutError && <p className="px-4 pb-2 text-[10px] font-semibold text-red-600" role="alert">{logoutError}</p>}
                     </div>
                   </div>
                 )}
@@ -5635,11 +5810,12 @@ export default function UserDashboard() {
 
                     <button
                       type="button"
-                      onClick={() => void handleLogout()}
-                      className="w-full py-4 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded-3xl text-xs font-black uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-2"
+                      onClick={handleDeleteAccount}
+                      disabled={deleteAccountLoading}
+                      className="w-full py-4 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded-3xl text-xs font-black uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
                     >
-                      <LogOut className="h-4 w-4" />
-                      Log out
+                      {deleteAccountLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />}
+                      Delete account
                     </button>
                   </div>
                 )}
@@ -5676,8 +5852,8 @@ export default function UserDashboard() {
                   const spendCategories: Record<string, { label: string; color: string; bgColor: string; borderColor: string; Icon: LucideIcon; total: number; count: number }> = {
                     subscriptions: { label: "Subscriptions", color: "#2775CA", bgColor: "rgba(39,117,202,0.08)", borderColor: "rgba(39,117,202,0.25)", Icon: Shield, total: 0, count: 0 },
                     payments: { label: "One-Time Payments", color: "#0284c7", bgColor: "rgba(2,132,199,0.08)", borderColor: "rgba(2,132,199,0.25)", Icon: CreditCard, total: 0, count: 0 },
-                    transfers: { label: "Transfers", color: "#7c3aed", bgColor: "rgba(124,58,237,0.08)", borderColor: "rgba(124,58,237,0.25)", Icon: ArrowUpRight, total: 0, count: 0 },
-                    withdrawals: { label: "Withdrawals", color: "#ea580c", bgColor: "rgba(234,88,12,0.08)", borderColor: "rgba(234,88,12,0.25)", Icon: ArrowUpRight, total: 0, count: 0 },
+                    transfers: { label: "Transfers", color: "#7c3aed", bgColor: "rgba(124,58,237,0.08)", borderColor: "rgba(124,58,237,0.25)", Icon: Send, total: 0, count: 0 },
+                    withdrawals: { label: "Withdrawals", color: "#ea580c", bgColor: "rgba(234,88,12,0.08)", borderColor: "rgba(234,88,12,0.25)", Icon: ArrowDown, total: 0, count: 0 },
                   };
 
                   const bucketFor = (kind: string) =>
@@ -5692,6 +5868,7 @@ export default function UserDashboard() {
 
                   periodTxs.forEach((tx) => {
                     if (tx.status === "FAILED") return;
+                    if (tx.id.startsWith("sub-")) return;
                     if (tx.incoming) {
                       totalInflow += tx.amountUsdc;
                     } else {
@@ -5727,7 +5904,7 @@ export default function UserDashboard() {
                   }
 
                   recentTransactions.forEach((tx) => {
-                    if (tx.incoming || tx.status === "FAILED") return;
+                    if (tx.incoming || tx.status === "FAILED" || tx.id.startsWith("sub-")) return;
                     const d = new Date(tx.time);
                     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
                     const match = monthData.find((m) => m.key === key);
@@ -5800,20 +5977,25 @@ export default function UserDashboard() {
                           { id: "90days", label: "Last 90 Days" },
                           { id: "1year", label: "Past Year" },
                           { id: "all", label: "All Time" },
-                        ].map((tab) => (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => setSpendDatePreset(tab.id)}
-                            className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${
-                              spendDatePreset === tab.id
-                                ? "bg-[#353935] text-white shadow-sm"
-                                : "bg-black/5 hover:bg-black/10 text-black/70"
-                            }`}
-                          >
-                            {tab.label}
-                          </button>
-                        ))}
+                        ].map((tab) => {
+                          const isActive = spendDatePreset === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              data-spend-pill={isActive ? "active" : undefined}
+                              onClick={() => setSpendDatePreset(tab.id)}
+                              style={isActive ? { color: "#ffffff" } : undefined}
+                              className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                                isActive
+                                  ? "spend-timeframe-active bg-[#082824] text-white shadow-sm"
+                                  : "bg-black/5 hover:bg-black/10 text-black/70"
+                              }`}
+                            >
+                              {tab.label}
+                            </button>
+                          );
+                        })}
                       </div>
 
                       {/* Skeleton State */}
@@ -6326,20 +6508,29 @@ export default function UserDashboard() {
                     ...settingsTransactions,
                     ...deposits
                       .filter((d) => !settingsTransactions.some((r) => r.txHash && r.txHash.toLowerCase() === d.txHash.toLowerCase()))
-                      .map((d) => ({
-                        receiptId: `dep-${d.txHash}`,
-                        txHash: d.txHash,
-                        payerAddress: d.fromAddress,
-                        merchantAddress: d.toAddress,
-                        counterpartyName: d.senderName ? `@${d.senderName}` : formatAddress(d.fromAddress),
-                        memoNote: "USDC Deposit • Arc Network",
-                        amountUsdc: d.amountUsdc,
-                        direction: "received" as const,
-                        status: "COMPLETED",
-                        createdAt: new Date(d.timestamp).toISOString(),
-                        paymentLinkId: null,
-                        isExternalDeposit: true,
-                      })),
+                      .map((d) => {
+                        const isWithdrawal = d.direction === "outbound_withdrawal" || (!d.incoming && d.isCctp);
+                        const incoming = d.incoming !== undefined ? d.incoming : !isWithdrawal;
+                        return {
+                          receiptId: `dep-${d.txHash || d.id}`,
+                          txHash: d.txHash,
+                          payerAddress: d.fromAddress,
+                          merchantAddress: d.toAddress,
+                          counterpartyName: incoming
+                            ? (d.senderName ? `@${d.senderName}` : formatAddress(d.fromAddress))
+                            : (d.receiverName ? `@${d.receiverName}` : formatAddress(d.toAddress)),
+                          memoNote: isWithdrawal
+                            ? `USDC Withdrawal • ${d.destName || "External Chain"}`
+                            : (d.isCctp ? `USDC Deposit • ${d.originName || "External Chain"}` : "USDC Deposit • Arc Network"),
+                          amountUsdc: d.amountUsdc,
+                          direction: (incoming ? "received" : "sent") as "received" | "sent",
+                          status: d.status === "completed" || d.status === "COMPLETED" || d.status === "CONFIRMED" ? "COMPLETED" : (d.status || "PENDING"),
+                          createdAt: new Date(d.timestamp).toISOString(),
+                          paymentLinkId: null,
+                          isExternalDeposit: incoming,
+                          isExternalWithdrawal: isWithdrawal,
+                        };
+                      }),
                   ];
 
                   const filteredSettingsTx = combinedSettingsTx.filter((tx) => {
@@ -6360,8 +6551,8 @@ export default function UserDashboard() {
                       const memo = (tx.memoNote || "").toLowerCase();
                       const isSub = memo.includes("sub") || memo.includes("plan") || memo.includes("recurring") || !!tx.paymentLinkId;
                       const isTransfer = memo.includes("transfer") || memo.includes("peer");
-                      const isWithdrawal = memo.includes("withdraw") || memo.includes("balance to wallet");
-                      const isDeposit = memo.includes("deposit") || tx.isExternalDeposit;
+                      const isWithdrawal = memo.includes("withdraw") || memo.includes("balance to wallet") || !!(tx as any).isExternalWithdrawal;
+                      const isDeposit = (memo.includes("deposit") || tx.isExternalDeposit) && !isWithdrawal;
                       const isOneTime = !isSub && !isTransfer && !isWithdrawal && !isDeposit;
 
                       if (settingsTxCategory === "subscriptions") {
@@ -6737,7 +6928,7 @@ export default function UserDashboard() {
                     {userSettings && (
                       <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
                         <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
-                          <Sliders className="h-4 w-4 text-[#2775CA]" /> Notification Preferences
+                          <NotificationBadge className="h-4 w-4 text-[#2775CA]" /> Notification Preferences
                         </h3>
                         <div className="space-y-4 font-sans text-xs">
                           <div className="flex items-center justify-between">
@@ -7088,7 +7279,7 @@ export default function UserDashboard() {
                     <Gift className="h-4 w-4 text-[#2775CA]" /> Your Referral Link
                   </h3>
                   <p className="text-[10px] text-black/70 leading-relaxed font-medium">
-                    Share your invite link with others. When they create an account and register a role, their signup is logged in your referral registry.
+                    Share your invite link. When someone joins and sets up their account, they'll show up in your referrals.
                   </p>
 
                   <div className="flex flex-col sm:flex-row gap-3">
@@ -7206,7 +7397,7 @@ export default function UserDashboard() {
                 )}
               </section>
             )}
-            </motion.div>
+            </div>
           </div>
         </div>
       </main>
@@ -7233,16 +7424,17 @@ export default function UserDashboard() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] flex flex-col bg-black/80 backdrop-blur-md"
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="dashboard-modal-overlay fixed inset-0 z-[70] flex flex-col bg-black/75"
             onClick={() => setAllTxOpen(false)}
           >
             <motion.div
-              initial={{ y: 28, opacity: 0, filter: "blur(1.5px)" }}
-              animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
-              exit={{ y: 28, opacity: 0, filter: "blur(1.5px)" }}
-              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               onClick={(event) => event.stopPropagation()}
-              className="mx-auto mt-auto sm:my-auto flex w-full sm:max-w-lg h-[92dvh] sm:h-[80vh] flex-col liquid-glass border border-white/10 bg-[#060608]/95 backdrop-blur-xl rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden"
+              className="dashboard-modal-surface mx-auto mt-auto sm:my-auto flex w-full sm:max-w-lg h-[92dvh] sm:h-[80vh] flex-col border border-white/10 bg-[#060608]/95 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden transform-gpu"
             >
               <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-white/5">
                 <h2 className="text-sm font-black uppercase tracking-wider text-white">All Transactions</h2>
@@ -7294,25 +7486,12 @@ export default function UserDashboard() {
                   }
                   return list.map((tx) => (
                     <div key={tx.id} className="flex items-center gap-3 py-3">
-                      <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
-                        {(() => {
-                          const avatar = getTransactionAvatarInfo(tx);
-                          if (avatar.type === "pfp") {
-                            return <img src={avatar.picUrl} alt={tx.name} className="h-full w-full object-cover" />;
-                          }
-                          return (
-                            <span className={`text-sm font-black ${
-                              avatar.isDns 
-                                ? "text-[#ccff00]" 
-                                : avatar.letter === "D" 
-                                  ? "text-emerald-400" 
-                                  : "text-amber-400"
-                            }`}>
-                              {avatar.letter}
-                            </span>
-                          );
-                        })()}
-                      </div>
+                      <TransactionAvatar
+                        direction={tx.incoming ? "incoming" : "outgoing"}
+                        displayName={tx.name}
+                        identityName={tx.dnsName}
+                        profilePic={tx.pic}
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-black text-white">{tx.name}</p>
                         <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
@@ -7419,19 +7598,20 @@ export default function UserDashboard() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[65] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md"
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="dashboard-modal-overlay fixed inset-0 z-[65] flex items-center justify-center bg-black/75 p-5"
             onClick={() => giftRequestBusyPlanId === null && setGiftPlan(null)}
           >
             <motion.div
-              initial={{ scale: 0.94, y: 16, opacity: 0, filter: "blur(1.5px)" }}
-              animate={{ scale: 1, y: 0, opacity: 1, filter: "blur(0px)" }}
-              exit={{ scale: 0.96, opacity: 0, filter: "blur(1.5px)" }}
-              transition={{ type: "spring", stiffness: 450, damping: 32 }}
+              initial={{ scale: 0.96, y: 8, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               onClick={(event) => event.stopPropagation()}
               role="dialog"
               aria-modal="true"
               aria-labelledby="gift-plan-title"
-              className="w-full max-w-md space-y-5 rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 text-[#111827] shadow-2xl"
+              className="dashboard-modal-surface w-full max-w-md space-y-5 rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 text-[#111827] shadow-2xl transform-gpu"
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -7632,17 +7812,18 @@ export default function UserDashboard() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md"
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="dashboard-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-5 font-sans"
             onClick={() => !vaultActionBusy && setVaultActionOpen(false)}
           >
             <motion.form
-              initial={{ scale: 0.94, y: 16, opacity: 0, filter: "blur(1.5px)" }}
-              animate={{ scale: 1, y: 0, opacity: 1, filter: "blur(0px)" }}
-              exit={{ scale: 0.96, opacity: 0, filter: "blur(1.5px)" }}
-              transition={{ type: "spring", stiffness: 450, damping: 32 }}
+              initial={{ scale: 0.96, y: 8, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               onClick={(event) => event.stopPropagation()}
               onSubmit={submitVaultAction}
-              className="w-full max-w-sm space-y-4 rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-6 shadow-2xl"
+              className="relative transform-gpu w-full max-w-sm space-y-4 rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-6 shadow-2xl"
             >
               <div>
                 <h2 className="text-sm font-black uppercase tracking-[0.14em] text-[#111827]">
@@ -7650,11 +7831,11 @@ export default function UserDashboard() {
                 </h2>
                 <p className="mt-2 text-xs leading-relaxed text-black/60">
                   {vaultActionMode === "commit"
-                    ? "Escrow USDC for a merchant's metered service. This clears any owed balance first, then activates the service for the cycle once the commit is met."
+                    ? "Escrow USDC for a merchant's metered service. Enter the merchant's commit name to activate their service for the cycle."
                     : "Withdraw unused committed balance back to your wallet. Dropping below the required commit pauses the service until you re-commit."}
                 </p>
               </div>
-              <Field label="Merchant">
+              <Field label={vaultActionMode === "commit" ? "Merchant commit name" : "Merchant"}>
                 {vaultActionMerchantLocked ? (
                   <div className="subscript-input flex items-center bg-white border border-black/15 text-[#111827]">
                     {resolveMerchantDisplayName(vaults.find((vault: any) => vault.merchantAddress?.toLowerCase() === vaultActionMerchant.toLowerCase())?.merchantName)}
@@ -7663,7 +7844,7 @@ export default function UserDashboard() {
                   <input
                     value={vaultActionMerchant}
                     onChange={(event) => setVaultActionMerchant(event.target.value)}
-                    placeholder="Merchant name"
+                    placeholder={vaultActionMode === "commit" ? "Merchant commit name (e.g. acme-cloud)" : "Merchant name"}
                     className="subscript-input bg-white border border-black/15 text-[#111827]"
                     required
                   />
@@ -7676,7 +7857,6 @@ export default function UserDashboard() {
                   placeholder="25.00"
                   inputMode="decimal"
                   className="subscript-input bg-white border border-black/15 text-[#111827]"
-                  autoFocus
                   required
                 />
               </Field>
@@ -7747,9 +7927,10 @@ export default function UserDashboard() {
           variant={confirmModal.variant}
           requiredMatchText={confirmModal.requiredMatchText}
           matchPlaceholder={confirmModal.matchPlaceholder}
+          isLoading={confirmModal.isLoading}
           onConfirm={() => {
             const action = confirmModal.onConfirm;
-            setConfirmModal(null);
+            if (!confirmModal.keepOpenOnConfirm) setConfirmModal(null);
             if (action) action();
           }}
           onCancel={() => {
@@ -7846,7 +8027,7 @@ export default function UserDashboard() {
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
       {!loading && userWallet && !userEmail && !isEmbeddedWalletSession && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
+        <div className="dashboard-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-5">
           <form
             onSubmit={emailPromptStep === "email" ? handleSendEmailCode : handleVerifyEmailCode}
             className="w-full max-w-sm space-y-4 rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 text-[#111827] shadow-2xl"
@@ -7856,7 +8037,7 @@ export default function UserDashboard() {
             </div>
             <div>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/20 text-[10px] font-bold uppercase tracking-wider mb-2">
-                <Shield className="h-3 w-3" />
+                <KycVerificationPendingIcon className="h-3.5 w-3.5 shrink-0" />
                 <span>Tier 1 KYC Verification</span>
               </div>
               <h2 className="text-sm font-black uppercase tracking-[0.14em] text-[#111827]">
@@ -7923,7 +8104,7 @@ export default function UserDashboard() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+            className="dashboard-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
             onClick={() => setReferralQrOpen(false)}
           >
             <motion.div
@@ -7931,7 +8112,7 @@ export default function UserDashboard() {
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.92, y: 16, opacity: 0 }}
               transition={{ type: "spring", stiffness: 450, damping: 32 }}
-              className="relative w-full max-w-[340px] sm:max-w-sm rounded-[28px] border border-black/10 dark:border-white/15 bg-white dark:bg-[#12131a] p-5 sm:p-6 shadow-2xl space-y-4 text-black dark:text-white max-h-[90vh] overflow-y-auto"
+              className="dashboard-modal-surface relative w-full max-w-[340px] sm:max-w-sm rounded-[28px] border border-black/10 dark:border-white/15 bg-white dark:bg-[#12131a] p-5 sm:p-6 shadow-2xl space-y-4 text-black dark:text-white max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
@@ -8034,19 +8215,20 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-5 backdrop-blur-sm"
+          transition={{ duration: 0.15, ease: "easeOut" }}
+          className="dashboard-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-5 font-sans"
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.92, y: 16, opacity: 0, filter: "blur(1.5px)" }}
-            animate={{ scale: 1, y: 0, opacity: 1, filter: "blur(0px)" }}
-            exit={{ scale: 0.96, opacity: 0, filter: "blur(1.5px)" }}
-            transition={{ type: "spring", stiffness: 450, damping: 32 }}
+            initial={{ scale: 0.96, y: 8, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.96, opacity: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="vault-info-title"
-            className="w-full max-w-md space-y-4 rounded-3xl border border-black/15 bg-white p-6 shadow-xl"
+            className="dashboard-modal-surface w-full max-w-md space-y-4 rounded-3xl border border-black/15 bg-white p-6 shadow-xl transform-gpu"
           >
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-black/10 bg-[#f8fafc] text-[#2775CA]">
@@ -8138,8 +8320,8 @@ function HomeHeader({
               onClick={handleTierClick}
               aria-expanded={tierExpanded}
               aria-label={tierExpanded ? `Tier ${tier}. Open verification details` : `Tier ${tier}. Show tier label`}
-              className={`flex h-9 shrink-0 items-center justify-center overflow-hidden rounded-full border text-[10px] font-black uppercase transition-[width,padding,background-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
-                tierExpanded ? "w-[58px] px-2 tracking-wide" : "w-9 px-0"
+              className={`flex h-9 shrink-0 items-center justify-center gap-1.5 overflow-hidden rounded-full border text-[10px] font-black uppercase transition-[width,padding,background-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                tierExpanded ? "w-[72px] px-2 tracking-wide" : "w-9 px-0"
               } ${
                 isTier1
                   ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
@@ -8147,7 +8329,8 @@ function HomeHeader({
               }`}
               title={isTier1 ? "Tier 1: Verified (Email Linked / MCP)" : "Tier 0: Basic (Link email to unlock transactions)"}
             >
-              <span aria-hidden="true">{tierExpanded ? `Tier ${tier}` : tier}</span>
+              <KycVerificationPendingIcon className="h-3.5 w-3.5 shrink-0" />
+              {tierExpanded && <span aria-hidden="true">{`Tier ${tier}`}</span>}
             </button>
             {/* Mobile placement: the bell sits in the header bar. Same component the desktop title
                 renders, so the unread count and read state cannot diverge between form factors. */}
@@ -9358,13 +9541,13 @@ function DmBubble({
   if (isReactionMessage(dm.messageType)) {
     return (
       <motion.div
-        initial={{ scale: 0.5, opacity: 0, y: 8, filter: "blur(1.2px)" }}
-        animate={{ scale: 1, opacity: 1, y: 0, filter: "blur(0px)" }}
+        initial={{ scale: 0.85, opacity: 0, y: 8 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.95 }}
-        transition={{ type: "spring", stiffness: 450, damping: 32 }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
         style={{ transformOrigin: bubbleOrigin }}
-        className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
+        className={`flex gap-2.5 transform-gpu ${incoming ? "justify-start" : "justify-end"}`}
       >
         {incoming && <Avatar profilePic={voiceProfilePic} name={voiceLabel} />}
         <div className={`flex flex-col gap-1 ${incoming ? "items-start" : "items-end"}`}>
@@ -9393,10 +9576,10 @@ function DmBubble({
   if (dm.messageType === "SERVICE_PAUSED") {
     return (
       <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 10, filter: "blur(1.2px)" }}
-        animate={{ scale: 1, opacity: 1, y: 0, filter: "blur(0px)" }}
-        transition={bubbleSpring}
-        className="w-full"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
+        className="w-full transform-gpu"
       >
         <div className={`w-full rounded-[20px] border px-5 py-4 shadow-md ${isPending ? "border-orange-400/30 bg-orange-500/[0.08]" : "border-white/5 bg-black/25 opacity-70"}`}>
           <div className="flex items-center gap-2">
@@ -9443,12 +9626,12 @@ function DmBubble({
 
   return (
     <motion.div
-      initial={{ scale: 0.82, opacity: 0, y: 14, filter: "blur(1.2px)" }}
-      animate={{ scale: 1, opacity: 1, y: 0, filter: "blur(0px)" }}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
       whileHover={{ scale: 1.01 }}
-      transition={bubbleSpring}
+      transition={{ duration: 0.15, ease: "easeOut" }}
       style={{ transformOrigin: bubbleOrigin }}
-      className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
+      className={`flex gap-2.5 transform-gpu ${incoming ? "justify-start" : "justify-end"}`}
     >
       {incoming && <Avatar profilePic={voiceProfilePic} name={voiceLabel} />}
       <div className={`max-w-[85%] sm:max-w-[75%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5 min-w-0`}>
@@ -9563,9 +9746,9 @@ function DmBubble({
               <AnimatePresence>
                 {actionMenuOpen && (
                   <motion.div
-                    initial={{ opacity: 0, y: -8, scale: 0.92, filter: "blur(1.2px)" }}
-                    animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                    exit={{ opacity: 0, y: -6, scale: 0.94, filter: "blur(1.2px)" }}
+                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.95 }}
                     transition={{ type: "spring", stiffness: 450, damping: 32 }}
                     className={`dm-action-menu-grid ${incoming ? "origin-top-left" : "origin-top-right"}`}
                   >
@@ -9575,9 +9758,9 @@ function DmBubble({
                         return (
                           <motion.a
                             key={action.key}
-                            initial={{ opacity: 0, y: -4, scale: 0.94, filter: "blur(1px)" }}
-                            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                            transition={{ type: "spring", stiffness: 450, damping: 32, delay: index * 0.025 }}
+                            initial={{ opacity: 0, y: -4, scale: 0.94 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ duration: 0.15, ease: "easeOut", delay: index * 0.025 }}
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
                             href={action.href}
@@ -9592,9 +9775,9 @@ function DmBubble({
                       return (
                         <motion.button
                           key={action.key}
-                          initial={{ opacity: 0, y: -4, scale: 0.94, filter: "blur(1px)" }}
-                          animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                          transition={{ type: "spring", stiffness: 450, damping: 32, delay: index * 0.025 }}
+                          initial={{ opacity: 0, y: -4, scale: 0.94 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{ duration: 0.15, ease: "easeOut", delay: index * 0.025 }}
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.97 }}
                           type="button"
@@ -9786,9 +9969,9 @@ function MerchantPlanManager({
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.92, scaleY: 0.85, filter: "blur(1.5px)" }}
-            animate={{ opacity: 1, y: 0, scale: 1, scaleY: 1, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: 8, scale: 0.95, scaleY: 0.9, filter: "blur(1.5px)" }}
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.96 }}
             transition={{ type: "spring", stiffness: 420, damping: 30 }}
             style={{ transformOrigin: "top center" }}
             className="order-1 max-h-[min(48dvh,28rem)] space-y-3 overflow-y-auto overscroll-contain rounded-2xl border border-black/15 bg-[#FFFFF0] p-3 text-black shadow-lg"
@@ -9855,12 +10038,12 @@ function MerchantPlanManager({
                   return (
                     <motion.div
                       key={plan.id}
-                      initial={{ opacity: 0, y: 10, scale: 0.92, filter: "blur(1.2px)" }}
-                      animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                      transition={{ type: "spring", stiffness: 420, damping: 30, delay: index * 0.04 }}
+                      initial={{ opacity: 0, y: 10, scale: 0.92 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.15, ease: "easeOut", delay: index * 0.04 }}
                       whileHover={{ scale: 1.025, y: -2 }}
                       whileTap={{ scale: 0.98 }}
-                      className="rounded-xl border border-black/10 bg-white p-3 shadow-sm"
+                      className="rounded-xl border border-black/10 bg-white p-3 shadow-sm transform-gpu"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -9979,9 +10162,9 @@ function DmRequestComposer({
         {open && (
           <motion.form
             key="dm-request-form"
-            initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94, filter: "blur(1.5px)" }}
-            animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96, filter: "blur(1.5px)" }}
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.96 }}
             transition={{ type: "spring", stiffness: 450, damping: 32 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
@@ -10282,8 +10465,8 @@ function SendFundsModal({
   return (
     <AnimatePresence>
       {open && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} animate={{ scale: 1, y: 0, filter: "blur(0px)" }} exit={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} transition={{ type: "spring", stiffness: 450, damping: 32 }} role="dialog" aria-modal="true" aria-labelledby="send-funds-title" className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} className="dashboard-modal-overlay fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 font-sans">
+          <motion.div initial={{ scale: 0.96, y: 8, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} role="dialog" aria-modal="true" aria-labelledby="send-funds-title" className="dashboard-modal-surface w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden transform-gpu">
             <div className="flex items-center justify-between mb-4">
               <h3 id="send-funds-title" className="text-sm font-black uppercase tracking-wider text-[#111827]">Send USDC</h3>
               <button type="button" onClick={onClose} disabled={loading} aria-label="Close send dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
@@ -10900,8 +11083,8 @@ function ConfigureVaultModal({
   return (
     <AnimatePresence>
       {open && editingVault && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} animate={{ scale: 1, y: 0, filter: "blur(0px)" }} exit={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} transition={{ type: "spring", stiffness: 450, damping: 32 }} className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left max-h-[90vh] overflow-y-auto">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} className="dashboard-modal-overlay fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 font-sans">
+          <motion.div initial={{ scale: 0.96, y: 8, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} className="dashboard-modal-surface w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left max-h-[90vh] overflow-y-auto transform-gpu">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-sm font-black uppercase tracking-wider text-[#111827]">Auto top-up</h3>
               <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 transition-all"><X className="h-4 w-4" /></button>
@@ -11082,8 +11265,8 @@ function TopupVaultModal({
   return (
     <AnimatePresence>
       {open && vault && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} animate={{ scale: 1, y: 0, filter: "blur(0px)" }} exit={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} transition={{ type: "spring", stiffness: 450, damping: 32 }} className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} className="dashboard-modal-overlay fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 font-sans">
+          <motion.div initial={{ scale: 0.96, y: 8, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} className="dashboard-modal-surface w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left transform-gpu">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black uppercase tracking-wider text-[#111827]">Manual Deposit</h3>
               <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 transition-all"><X className="h-4 w-4" /></button>
@@ -11159,17 +11342,16 @@ function SubscribeReviewModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-4 sm:p-6"
-        style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)" }}
+        className="dashboard-modal-overlay fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/55 p-4 sm:p-6"
         onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
       >
         <motion.div
           key="subscribe-review-sheet"
-          initial={{ opacity: 0, y: 40, scale: 0.96 }}
+          initial={{ opacity: 0, y: 16, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 24, scale: 0.97 }}
-          transition={{ type: "spring", stiffness: 420, damping: 32 }}
-          className="w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] shadow-2xl overflow-hidden"
+          exit={{ opacity: 0, y: 16, scale: 0.96 }}
+          transition={{ duration: 0.15, ease: "easeOut" }}
+          className="dashboard-modal-surface w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] shadow-2xl overflow-hidden transform-gpu"
         >
           {/* Header */}
           <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-black/8">

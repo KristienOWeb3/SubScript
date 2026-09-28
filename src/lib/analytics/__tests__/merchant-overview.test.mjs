@@ -186,7 +186,7 @@ test("GET /api/merchant/overview rejects unauthorized and invalid requests", asy
 const merchantOverviewUi = fs.readFileSync(path.join(projectRoot, "src/components/dashboard/MerchantOverview.tsx"), "utf8");
 
 test("spendable card exposes one responsive Send action while settlement keeps Claim", () => {
-    const spendableStart = merchantOverviewUi.indexOf("{/* 2. Spendable Card */}");
+    const spendableStart = merchantOverviewUi.indexOf("{/* 1. Spendable Card */}") >= 0 ? merchantOverviewUi.indexOf("{/* 1. Spendable Card */}") : merchantOverviewUi.indexOf("{/* 2. Spendable Card */}");
     const settlementStart = merchantOverviewUi.indexOf("{/* 3. Claimable Settlement Card */}");
     assert.ok(spendableStart >= 0 && settlementStart > spendableStart);
     const spendable = merchantOverviewUi.slice(spendableStart, settlementStart);

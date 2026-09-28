@@ -42,14 +42,14 @@ export function WalletSelectionModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+      <div className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+          className="dashboard-modal-overlay fixed inset-0 bg-black/50"
         />
 
         {/* Modal Dialog */}
@@ -61,7 +61,7 @@ export function WalletSelectionModal({
           role="dialog"
           aria-modal="true"
           aria-labelledby="wallet-modal-title"
-          className="relative w-full max-w-sm rounded-3xl bg-[#FFFFF0] border border-black/15 p-6 shadow-2xl z-10 space-y-4"
+          className="dashboard-modal-surface relative w-full max-w-sm rounded-3xl bg-[#FFFFF0] border border-black/15 p-6 shadow-2xl z-10 space-y-4"
         >
           {/* Header */}
           <div className="flex items-start justify-between gap-3">

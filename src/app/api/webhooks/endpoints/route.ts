@@ -47,8 +47,15 @@ async function getLatestDeliveriesByEndpoint(endpointIds: string[]): Promise<Lat
         FROM requested_endpoints AS requested
         CROSS JOIN LATERAL (
             SELECT event, status, response_body, created_at
-            FROM webhook_events
-            WHERE webhook_endpoint_id = requested.id
+            FROM (
+                SELECT event, status, response_body, created_at
+                FROM webhook_events
+                WHERE webhook_endpoint_id = requested.id
+                UNION ALL
+                SELECT event, http_status AS status, response_body, created_at
+                FROM webhook_deliveries
+                WHERE webhook_endpoint_id = requested.id
+            ) AS combined_deliveries
             ORDER BY created_at DESC
             LIMIT 1
         ) AS latest
@@ -63,13 +70,22 @@ export async function GET(request: Request) {
         }
         const wallet = auth.merchantAddress;
 
+        const { searchParams } = new URL(request.url);
+        const environmentParam = searchParams.get("environment")?.toUpperCase();
+
         const supabase = getSupabase();
 
-        const { data: endpoints, error } = await supabase
+        let endpointQuery = supabase
             .from("webhook_endpoints")
             .select("*")
             .eq("wallet_address", wallet.toLowerCase())
             .order("created_at", { ascending: false });
+
+        if (environmentParam === "LIVE" || environmentParam === "TEST") {
+            endpointQuery = endpointQuery.eq("environment", environmentParam);
+        }
+
+        const { data: endpoints, error } = await endpointQuery;
 
         if (error) {
             console.error("GET webhook endpoints error:", error);
@@ -77,12 +93,18 @@ export async function GET(request: Request) {
         }
 
         const normalizedWallet = wallet.toLowerCase();
-        const { data: activeKey, error: keyError } = await supabase
+        let keyQuery = supabase
             .from("api_keys")
             .select("id, publishable_key, secret_key_hint, mode, created_at")
             .eq("wallet_address", normalizedWallet)
             .eq("revoked", false)
-            .order("created_at", { ascending: false })
+            .order("created_at", { ascending: false });
+
+        if (environmentParam === "LIVE" || environmentParam === "TEST") {
+            keyQuery = keyQuery.eq("mode", environmentParam);
+        }
+
+        const { data: activeKey, error: keyError } = await keyQuery
             .limit(1)
             .maybeSingle();
         if (keyError) {

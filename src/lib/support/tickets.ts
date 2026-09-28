@@ -448,7 +448,15 @@ export async function addSupportTicketMessage(input: {
     senderAlias?: string | null;
     senderProfilePic?: string | null;
     content: string;
-}): Promise<{ ok: boolean; message?: SupportTicketMessage; error?: string; status?: number }> {
+}): Promise<{
+    ok: boolean;
+    message?: SupportTicketMessage;
+    isFirstAdminReply?: boolean;
+    creatorWallet?: string;
+    subject?: string;
+    error?: string;
+    status?: number;
+}> {
     await ensureSupportTables();
     const ticket = await pgMaybeOne<any>(`SELECT * FROM support_tickets WHERE id = $1`, [input.ticketId]);
     if (!ticket) {
@@ -532,11 +540,13 @@ export async function addSupportTicketMessage(input: {
         };
     }
 
+    const isFirstAdminReply = input.senderRole === "ADMIN" && ticket.status === "OPEN";
+
     // If an admin sends the first reply to an OPEN ticket, claim it exclusively!
     let updateSql = `UPDATE support_tickets SET last_message_at = $1, updated_at = $1`;
     const updateParams: any[] = [now];
 
-    if (input.senderRole === "ADMIN" && ticket.status === "OPEN") {
+    if (isFirstAdminReply) {
         updateParams.push("CLAIMED", cleanSender, input.senderAlias || null);
         updateSql += `, status = $2, claimed_by_admin_wallet = $3, claimed_by_admin_alias = $4`;
     }
@@ -556,7 +566,13 @@ export async function addSupportTicketMessage(input: {
         createdAt: now,
     };
 
-    return { ok: true, message: msg };
+    return {
+        ok: true,
+        message: msg,
+        isFirstAdminReply,
+        creatorWallet: ticket.creator_wallet,
+        subject: ticket.subject,
+    };
 }
 
 /**

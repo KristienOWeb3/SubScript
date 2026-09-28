@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { 
@@ -35,6 +34,10 @@ import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 import { humanStatus, humanSubscriptionStatus, normalizeReceiptStatus } from "@/lib/transactionLabels";
 import { isOptimisticTxId, readOptimisticTxs, reconcileOptimisticTxs, type OptimisticTx } from "@/lib/optimisticTx";
 import { useTheme } from "@/hooks/useTheme";
+import TransactionAvatar from "@/components/dashboard/TransactionAvatar";
+import { classifyTransactionDirection } from "@/lib/transactions/identity";
+import { formatTransactionDateTime, formatTransactionSubtitle } from "@/lib/transactions/format";
+import { GAS_FEE_TREASURY_ADDRESS, BRIDGE_FEE_TREASURY_ADDRESS } from "@/lib/contracts/constants";
 
 interface Subscription {
   subscriptionId: string;
@@ -107,44 +110,6 @@ function formatChainAbbr(chainNameOrId?: string | number | null): string {
   if (s.includes("opt") || s === "10" || s === "11155420") return "OP";
   if (s.includes("arc")) return "ARC";
   return s.toUpperCase();
-}
-
-function getTransactionAvatarInfo(tx: {
-  pic?: string | null;
-  dnsName?: string | null;
-  name?: string | null;
-  incoming?: boolean;
-  kind?: string;
-  detail?: string;
-}): { type: "pfp"; picUrl: string } | { type: "letter"; letter: string; isDns: boolean } {
-  if (tx.pic) {
-    return { type: "pfp", picUrl: tx.pic };
-  }
-
-  let dns = tx.dnsName;
-  if (!dns && tx.name) {
-    const atMatch = tx.name.match(/@([a-zA-Z0-9_.-]+)/);
-    if (atMatch && atMatch[1]) {
-      dns = atMatch[1];
-    }
-  }
-
-  if (dns) {
-    const clean = dns.replace(/^@/, "").trim();
-    const firstAlpha = clean.match(/[a-zA-Z]/);
-    if (firstAlpha) {
-      return { type: "letter", letter: firstAlpha[0].toUpperCase(), isDns: true };
-    }
-    if (clean.length > 0) {
-      return { type: "letter", letter: clean[0].toUpperCase(), isDns: true };
-    }
-  }
-
-  const isDeposit = Boolean(tx.incoming) || Boolean(tx.detail && tx.detail.toLowerCase().includes("deposit"));
-  if (isDeposit) {
-    return { type: "letter", letter: "D", isDns: false };
-  }
-  return { type: "letter", letter: "S", isDns: false };
 }
 
 export default function UserTransactionsPage() {
@@ -244,6 +209,7 @@ export default function UserTransactionsPage() {
     amountUsdc: string;
     amountFormatted: string;
     timestamp: number;
+    routedAt?: number;
     blockNumber?: number;
     status: string;
     senderName?: string | null;
@@ -257,6 +223,17 @@ export default function UserTransactionsPage() {
     destName?: string;
     burnTxHash?: string;
     mintTxHash?: string;
+    historyLabel?: string;
+    transactionType?: "ARC_NETWORK_FEE";
+    networkFee?: {
+      type: "ARC_NETWORK_FEE";
+      amountMicros: string;
+      txHash: string | null;
+      charged: boolean;
+      unrecovered: boolean;
+      parentTransactionHashes: string[];
+      legacyInferred?: boolean;
+    };
   }>>([]);
 
   const loadData = useCallback(async () => {
@@ -310,10 +287,10 @@ export default function UserTransactionsPage() {
     setOptimisticTxs(readOptimisticTxs());
   }, []);
 
-  const formatUsdc = (amountStr: string | null | undefined) => {
-    if (!amountStr) return "0.00";
+  const formatUsdc = (amountStr: string | number | bigint | null | undefined) => {
+    if (amountStr === null || amountStr === undefined || amountStr === "") return "0.00";
     const parsed = Number(amountStr) / 1_000_000;
-    return parsed.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return parsed.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
   };
 
   const getLocalValueLabel = (amountStr: string | null | undefined) => {
@@ -371,9 +348,14 @@ export default function UserTransactionsPage() {
       const isWithdrawal = m.messageType === "WITHDRAWAL" || m.messageType === "WITHDRAW";
       const isPeerTransfer = m.messageType === "PEER_TRANSFER" || m.messageType === "PEER_PAYMENT";
       const isSettlementReceipt = m.messageType === "DEBIT_SUCCESS" || m.messageType === "PAYMENT_SUCCESS";
-      const incoming = isSettlementReceipt
+      const incoming = isSettlementReceipt || isWithdrawal
         ? false
-        : m.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isWithdrawal;
+        : classifyTransactionDirection({
+            authenticatedAddress: userWallet,
+            fromAddress: m.senderAddress,
+            toAddress: m.receiverAddress,
+            fallback: "outgoing",
+          }) === "incoming";
       const sign = incoming ? "+" : "-";
       const counterpartyIsSender = isSettlementReceipt || incoming;
 
@@ -455,17 +437,35 @@ export default function UserTransactionsPage() {
       };
     });
   // Map external Arc USDC deposits and CCTP transfers not captured in DMs or receipts
+  const treasuryLower = (GAS_FEE_TREASURY_ADDRESS || "").toLowerCase();
+  const bridgeTreasuryLower = (BRIDGE_FEE_TREASURY_ADDRESS || "").toLowerCase();
   const depositTransactions = deposits
-    .filter((d) => !mappedTxHashes.has((d.txHash || "").toLowerCase()))
+    .filter((d) => {
+      if (mappedTxHashes.has((d.txHash || "").toLowerCase())) return false;
+      const to = (d.toAddress || "").toLowerCase();
+      if (to === treasuryLower || to === bridgeTreasuryLower) return false;
+      if (d.historyLabel === "Transfer to SubScript treasury" || d.historyLabel === "Arc network fee") return false;
+      if (d.transactionType === "ARC_NETWORK_FEE") return false;
+      return true;
+    })
     .map((d) => {
       if (d.txHash) mappedTxHashes.add(d.txHash.toLowerCase());
       const isCctp = Boolean(d.isCctp);
       const isWithdrawal = d.direction === "outbound_withdrawal";
-      const incoming = isCctp ? !isWithdrawal : (d.incoming !== undefined ? Boolean(d.incoming) : d.direction !== "outbound_send");
+      const incoming = isCctp
+        ? !isWithdrawal
+        : classifyTransactionDirection({
+            authenticatedAddress: userWallet,
+            fromAddress: d.fromAddress,
+            toAddress: d.toAddress,
+            fallback: d.incoming !== undefined
+              ? (d.incoming ? "incoming" : "outgoing")
+              : (d.direction === "outbound_send" ? "outgoing" : "incoming"),
+          }) === "incoming";
       const kind: "transfers" | "withdrawals" = isWithdrawal ? "withdrawals" : "transfers";
       const sign = incoming ? "+" : "-";
 
-      let name = incoming
+      let name = d.historyLabel || (incoming
         ? (d.senderName
             ? `Deposit from @${d.senderName}`
             : d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000"
@@ -475,33 +475,29 @@ export default function UserTransactionsPage() {
             ? `Sent to @${d.receiverName}`
             : d.toAddress && d.toAddress !== "0x0000000000000000000000000000000000000000"
             ? `Sent to ${formatAddress(d.toAddress)}`
-            : "Sent USDC");
-      let detail = incoming ? "USDC Deposit • Arc Network" : "USDC Transfer • Arc Network";
+            : "Sent USDC"));
       let status = "CONFIRMED";
 
       if (isCctp) {
         const isConfirmed = d.status === "completed" || Boolean(d.mintTxHash);
         status = isConfirmed ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
         if (isWithdrawal) {
-          const destAbbr = formatChainAbbr(d.destName || d.destinationChainId);
           const target = d.toAddress ? formatAddress(d.toAddress) : "";
-          name = target ? `Sent to ${target} ${destAbbr}`.trim() : `Sent to ${d.destName || "External Chain"}`;
-          detail = isConfirmed
-            ? `Withdrawal confirmed • ${d.destName || "External Chain"}`
-            : d.status === "failed"
-            ? "Withdrawal failed"
-            : `Pending relay • ${d.destName || "External Chain"}`;
+          name = target ? `Sent to ${target}` : `Sent to ${d.destName || "External Chain"}`;
         } else {
-          const originAbbr = formatChainAbbr(d.originName || d.originChainId);
           const origin = d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000" ? formatAddress(d.fromAddress) : "";
-          name = origin ? `Deposit from ${origin} ${originAbbr}`.trim() : `Deposit from ${d.originName || "External Chain"}`;
-          detail = isConfirmed
-            ? `Deposit confirmed • ${d.originName || "External Chain"}`
-            : d.status === "failed"
-            ? "Deposit failed"
-            : `Pending arrival • ${d.originName || "External Chain"}`;
+          name = origin ? `Deposit from ${origin}` : `Deposit from ${d.originName || "External Chain"}`;
         }
       }
+
+      const detail = formatTransactionSubtitle({
+        isCctp,
+        incoming,
+        originName: d.originName,
+        destName: d.destName,
+        timestamp: d.timestamp,
+        routedAt: d.routedAt,
+      });
 
       const rawDns = incoming ? d.senderName : d.receiverName;
       const dnsName = rawDns && !rawDns.startsWith("0x") ? rawDns.replace(/^@/, "").trim() : null;
@@ -521,6 +517,8 @@ export default function UserTransactionsPage() {
         status,
         txHash: d.txHash,
         receiptId: null as string | null,
+        recipientAddress: d.toAddress,
+        networkFee: d.networkFee,
       };
     });
 
@@ -568,7 +566,15 @@ export default function UserTransactionsPage() {
     ...dmMappedTransactions,
     ...standaloneReceiptTransactions,
     ...depositTransactions,
-  ].sort((a, b) => b.time - a.time);
+  ].map((tx) => ({
+    ...tx,
+    networkFee: ("networkFee" in tx ? tx.networkFee : undefined) as {
+      charged?: boolean;
+      amountMicros?: string | number | bigint;
+      txHash?: string | null;
+    } | undefined,
+    recipientAddress: ("recipientAddress" in tx ? tx.recipientAddress : undefined) as string | null | undefined,
+  })).sort((a, b) => b.time - a.time);
 
   // Compute 30-day settled spend total
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -969,33 +975,29 @@ export default function UserTransactionsPage() {
                       <tr key={tx.id} className={`hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${isOptimisticTxId(tx.id) ? "animate-pulse opacity-80" : ""}`}>
                         <td className="py-3.5 pr-4">
                           <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 shrink-0 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
-                              {(() => {
-                                const avatar = getTransactionAvatarInfo(tx);
-                                if (avatar.type === "pfp") {
-                                  return <Image src={avatar.picUrl} alt={tx.name} width={36} height={36} unoptimized className="h-full w-full object-cover" />;
-                                }
-                                return (
-                                  <span className={`text-sm font-black ${
-                                    avatar.isDns 
-                                      ? "text-[#2775CA] dark:text-[#5fa5f9]" 
-                                      : avatar.letter === "D" 
-                                        ? "text-emerald-600 dark:text-emerald-400" 
-                                        : "text-amber-600 dark:text-amber-400"
-                                  }`}>
-                                    {avatar.letter}
-                                  </span>
-                                );
-                              })()}
-                            </div>
+                            <TransactionAvatar
+                              className="h-9 w-9 rounded-xl"
+                              direction={tx.incoming ? "incoming" : "outgoing"}
+                              displayName={tx.name}
+                              identityName={tx.dnsName}
+                              profilePic={tx.pic}
+                            />
                             <div className="min-w-0">
                               <p className="truncate font-bold text-slate-900 dark:text-white">{tx.name}</p>
                               <p className="truncate text-[10px] text-slate-500 dark:text-white/40 mt-0.5">{tx.detail}</p>
+                              {tx.networkFee?.charged && tx.networkFee.amountMicros !== undefined && (
+                                <div className="mt-1 space-y-0.5 text-[10px] text-slate-500 dark:text-white/50">
+                                  <p><span className="font-semibold">Arc network fee</span> ${formatUsdc(tx.networkFee.amountMicros)}</p>
+                                  <p>
+                                    Amount sent ${formatUsdc(tx.amountUsdc || "0")} · Total deducted ${formatUsdc((BigInt(tx.amountUsdc || "0") + BigInt(tx.networkFee.amountMicros)).toString())} · Network Arc
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
                         <td className="py-3.5 whitespace-nowrap text-slate-600 dark:text-white/60 text-[11px]">
-                          {new Date(tx.time).toLocaleString()}
+                          {formatTransactionDateTime(tx.time)}
                         </td>
                         <td className="py-3.5 whitespace-nowrap font-mono">
                           <span className={`block font-bold text-xs ${tx.incoming ? "text-emerald-600 dark:text-emerald-400" : "text-slate-900 dark:text-white"}`}>
@@ -1030,14 +1032,26 @@ export default function UserTransactionsPage() {
                                 </a>
                               </>
                             ) : tx.txHash ? (
-                              <a
-                                href={getExplorerTxUrl(tx.txHash)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[#2775CA] hover:underline font-bold inline-flex items-center gap-1"
-                              >
-                                <ExternalLink className="h-3 w-3" /> Explorer
-                              </a>
+                              <>
+                                <a
+                                  href={getExplorerTxUrl(tx.txHash)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#2775CA] hover:underline font-bold inline-flex items-center gap-1"
+                                >
+                                  <ExternalLink className="h-3 w-3" /> Primary tx
+                                </a>
+                                {tx.networkFee?.txHash && (
+                                  <a
+                                    href={getExplorerTxUrl(tx.networkFee.txHash)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-slate-500 dark:text-white/50 hover:text-[#2775CA] hover:underline font-medium inline-flex items-center gap-1"
+                                  >
+                                    <ExternalLink className="h-3 w-3" /> Fee tx
+                                  </a>
+                                )}
+                              </>
                             ) : (
                               <span className="text-slate-400 dark:text-white/20">—</span>
                             )}
@@ -1060,28 +1074,21 @@ export default function UserTransactionsPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="h-8 w-8 shrink-0 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
-                          {(() => {
-                            const avatar = getTransactionAvatarInfo(tx);
-                            if (avatar.type === "pfp") {
-                              return <Image src={avatar.picUrl} alt={tx.name} width={32} height={32} unoptimized className="h-full w-full object-cover" />;
-                            }
-                            return (
-                              <span className={`text-xs font-black ${
-                                avatar.isDns 
-                                  ? "text-[#2775CA] dark:text-[#5fa5f9]" 
-                                  : avatar.letter === "D" 
-                                    ? "text-emerald-600 dark:text-emerald-400" 
-                                    : "text-amber-600 dark:text-amber-400"
-                              }`}>
-                                {avatar.letter}
-                              </span>
-                            );
-                          })()}
-                        </div>
+                        <TransactionAvatar
+                          className="h-8 w-8 rounded-lg"
+                          direction={tx.incoming ? "incoming" : "outgoing"}
+                          displayName={tx.name}
+                          identityName={tx.dnsName}
+                          profilePic={tx.pic}
+                        />
                         <div className="min-w-0">
                           <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{tx.name}</p>
                           <p className="truncate text-[10px] text-slate-500 dark:text-white/40">{tx.detail}</p>
+                          {tx.networkFee?.charged && tx.networkFee.amountMicros !== undefined && (
+                            <p className="mt-0.5 text-[10px] text-slate-500 dark:text-white/50">
+                              Arc network fee ${formatUsdc(tx.networkFee.amountMicros)}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <FinancialStatusBadge status={tx.status} />
@@ -1111,10 +1118,26 @@ export default function UserTransactionsPage() {
                         </a>
                       </div>
                     ) : tx.txHash ? (
-                      <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/5 dark:border-white/5 text-[10px]">
-                        <a href={getExplorerTxUrl(tx.txHash)} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold inline-flex items-center gap-1">
-                          <ExternalLink className="h-3 w-3" /> View on Explorer
-                        </a>
+                      <div className="pt-2 border-t border-black/5 dark:border-white/5 text-[10px]">
+                        {tx.networkFee?.charged && tx.networkFee.amountMicros !== undefined && (
+                          <div className="mb-2 grid grid-cols-2 gap-1 text-slate-500 dark:text-white/50">
+                            <span>Amount sent</span><span className="text-right font-mono">${formatUsdc(tx.amountUsdc || "0")}</span>
+                            <span>Arc network fee</span><span className="text-right font-mono">${formatUsdc(tx.networkFee.amountMicros)}</span>
+                            <span className="font-semibold">Total deducted</span><span className="text-right font-mono font-semibold">${formatUsdc((BigInt(tx.amountUsdc || "0") + BigInt(tx.networkFee.amountMicros)).toString())}</span>
+                            <span>Recipient</span><span className="truncate text-right font-mono">{tx.recipientAddress ? formatAddress(String(tx.recipientAddress)) : "—"}</span>
+                            <span>Network</span><span className="text-right">Arc</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-end gap-3">
+                          <a href={getExplorerTxUrl(tx.txHash)} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold inline-flex items-center gap-1">
+                            <ExternalLink className="h-3 w-3" /> Primary tx
+                          </a>
+                          {tx.networkFee?.txHash && (
+                            <a href={getExplorerTxUrl(tx.networkFee.txHash)} target="_blank" rel="noopener noreferrer" className="text-slate-500 dark:text-white/50 font-semibold inline-flex items-center gap-1">
+                              <ExternalLink className="h-3 w-3" /> Fee tx
+                            </a>
+                          )}
+                        </div>
                       </div>
                     ) : null}
                   </div>

@@ -33,7 +33,7 @@ function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialEmail = searchParams?.get("email") || "";
-  const safeNext = getSafeRelativePath(searchParams?.get("next") || null);
+  const safeNext = getSafeRelativePath(searchParams?.get("next") || searchParams?.get("redirect") || null);
 
   useEffect(() => {
     router.prefetch("/signup");
@@ -460,15 +460,44 @@ function SignInContent() {
           googleAvailable={googleAvailable}
           externalWalletEnabled={externalWalletEnabled}
           onGoogleSuccess={handleLoginSuccess}
+          onGoogleError={(msg) => {
+            setGoogleError(msg);
+            if (msg) {
+              setSiweError(null);
+              setOtpError(null);
+            }
+          }}
           connectors={connectors}
           onSelectConnector={handleSelectConnector}
-          onNoWalletDetected={(msg) => setSiweError(msg)}
+          onNoWalletDetected={(msg) => {
+            setSiweError(msg);
+            setGoogleError(null);
+            setOtpError(null);
+          }}
           onOpenModal={() => setShowWalletModal(true)}
           isConnecting={isConnecting}
           siweLoading={siweLoading}
           connectingConnectorId={connectingConnectorId}
           disabled={otpLoading || captchaRequired}
         />
+
+        {(googleError || siweError) && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-800 flex items-start gap-2 mt-1.5" role="alert">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600" />
+            <span className="flex-1 leading-relaxed">{googleError || siweError}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setGoogleError(null);
+                setSiweError(null);
+              }}
+              className="text-red-400 hover:text-red-700 transition p-0.5"
+              title="Dismiss"
+            >
+              <span className="text-xs font-bold leading-none">&times;</span>
+            </button>
+          </div>
+        )}
 
         {/* Divider */}
         {(!isAuthReady || googleAvailable || externalWalletEnabled) && (
@@ -494,7 +523,12 @@ function SignInContent() {
                   type="email"
                   placeholder="your@email.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (otpError) setOtpError(null);
+                    if (googleError) setGoogleError(null);
+                    if (siweError) setSiweError(null);
+                  }}
                   required
                   disabled={otpLoading}
                   className="w-full rounded-xl border border-black/15 bg-[#FFFFF0] px-3.5 py-2.5 text-xs text-[#111827] placeholder:text-black/35 focus:border-[#2775CA] focus:outline-none shadow-sm transition-colors"
@@ -524,10 +558,10 @@ function SignInContent() {
               )}
             </button>
 
-            {(otpError || siweError || googleError) && (
+            {otpError && (
               <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-800 flex items-start gap-2 mt-1.5" role="alert">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600" />
-                <span className="leading-relaxed">{otpError || siweError || googleError}</span>
+                <span className="leading-relaxed">{otpError}</span>
               </div>
             )}
 

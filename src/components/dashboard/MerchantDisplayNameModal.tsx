@@ -60,7 +60,14 @@ export default function MerchantDisplayNameModal({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <motion.div
+          key="merchant-name-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="dashboard-modal-overlay fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4"
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -69,7 +76,7 @@ export default function MerchantDisplayNameModal({
             role="dialog"
             aria-modal="true"
             aria-labelledby="merchant-name-title"
-            className="relative w-full max-w-sm space-y-4 overflow-hidden rounded-3xl border border-[#00d2b4]/30 bg-[#FFFFF0] p-6 text-left text-black shadow-2xl"
+            className="dashboard-modal-surface relative transform-gpu w-full max-w-sm space-y-4 overflow-hidden rounded-3xl border border-[#00d2b4]/30 bg-[#FFFFF0] p-6 text-left text-black shadow-2xl"
           >
             <h3
               id="merchant-name-title"
@@ -100,6 +107,28 @@ export default function MerchantDisplayNameModal({
                 className="w-full rounded-2xl border border-black/15 bg-white px-3.5 py-2.5 text-sm font-bold text-[#111827] shadow-sm focus:border-[#00d2b4] focus:outline-none"
               />
             </div>
+            {/* Live Customer Checkout Preview */}
+            <div className="rounded-2xl border border-black/10 bg-white p-3 space-y-1.5 shadow-xs">
+              <span className="text-[9px] font-black uppercase tracking-wider text-black/45">
+                Customer Checkout Preview
+              </span>
+              <div className="flex items-center gap-2.5">
+                <div className="grid h-8 w-8 place-items-center rounded-full bg-[#2775CA] text-xs font-black text-white shrink-0">
+                  {((name.trim() || "M").slice(0, 2)).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1">
+                    <p className="truncate text-xs font-black text-[#0f172a]">
+                      {name.trim() || "Your Business Name"}
+                    </p>
+                    <span className="text-[10px] text-emerald-600 font-bold" title="SubScript Verified">
+                      ✓
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">SubScript Checkout · Arc Network</p>
+                </div>
+              </div>
+            </div>
 
             {error && <p className="text-[11px] font-semibold text-red-600">{error}</p>}
 
@@ -123,7 +152,7 @@ export default function MerchantDisplayNameModal({
               </button>
             </div>
           </motion.div>
-        </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );

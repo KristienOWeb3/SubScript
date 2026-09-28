@@ -43,8 +43,17 @@ export function AdminSupportTicketsView({
     const [statusUpdating, setStatusUpdating] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const chatScrollRef = useRef<HTMLDivElement>(null);
     const pollRef = useRef<NodeJS.Timeout | null>(null);
+
+    const scrollToBottom = (smooth = true) => {
+        if (chatScrollRef.current) {
+            chatScrollRef.current.scrollTo({
+                top: chatScrollRef.current.scrollHeight,
+                behavior: smooth ? "smooth" : "auto",
+            });
+        }
+    };
 
     // Load ticket details and messages
     const loadTicketMessages = useCallback(async (ticketId: string, isSilent = false) => {
@@ -56,7 +65,11 @@ export function AdminSupportTicketsView({
             setSelectedTicket(data.ticket);
             setError(null);
             if (!isSilent) {
-                setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+                setTimeout(() => {
+                    if (chatScrollRef.current) {
+                        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+                    }
+                }, 50);
             }
         } catch (err: any) {
             console.error("Failed to load ticket messages:", err);
@@ -131,7 +144,7 @@ export function AdminSupportTicketsView({
 
             if (data.ticket) {
                 setSelectedTicket(data.ticket);
-                setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+                setTimeout(() => scrollToBottom(true), 50);
             }
             fetchTickets(false);
         } catch (err: any) {
@@ -370,7 +383,7 @@ export function AdminSupportTicketsView({
                             )}
 
                             {/* Messages Container */}
-                            <div className="flex-1 overflow-y-auto space-y-3.5 my-3 pr-1">
+                            <div ref={chatScrollRef} className="flex-1 overflow-y-auto space-y-3.5 my-3 pr-1">
                                 {loadingMessages ? (
                                     <div className="p-3">
                                         <SkeletonRows count={3} avatar={true} lines={2} label="Loading conversation thread..." />
@@ -393,7 +406,7 @@ export function AdminSupportTicketsView({
                                                     <div className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-slate-400">
                                                         <span>{msg.senderAlias || (isAdmin ? "SubScript Admin" : `${msg.senderWallet.slice(0, 6)}...`)}</span>
                                                         {isAdmin && (
-                                                            <span className="rounded bg-sky-100 px-1 py-0.2 text-[8px] font-bold text-sky-800">
+                                                             <span className="rounded bg-sky-100 px-1 py-0.2 text-[8px] font-bold text-sky-800">
                                                                 ADMIN
                                                             </span>
                                                         )}
@@ -417,7 +430,6 @@ export function AdminSupportTicketsView({
                                         );
                                     })
                                 )}
-                                <div ref={messagesEndRef} />
                             </div>
 
                             {error && (

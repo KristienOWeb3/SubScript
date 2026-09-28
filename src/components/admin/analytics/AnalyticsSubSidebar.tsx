@@ -77,7 +77,7 @@ export function AnalyticsSubSidebar({
   };
 }) {
   return (
-    <div className="w-full lg:w-64 shrink-0 flex flex-col space-y-1.5 rounded-2xl border border-[#e2e8f0] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+    <div className="w-full xl:w-64 shrink-0 flex flex-col space-y-1.5 rounded-2xl border border-[#e2e8f0] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="px-3 py-2 border-b border-[#f1f5f9] mb-1">
         <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#64748b]">
           Analytics Views
@@ -85,7 +85,7 @@ export function AnalyticsSubSidebar({
         <h4 className="text-xs font-bold text-[#0f172a] mt-0.5">Protocol Intelligence</h4>
       </div>
 
-      <div className="flex lg:flex-col gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
+      <div className="flex xl:flex-col gap-1.5 overflow-x-auto pb-1 xl:pb-0 scrollbar-none">
         {ANALYTICS_SECTIONS.map((item) => {
           const Icon = item.icon;
           const isActive = activeSection === item.id;

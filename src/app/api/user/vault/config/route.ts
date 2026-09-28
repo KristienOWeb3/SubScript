@@ -71,7 +71,10 @@ export async function GET(request: Request) {
                 updatedAt: v.updatedAt
             }));
 
-            return NextResponse.json({ success: true, vaults: formattedVaults }, { status: 200 });
+            return NextResponse.json(
+                { success: true, vaults: formattedVaults },
+                { status: 200, headers: { "Cache-Control": "private, no-store, max-age=0" } }
+            );
         } else if (role === "ENTERPRISE") {
             const vaults = await prisma.meteredVault.findMany({
                 where: { merchantAddress: normalizedUser },
@@ -146,7 +149,10 @@ export async function GET(request: Request) {
                 updatedAt: v.updatedAt
             }));
 
-            return NextResponse.json({ success: true, vaults: formattedVaults }, { status: 200 });
+            return NextResponse.json(
+                { success: true, vaults: formattedVaults },
+                { status: 200, headers: { "Cache-Control": "private, no-store, max-age=0" } }
+            );
         } else {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }

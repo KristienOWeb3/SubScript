@@ -16,6 +16,7 @@ interface QuickAuthButtonsProps {
   isMetaMaskLoading?: boolean;
   disabled?: boolean;
   error?: string | null;
+  onGoogleError?: (error: string | null) => void;
   googleAvailable?: boolean;
   externalWalletEnabled?: boolean;
 }
@@ -78,6 +79,7 @@ export function MetaMaskColorSpinner({ className = "w-4 h-4" }: { className?: st
 
 export default function QuickAuthButtons({
   onGoogleSuccess,
+  onGoogleError,
   onMetaMaskClick,
   isMetaMaskLoading = false,
   disabled = false,
@@ -90,7 +92,11 @@ export default function QuickAuthButtons({
       <div className="flex items-center justify-center gap-3">
         {googleAvailable && (
           <div className="shrink-0">
-            <CircleGoogleWalletButton onSuccess={onGoogleSuccess} variant="icon" />
+            <CircleGoogleWalletButton
+              onSuccess={onGoogleSuccess}
+              onError={onGoogleError}
+              variant="icon"
+            />
           </div>
         )}
 

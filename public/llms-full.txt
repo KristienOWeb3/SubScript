@@ -56,7 +56,7 @@ Arc is the target foundation because it uses USDC as native gas and provides sub
 * **Sponsored Subscriptions / Pay for Me**: Third parties such as parents, employers, or teams can cover another user's subscription costs while preserving user privacy boundaries.
 * **Fiat-to-USDC Onboarding**: The product target is direct bank-transfer funding that converts fiat into USDC and deposits it into the user's SubScript wallet without external exchange/bridge complexity.
 * **Permit2 Authorization**: SubScript uses Permit2-style bounded allowances so funds remain liquid in the user's wallet until the exact billing-cycle or usage transaction executes.
-* **SubScript DNS Aliases**: Users and merchants can register human-readable payment identities for easier checkout, transfers, and recognition.
+* **Merchant identity**: Merchants have an immutable internal Merchant ID, an immutable public Commit name, and a governed customer-facing Display name. DNS aliases are consumer/P2P identities only.
 * **Privacy Premium**: Premium merchant flows use a 10 USDC/month baseline target and ArcaneVM / Arc Privacy Sector concepts for confidential execution, governed visibility, and selective disclosure of sensitive billing or payroll data.
 * **Merchant Protection Layer**: UPA payloads can include commitment concepts such as service lock windows, minimum terms, and grace periods. The protocol ceiling is 72 hours for digital goods and 30 days for SaaS seats.
 * **Smart Dunning Engine**: Failed payments can be retried on configurable schedules such as Day 1, Day 3, and Day 7, with notification and suspension hooks.
@@ -64,7 +64,7 @@ Arc is the target foundation because it uses USDC as native gas and provides sub
 
 ### Live vs Deployment-Scoped Protocol Claims
 
-Live platform primitives include Checkout Intents, hosted Arc USDC payment links, receipt tokens, event-sourced signed webhook fulfillment with best-effort delivery attempt tracking, metered vault usage reporting, DNS-style aliases, embedded Google wallet onboarding, premium merchant surfaces, and keeper-compatible API routes.
+Live platform primitives include Checkout Intents, hosted Arc USDC payment links, receipt tokens, event-sourced signed webhook fulfillment with best-effort delivery attempt tracking, metered vault usage reporting, merchant Commit names, consumer-only DNS aliases, embedded wallet onboarding, merchant verification surfaces, and keeper-compatible API routes.
 
 Deployment-scoped protocol targets include direct fiat-to-USDC onramps, standalone invoice objects with reminder schedules, sponsor spending caps and revocation workflows, per-day dunning schedules, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live. Live in v1 form as of 2026-07-20: invoice fields on payment links, sponsored-subscription beneficiaries, commitment windows (≤ one billing period, disclosed before authorization), per-merchant dunning retry counts, sandbox test clocks, the signup-free demo key, event-sourced merchant_events ledger, individual webhook_delivery_attempts tracking, environment-isolated webhook endpoints (TEST/LIVE), webhook secret rotation with grace-period overlap, stable auth identity binding, subscription attempt lifecycle tracking, spending limit operations and reservations, batch send operations, and profile closure state machine. (Encrypted private-key export is live for exportable email wallets; it does not apply to Circle developer-controlled MPC wallets.)
 
@@ -344,7 +344,7 @@ Checks whether one customer has an active metered vault for the authenticated me
   "code": "NO_VAULT",
   "onboarding": {
     "dashboardUrl": "https://www.subscriptonarc.com/dashboard/user?tab=commit&merchantAddress=0x...",
-    "action": "Ask the customer to open SubScript, choose Commit, select your merchant address, and escrow the required amount."
+    "action": "Ask the customer to open SubScript, choose Commit, enter your immutable Commit name, and escrow the required amount."
   }
 }
 ```

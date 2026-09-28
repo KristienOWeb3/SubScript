@@ -12,8 +12,6 @@ import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
-const WALLET_PLACEHOLDER = "0xYOUR_CONNECTED_WALLET_ADDRESS";
-
 const ERC20_ABI = [
     {
         type: "function",
@@ -32,9 +30,7 @@ const publicClient = createPublicClient({
 interface DashboardHeaderProps {
     embeddedWallet?: { wallet: string; email: string } | null;
     onDisconnect?: () => void;
-    onDepositSuccess?: () => void;
     promptFlowMode?: "standard" | "private";
-    onDeposit?: () => void;
     merchantAlias?: string | null;
     onDnsClick?: () => void;
     activeTab?: string;
@@ -48,9 +44,7 @@ interface DashboardHeaderProps {
 export default function DashboardHeader({
     embeddedWallet,
     onDisconnect,
-    onDepositSuccess,
     promptFlowMode = "standard",
-    onDeposit,
     merchantAlias: propMerchantAlias,
     onDnsClick,
     activeTab,
@@ -161,7 +155,6 @@ export default function DashboardHeader({
     }, [address, propMerchantAlias]);
 
     const shortAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
-    const depositAddress = address || WALLET_PLACEHOLDER;
     const bottomBarTabs = ["overview", "analytics", "apikeys", "checkout"];
     const showMobileBack = activeTab && !bottomBarTabs.includes(activeTab) && onBackToOverview;
 

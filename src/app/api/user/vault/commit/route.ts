@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { haltGuard } from "@/lib/accountHalt";
+import { isCommitSlug } from "@/lib/merchants/identity";
 import crypto from "crypto";
 
 export const maxDuration = 120;
@@ -51,19 +52,18 @@ export async function POST(request: Request) {
         if (typeof rawMerchantAddress !== "string") {
             return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
         }
-        let targetMerchant = rawMerchantAddress.toLowerCase();
-        const aliasRecord = await prisma.addressAlias.findFirst({
-            where: {
-                OR: [
-                    { address: targetMerchant },
-                    { alias: { equals: targetMerchant, mode: "insensitive" } },
-                ]
+        let targetMerchant = rawMerchantAddress.toLowerCase().trim();
+        if (isCommitSlug(targetMerchant)) {
+            const m = await prisma.merchant.findUnique({
+                where: { commitSlug: targetMerchant },
+                select: { walletAddress: true },
+            }).catch(() => null);
+            if (m) {
+                targetMerchant = m.walletAddress.toLowerCase();
             }
-        });
-        if (aliasRecord) {
-            targetMerchant = aliasRecord.address.toLowerCase();
-        } else if (!ethers.isAddress(targetMerchant)) {
-            return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
+        }
+        if (!ethers.isAddress(targetMerchant)) {
+            return NextResponse.json({ error: "Invalid merchant commit name or address" }, { status: 400 });
         }
         const merchantAddress = targetMerchant;
         let merchant = await prisma.merchant.findUnique({
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         const availableBalance = await readUsdcBalance(normalizedWallet);
         if (availableBalance < amount) {
             return NextResponse.json({
-                error: `Insufficient Arc balance. This wallet has ${formatUsdcMicros(availableBalance)} USDC available.`,
+                error: "Insufficient balance. top up and try again",
                 code: "INSUFFICIENT_WALLET_BALANCE",
                 availableBalanceUsdcMicros: availableBalance.toString(),
                 requiredBalanceUsdcMicros: amount.toString(),

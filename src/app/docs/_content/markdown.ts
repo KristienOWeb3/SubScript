@@ -175,6 +175,31 @@ integer-safe helper rather than \`Number(price) * 1e6\`, which reintroduces the 
 avoiding.
 `,
 
+  "merchant-identity": `# Merchant identity
+
+A merchant account has three names with separate jobs. Keeping them separate means customers never
+need a wallet address or an internal account identifier.
+
+| Name | Example | Used for | Change and routing rule |
+| --- | --- | --- | --- |
+| Merchant ID | \`merc_4c8837587d1e\` | Administration, verification, audit, and support. | Immutable. Never a payment recipient, Commit locator, or customer-entered value. |
+| Commit name | \`acme-cloud\` | Public metered-vault locator and \`/commit/<commit-name>\` links. | Immutable. Customers enter this exact value; it is not DNS. |
+| Display name | \`Acme Cloud\` | Branding on checkout, plans, DMs, receipts, and dashboards. | Chosen once and locked; an administrator can make an audited correction. |
+| DNS name | \`alice.sub\` | Consumer directory and peer-to-peer wallet lookup. | Not a merchant identity; never merchant verification or Commit lookup. |
+
+## Commit links and customer entry
+
+Share \`/commit/acme-cloud\`, or tell the customer to enter \`acme-cloud\` in the field labelled
+**Merchant commit name**. SubScript resolves the Commit name to the merchant's Arc settlement
+address internally. Merchant IDs and DNS names are rejected as Commit locators.
+
+## Where merchants check the values
+
+Merchant Dashboard → Settings → Business identity shows Merchant ID, Commit name, and Display name
+together. Copy the Commit name when helping a customer open a vault. Quote the Merchant ID only to
+SubScript administrators or support when an account must be located precisely.
+`,
+
   protocol: `# Protocol brief
 
 The protocol brief translates the feature document into the platform boundary: what is live today,
@@ -253,7 +278,8 @@ renewals and overdraft-style penalties structurally impossible rather than merel
 - **Merchant certainty** — intent IDs, webhook events, retry-aware billing state, payment links, and
   audit-friendly Arc receipt records instead of raw wallet guesswork.
 - **Protocol coverage** — Checkout Intents, payment links, metered vaults, signed webhooks, receipts,
-  DNS-style aliases, privacy-aware payment flows, retries, reconciliation, keeper-triggered renewals.
+  merchant Commit names, consumer-only DNS aliases, privacy-aware payment flows, retries,
+  reconciliation, keeper-triggered renewals.
 
 ## Deployment-scoped
 
@@ -544,9 +570,10 @@ check, which is why it is fast enough to sit in front of every unit of work.
 1. **The commitment is platform-fixed.** Every customer escrows the standard 2 USDC per cycle — not
    merchant-configurable (\`GET /api/merchant/vault/commit-config\` returns the policy), and your
    drawable settlement is capped at the same 2 USDC per customer per cycle.
-2. **Customer commits once per cycle.** They open \`/dashboard/user?tab=commit\`, choose your merchant
-   address, and escrow 2 USDC. The vault goes active for the 30-day cycle; settlement closes it, so
-   the next cycle requires a fresh commitment.
+2. **Customer commits once per cycle.** They open \`/dashboard/user?tab=commit\`, enter your
+   immutable Commit name, and escrow 2 USDC. Never ask them for your Merchant ID, DNS name, or
+   wallet address. The vault goes active for the 30-day cycle; settlement closes it, so the next
+   cycle requires a fresh commitment.
 3. **Check readiness.** \`GET /api/user/vault/status?userAddress=0x...\` with your secret key returns
    \`NO_VAULT\`, \`VAULT_INACTIVE\`, or \`VAULT_ACTIVE\`, plus a dashboard URL to show the customer.
 4. **Report before you serve.** Call \`POST /api/user/vault/report-usage\` BEFORE rendering each unit,
@@ -815,6 +842,11 @@ configured payout destination and return \`merchant_payout_wallet_missing\` if s
 
 **Does the merchant need to track wallets?** No. Track Checkout Intent IDs. SubScript maps wallet
 payment activity to the off-chain intent and sends the signed result.
+
+**Which merchant name should I use?** Use the Display name for customer-facing branding, the
+immutable Commit name for \`/commit\` links and the user Commit form, and the immutable Merchant ID
+only for administration, verification, audit, or support. DNS names are for consumer P2P identity
+and are not merchant identifiers.
 
 ## Billing models
 

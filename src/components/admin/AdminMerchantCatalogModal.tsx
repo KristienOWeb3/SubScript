@@ -21,7 +21,7 @@ type MerchantDetail = {
     merchantId: string;
     displayName: string;
     displayNameLocked: boolean;
-    tier: string;
+    commitSlug?: string;
     verified: boolean;
     availableBalanceUsdc: string;
     reservedBalanceUsdc: string;
@@ -218,8 +218,17 @@ export function AdminMerchantCatalogModal({
                     <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold">Merchant ID</p>
                     <p className="font-mono text-gray-900">{data.merchant.merchantId}</p>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-700">Permanent</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-700">Internal</span>
                 </div>
+                {data.merchant.commitSlug && (
+                  <div className="flex items-center justify-between gap-2 border-t border-gray-100 pt-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold">Commit Name</p>
+                      <p className="font-mono text-gray-900">{data.merchant.commitSlug}</p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">Permanent Public</span>
+                  </div>
+                )}
                 <div className="flex items-start justify-between gap-2 border-t border-gray-100 pt-2">
                   <div className="flex-1">
                     <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold">Display name</p>

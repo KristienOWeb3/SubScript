@@ -231,9 +231,11 @@ test("recent transaction surfaces render both local date and time", () => {
     const history = source("src/app/dashboard/user/transactions/page.tsx");
     const merchant = source("src/app/dashboard/page.tsx");
 
-    assert.match(dashboard, /new Date\(tx\.time\)\.toLocaleString/);
+    /* Consumer transaction rows now share the explicitly-tested DD/MM/YYYY, HH:mm:ss formatter
+       instead of relying on each browser's opaque toLocaleString output. */
+    assert.match(dashboard, /formatTransaction(?:DateTime|Subtitle)\(/);
     assert.match(dashboard, /new Date\(tx\.createdAt\)\.toLocaleString/);
-    assert.match(history, /new Date\(tx\.time\)\.toLocaleString/);
+    assert.match(history, /formatTransactionDateTime\(tx\.time\)/);
     assert.match(merchant, /new Date\(tx\.createdAt\)\.toLocaleString/);
 });
 

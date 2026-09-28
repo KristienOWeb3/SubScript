@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAdmin } from "@/lib/admin/guard";
 import {
@@ -6,6 +6,11 @@ import {
     updateSupportTicketStatus,
     type SupportTicketStatus,
 } from "@/lib/support/tickets";
+import {
+    sendSupportTicketResolvedEmail,
+    sendSupportTicketClosedEmail,
+    sendSupportTicketReopenedEmail,
+} from "@/lib/email/templates/support";
 
 export async function POST(
     request: Request,
@@ -30,6 +35,35 @@ export async function POST(
         }
 
         const ticket = await getSupportTicketWithMessages(ticketId);
+
+        if (ticket && ticket.creatorWallet.toLowerCase() !== auth.admin.wallet.toLowerCase()) {
+            after(async () => {
+                try {
+                    if (action === "RESOLVE") {
+                        await sendSupportTicketResolvedEmail({
+                            creatorWallet: ticket.creatorWallet,
+                            ticketId: ticket.id,
+                            subject: ticket.subject,
+                        });
+                    } else if (action === "CLOSE") {
+                        await sendSupportTicketClosedEmail({
+                            creatorWallet: ticket.creatorWallet,
+                            ticketId: ticket.id,
+                            subject: ticket.subject,
+                        });
+                    } else if (action === "REOPEN") {
+                        await sendSupportTicketReopenedEmail({
+                            creatorWallet: ticket.creatorWallet,
+                            ticketId: ticket.id,
+                            subject: ticket.subject,
+                        });
+                    }
+                } catch (emailErr) {
+                    console.error("[support/tickets] Failed to send status email:", emailErr);
+                }
+            });
+        }
+
         return NextResponse.json({ success: true, ticket });
     } catch (error: any) {
         console.error("[api/support/tickets/[id]/claim] POST failed:", error);

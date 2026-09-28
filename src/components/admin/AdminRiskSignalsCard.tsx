@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   ShieldAlert,
   AlertTriangle,
-  Zap,
   Activity,
   UserX,
   RefreshCw,
@@ -111,7 +110,7 @@ export function AdminRiskSignalsCard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5">
           <span className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1">
-            <Zap className="h-3 w-3 text-amber-600" /> Velocity Structuring
+            <Activity className="h-3 w-3 text-amber-600" /> Velocity Structuring
           </span>
           <p className="mt-1 text-xl font-black text-[#0f172a]">
             {data?.highVelocityPayers.length || 0}

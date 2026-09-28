@@ -6,6 +6,7 @@ import Image from "next/image";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
+    Activity,
     ArrowRight,
     ArrowUpRight,
     BarChart3,
@@ -26,7 +27,6 @@ import {
     Wallet,
     Webhook,
     X as CloseIcon,
-    Zap,
 } from "@/components/icons";
 
 /* Static section wrapper. The page deliberately has no scroll-reveal animation — the fades read as
@@ -313,12 +313,12 @@ function LandingHeader() {
                                     if (closeTimer.current) window.clearTimeout(closeTimer.current);
                                 }}
                                 onMouseLeave={scheduleClose}
-                                initial={{ opacity: 0, y: -10, scaleY: 0.7, filter: "blur(1.5px)" }}
-                                animate={{ opacity: 1, y: 0, scaleY: 1, filter: "blur(0px)" }}
-                                exit={{ opacity: 0, y: -8, scaleY: 0.85, filter: "blur(1.5px)" }}
-                                transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                initial={{ opacity: 0, y: -6, scaleY: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scaleY: 1 }}
+                                exit={{ opacity: 0, y: -6, scaleY: 0.95 }}
+                                transition={{ duration: 0.15, ease: "easeOut" }}
                                 style={{ transformOrigin: "top center" }}
-                                className="absolute inset-x-0 top-full z-40 hidden lg:block"
+                                className="absolute inset-x-0 top-full z-40 hidden lg:block transform-gpu"
                             >
                                 <motion.div
                                     variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06, delayChildren: 0.08 } } }}
@@ -516,7 +516,7 @@ function SectionHeading({ eyebrow, title, description }: { eyebrow: string; titl
 export default function Home() {
     const featureCardsLarge = [
         {
-            icon: Zap,
+            icon: Activity,
             title: "Programmable recurring payments",
             text: "Bounded USDC payment authorizations via Permit2, with revocation controls the customer holds. Funds stay in the customer's wallet until each billing cycle executes. There are no locked balances, and no charges after cancellation.",
         },

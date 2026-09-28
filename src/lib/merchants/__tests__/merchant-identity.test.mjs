@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import {
     generateMerchantId,
     isMerchantId,
+    isCommitSlug,
     deriveDisplayNameFromEmail,
     sanitizeDisplayName,
     resolveMerchantDisplayName,
@@ -34,6 +35,17 @@ test("isMerchantId accepts merchant ids and rejects addresses, .sub handles, and
     assert.equal(isMerchantId(""), false);
     assert.equal(isMerchantId(null), false);
     assert.equal(isMerchantId(42), false);
+});
+
+test("isCommitSlug accepts only canonical public Commit names", () => {
+    assert.equal(isCommitSlug("acme-cloud"), true);
+    assert.equal(isCommitSlug("  ACME-CLOUD  "), true);
+    assert.equal(isCommitSlug("ab"), false);
+    assert.equal(isCommitSlug("-acme"), false);
+    assert.equal(isCommitSlug("acme-"), false);
+    assert.equal(isCommitSlug("Acme Cloud"), false);
+    assert.equal(isCommitSlug("merc_01k9d7a2f8ab"), false);
+    assert.equal(isCommitSlug("0x1111111111111111111111111111111111111111"), false);
 });
 
 test("deriveDisplayNameFromEmail title-cases the local part and drops the domain", () => {
@@ -113,4 +125,43 @@ test("users cannot send P2P funds to a merchant id", () => {
     const resolver = dash.slice(dash.indexOf("const resolveRecipient"), dash.indexOf("const resolveRecipient") + 900);
     assert.match(resolver, /isMerchantId\(trimmed\)/);
     assert.match(resolver, /return null/);
+});
+
+test("merchant Commit names are immutable public locators and never merchant IDs", () => {
+    const migration = source("supabase/migrations/20260926150000_add_merchant_commit_slug.sql");
+    const page = source("src/app/commit/[merchantAddress]/page.tsx");
+    const api = source("src/app/api/v1/commits/route.ts");
+    const settings = source("src/app/dashboard/page.tsx");
+
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS commit_slug TEXT/);
+    assert.match(migration, /merchants_commit_slug_key UNIQUE \(commit_slug\)/);
+    assert.match(migration, /merchants_commit_slug_format_chk/);
+    assert.match(migration, /enforce_merchant_commit_slug_immutable/);
+    assert.match(page, /where: \{ commitSlug: normalized \}/);
+    assert.doesNotMatch(page, /addressAlias|address_aliases/);
+    assert.match(api, /\/commit\/\$\{merchant\.commitSlug\}/);
+    assert.match(settings, /Merchant ID[\s\S]*Commit name[\s\S]*Display name/);
+});
+
+test("the user Commit flow asks for a merchant Commit name without DNS fallback", () => {
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+    const aliasRoute = source("src/app/api/merchant/alias/route.ts");
+    const commitRoute = source("src/app/api/user/vault/commit/route.ts");
+
+    assert.match(dashboard, /Field label=\{vaultActionMode === "commit" \? "Merchant commit name"/);
+    assert.match(dashboard, /merchantCommitOnly=true/);
+    assert.match(aliasRoute, /if \(merchantCommitOnly\)[\s\S]*address: null/);
+    assert.doesNotMatch(commitRoute, /prisma\.addressAlias/);
+});
+
+test("merchant dashboards do not load the consumer cross-chain deposit modal", () => {
+    const dashboard = source("src/app/dashboard/page.tsx");
+    const overview = source("src/components/dashboard/MerchantOverview.tsx");
+    const payroll = source("src/app/dashboard/payroll/PayrollContent.tsx");
+    const userDashboard = source("src/app/dashboard/user/page.tsx");
+
+    for (const merchantSurface of [dashboard, overview, payroll]) {
+        assert.doesNotMatch(merchantSurface, /DepositModal|onDeposit|isDepositOpen/);
+    }
+    assert.match(userDashboard, /import DepositModal from "@\/components\/DepositModal"/);
 });

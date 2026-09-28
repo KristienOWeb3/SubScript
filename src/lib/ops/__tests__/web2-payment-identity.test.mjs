@@ -40,7 +40,7 @@ test("receipts and customer activity keep proof inside SubScript", async () => {
     assert.doesNotMatch(dashboard, /placeholder="merchant\.sub or 0x\.\.\."/i);
     assert.match(
         dashboard,
-        /fetch\(`\/api\/merchant\/alias\?alias=\$\{encodeURIComponent\(merchantAddress\)\}`\)/,
+        /merchantCommitOnly=true/,
     );
     assert.doesNotMatch(
         dashboard,

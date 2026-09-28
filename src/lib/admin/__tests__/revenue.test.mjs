@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS, SUBSCRIPT_PROTOCOL_FEE_BPS } from "../../contracts/constants.js";
+import { SUBSCRIPT_PROTOCOL_FEE_BPS } from "../../contracts/constants.js";
 import { formatFeeBps } from "../../cctp/feeEngine.js";
 
 function source(relativePath) {
@@ -36,14 +36,14 @@ test("the revenue tab is hidden from non-root admins on every navigation surface
   assert.match(page, /\{ id: "revenue", label: "Revenue", rootOnly: true \}/);
 });
 
-test("revenue counts premium payments once, not also as a 1% cut of themselves", () => {
+test("revenue attribution uses receipt provenance, not a recipient address", () => {
   const route = source(ROUTE);
 
-  /* Premium receipts are addressed to us, so the whole amount is income. Leaving them in the
-     protocol-fee base would additionally bill 1% of our own revenue to ourselves. */
-  assert.match(route, /merchantAddress: \{ not: premiumRecipient \}/);
-  assert.match(route, /merchantAddress: premiumRecipient/);
-  assert.ok(PREMIUM_PAYMENT_RECIPIENT_ADDRESS.startsWith("0x"));
+  /* A peer transfer to the treasury is still a peer transfer. Inferring revenue from an address
+     caused exactly that transfer to inflate both Top Merchants and platform revenue. */
+  assert.match(route, /sourceType: \{ in: \["COMMERCE_PAYMENT", "SUBSCRIPTION"\] \}/);
+  assert.match(route, /sourceType: "RETIRED_PREMIUM"/);
+  assert.doesNotMatch(route, /merchantAddress:.*premiumRecipient/);
 });
 
 test("the protocol fee rate comes from config, not a hardcoded divisor", () => {

@@ -15,7 +15,6 @@ import {
     Users,
     BarChart3,
     Sparkles,
-    Plus,
     Check,
 } from "@/components/icons";
 import type { MerchantOverviewSummary, MerchantOverviewRange } from "@/lib/analytics/merchantOverview";
@@ -165,10 +164,9 @@ export default function MerchantOverview({
     theme = "light",
     onToggleBalance,
     onRefresh,
-    onSend,
     onReceive,
+    onSend,
     onWithdraw,
-    onDeposit,
     onScanQr,
     onViewPlans,
 }: {
@@ -183,10 +181,9 @@ export default function MerchantOverview({
     theme?: "light" | "dark";
     onToggleBalance: () => void;
     onRefresh: () => void;
+    onReceive?: () => void;
     onSend: () => void;
-    onReceive: () => void;
     onWithdraw: () => void;
-    onDeposit?: () => void;
     onScanQr?: () => void;
     onViewPlans: () => void;
 }) {
@@ -195,8 +192,13 @@ export default function MerchantOverview({
     const [loading, setLoading] = useState(false);
     const [selectedPlanFilter, setSelectedPlanFilter] = useState<string>("ALL");
 
-    const fetchOverview = useCallback(async () => {
-        setLoading(true);
+    const overviewRef = useRef<MerchantOverviewSummary | null>(null);
+    overviewRef.current = overview;
+
+    const fetchOverview = useCallback(async (silent = false) => {
+        if (!silent && !overviewRef.current) {
+            setLoading(true);
+        }
         try {
             const defaultEnv =
                 activeArcChain.id === ARC_TESTNET_CHAIN_ID ||
@@ -221,8 +223,8 @@ export default function MerchantOverview({
     useEffect(() => {
         fetchOverview();
         const timer = setInterval(() => {
-            fetchOverview();
-        }, 30000);
+            fetchOverview(true);
+        }, 15000);
         return () => clearInterval(timer);
     }, [fetchOverview]);
 
@@ -249,6 +251,7 @@ export default function MerchantOverview({
     }, [overview]);
 
     const isRefreshing = isRefreshingBalances || loading;
+    const isInitialLoading = !overview && loading;
 
     const rangeCaption =
         RANGE_OPTIONS.find((option) => option.id === range)?.caption ?? "Settled";
@@ -264,7 +267,62 @@ export default function MerchantOverview({
         <div className="max-w-[1340px] mx-auto space-y-4 sm:space-y-5 pb-20 text-black md:pb-6 text-sm">
             {/* Top 4 Stat Cards Row */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-5">
-                {/* 1. Earnings Card */}
+                {/* 1. Spendable Card */}
+                <OverviewCard className="min-h-[220px] flex flex-col justify-between">
+                    <div>
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-base font-bold sm:text-lg text-[#082824]">
+                                Spendable
+                            </h2>
+                            <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider">
+                                Wallet
+                            </span>
+                        </div>
+
+                        {isInitialLoading ? (
+                            <div className="mt-4 space-y-2">
+                                <div className="h-9 w-32 rounded-xl bg-black/[0.08] animate-pulse" />
+                                <div className="h-3.5 w-40 rounded bg-black/[0.05] animate-pulse" />
+                            </div>
+                        ) : (
+                            <div className="mt-4">
+                                <p className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[#082824]">
+                                    {balanceVisible
+                                        ? `${walletBalance.toLocaleString("en-US", {
+                                              minimumFractionDigits: 2,
+                                              maximumFractionDigits: 2,
+                                          })}`
+                                        : "••••••••"}
+                                </p>
+                                <p className="mt-1 text-[11px] text-black/60">
+                                    Instant spendable balance
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-5 pt-2 grid grid-cols-2 gap-2 w-full">
+                        {onReceive && (
+                            <button
+                                onClick={onReceive}
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white px-5 py-2 text-xs font-bold text-[#082824] shadow-sm transition hover:bg-black/5 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+                            >
+                                <ArrowDown className="h-3.5 w-3.5 shrink-0 text-[#2775CA]" />
+                                Deposit
+                            </button>
+                        )}
+                        <button
+                            onClick={onSend}
+                            disabled={walletBalance <= 0}
+                            className={`${onReceive ? "w-full" : "col-span-2 w-full"} inline-flex items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white px-6 py-2 text-xs font-bold text-[#082824] shadow-sm transition hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20`}
+                        >
+                            <Send className="h-3.5 w-3.5 shrink-0" />
+                            Send
+                        </button>
+                    </div>
+                </OverviewCard>
+
+                {/* 2. Earnings Card */}
                 <OverviewCard className="min-h-[220px] flex flex-col justify-between">
                     <div>
                         <div className="flex items-center justify-between gap-2">
@@ -292,7 +350,7 @@ export default function MerchantOverview({
                             />
                         </div>
 
-                        {isRefreshing ? (
+                        {isInitialLoading ? (
                             <div className="mt-4 space-y-2">
                                 <div className="h-9 w-36 rounded-xl bg-black/[0.08] animate-pulse" />
                                 <div className="h-3.5 w-48 rounded bg-black/[0.05] animate-pulse" />
@@ -300,7 +358,7 @@ export default function MerchantOverview({
                         ) : (
                             <div className="mt-4">
                                 <p className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[#082824]">
-                                    {balanceVisible ? `$${earnings}` : "••••••••"}
+                                    {balanceVisible ? `${earnings}` : "••••••••"}
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Net settled ({rangeCaption})
@@ -309,73 +367,21 @@ export default function MerchantOverview({
                         )}
                     </div>
 
-                    <div className="mt-5 flex items-center justify-between gap-2 pt-2">
-                        <button
-                            onClick={onDeposit || onReceive}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#000000] px-6 py-2 text-xs font-bold text-white transition hover:bg-black/85 shadow-sm"
-                        >
-                            <Plus className="h-3.5 w-3.5" /> Deposit
-                        </button>
+                    <div className="mt-5 flex items-center justify-end gap-2 pt-2">
                         <button
                             onClick={() => {
                                 onRefresh();
-                                fetchOverview();
+                                fetchOverview(true);
                             }}
-                            disabled={isRefreshing}
+                            disabled={isRefreshingBalances}
                             title="Refresh"
                             className="p-2 text-black/50 hover:text-black transition rounded-full hover:bg-black/5 disabled:opacity-40"
                         >
                             <RefreshCw
                                 className={`h-3.5 w-3.5 ${
-                                    isRefreshing ? "animate-spin" : ""
+                                    isRefreshingBalances ? "animate-spin" : ""
                                 }`}
                             />
-                        </button>
-                    </div>
-                </OverviewCard>
-
-                {/* 2. Spendable Card */}
-                <OverviewCard className="min-h-[220px] flex flex-col justify-between">
-                    <div>
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-base font-bold sm:text-lg text-[#082824]">
-                                Spendable
-                            </h2>
-                            <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider">
-                                Wallet
-                            </span>
-                        </div>
-
-                        {isRefreshing ? (
-                            <div className="mt-4 space-y-2">
-                                <div className="h-9 w-32 rounded-xl bg-black/[0.08] animate-pulse" />
-                                <div className="h-3.5 w-40 rounded bg-black/[0.05] animate-pulse" />
-                            </div>
-                        ) : (
-                            <div className="mt-4">
-                                <p className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[#082824]">
-                                    {balanceVisible
-                                        ? `$${walletBalance.toLocaleString("en-US", {
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2,
-                                          })}`
-                                        : "••••••••"}
-                                </p>
-                                <p className="mt-1 text-[11px] text-black/60">
-                                    Instant spendable balance
-                                </p>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="mt-5 pt-2">
-                        <button
-                            onClick={onSend}
-                            disabled={walletBalance <= 0}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white px-6 py-2 text-xs font-bold text-[#082824] shadow-sm transition hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
-                        >
-                            <Send className="h-3.5 w-3.5 shrink-0" />
-                            Send
                         </button>
                     </div>
                 </OverviewCard>
@@ -392,7 +398,7 @@ export default function MerchantOverview({
                             </span>
                         </div>
 
-                        {isRefreshing ? (
+                        {isInitialLoading ? (
                             <div className="mt-4 space-y-2">
                                 <div className="h-9 w-32 rounded-xl bg-black/[0.08] animate-pulse" />
                                 <div className="h-3.5 w-40 rounded bg-black/[0.05] animate-pulse" />
@@ -401,7 +407,7 @@ export default function MerchantOverview({
                             <div className="mt-4">
                                 <p className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[#082824]">
                                     {balanceVisible
-                                        ? `$${vaultBalance.toLocaleString("en-US", {
+                                        ? `${vaultBalance.toLocaleString("en-US", {
                                               minimumFractionDigits: 2,
                                               maximumFractionDigits: 2,
                                           })}`
@@ -435,7 +441,7 @@ export default function MerchantOverview({
                             <Sparkles className="h-4 w-4 text-[#2775CA]" />
                         </div>
 
-                        {isRefreshing ? (
+                        {isInitialLoading ? (
                             <div className="mt-4 space-y-2">
                                 <div className="h-9 w-32 rounded-xl bg-black/[0.08] animate-pulse" />
                                 <div className="h-3.5 w-40 rounded bg-black/[0.05] animate-pulse" />
@@ -484,7 +490,7 @@ export default function MerchantOverview({
                                     {rangeCaption} gross:{" "}
                                     <strong
                                         className={`text-[#082824] ${
-                                            isRefreshing ? "animate-number-shimmer" : ""
+                                            ""
                                         }`}
                                     >
                                         ${grossTotal} USDC
@@ -503,7 +509,7 @@ export default function MerchantOverview({
                             </div>
                         </div>
 
-                        {isRefreshing ? (
+                        {isInitialLoading ? (
                             <div className="mt-4 h-[240px] animate-pulse rounded-2xl bg-black/[0.04]" />
                         ) : (
                             <MerchantTrendChart
@@ -527,7 +533,7 @@ export default function MerchantOverview({
                         </div>
 
                         <div className="mt-4 space-y-2.5">
-                            {isRefreshing ? (
+                            {isInitialLoading ? (
                                 Array.from({ length: 4 }).map((_, i) => (
                                     <div
                                         key={i}
@@ -556,7 +562,7 @@ export default function MerchantOverview({
                                         <div className="text-right shrink-0">
                                             <span
                                                 className={`font-extrabold text-sm text-[#082824] dark:text-white ${
-                                                    isRefreshing ? "animate-number-shimmer" : ""
+                                                    ""
                                                 }`}
                                             >
                                                 {plan.activeSubscriberCount.toLocaleString()}
@@ -629,7 +635,7 @@ export default function MerchantOverview({
                     ))}
                 </div>
 
-                {isRefreshing ? (
+                {isInitialLoading ? (
                     <div className="mt-4 space-y-2">
                         {Array.from({ length: 3 }).map((_, i) => (
                             <div key={i} className="h-12 w-full rounded-2xl bg-white/40 animate-pulse" />
@@ -669,7 +675,7 @@ export default function MerchantOverview({
                                             </td>
                                             <td
                                                 className={`py-3 font-bold ${
-                                                    isRefreshing ? "animate-number-shimmer" : ""
+                                                    ""
                                                 }`}
                                             >
                                                 ${row.limit} USDC
@@ -708,7 +714,7 @@ export default function MerchantOverview({
                                         <span>{row.planName || "Direct / Custom"}</span>
                                         <span
                                             className={`font-bold text-[#082824] ${
-                                                isRefreshing ? "animate-number-shimmer" : ""
+                                                ""
                                             }`}
                                         >
                                             ${row.limit} USDC

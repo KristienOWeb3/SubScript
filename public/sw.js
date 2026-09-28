@@ -6,9 +6,16 @@
  *     and API call goes to the network. The cache is used solely to render /offline.html when
  *     the network is unreachable, so balances and receipts can never be served stale.
  */
-const CACHE_VERSION = "subscript-v2";
+const CACHE_VERSION = "subscript-v3";
 const OFFLINE_URL = "/offline.html";
-const PRECACHE_URLS = [OFFLINE_URL, "/icon-192.png", "/favicon.ico"];
+const PRECACHE_URLS = [
+  OFFLINE_URL,
+  "/icon-192.png",
+  "/favicon.ico",
+  "/fonts/SukarBold.ttf",
+  "/fonts/SukarRegular.ttf",
+  "/fonts/SukarBlack.ttf",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

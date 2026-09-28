@@ -18,6 +18,7 @@ export interface BindTxToReceiptInput {
     isShielded?: boolean;
     merchantViewKeyHash?: string | null;
     confirmedAt?: string;
+    sourceType?: "COMMERCE_PAYMENT" | "SUBSCRIPTION" | "WALLET_TRANSFER" | "RETIRED_PREMIUM";
 }
 
 export interface BindTxToReceiptResult {
@@ -73,6 +74,7 @@ export async function bindTxToReceipt(
         beneficiary_address: normalizedBeneficiary,
         merchant_address: normalizedMerchant,
         amount_usdc: amountStr,
+        source_type: input.sourceType || "COMMERCE_PAYMENT",
         title: input.title?.trim() || null,
         memo_note: memoNote,
         share_url: shareUrl,

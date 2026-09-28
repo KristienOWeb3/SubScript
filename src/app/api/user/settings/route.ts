@@ -42,10 +42,10 @@ export async function GET(request: Request) {
         const role = await getAccountRole(normalizedUser) || "USER";
 
         // Fetch alias if it exists
-        const aliasRecord = await prisma.addressAlias.findUnique({
+        const aliasRecord = role === "USER" ? await prisma.addressAlias.findUnique({
             where: { address: normalizedUser },
             select: { alias: true, isAnonymous: true },
-        }).catch(() => null);
+        }).catch(() => null) : null;
         const embeddedWalletRecord = await pgMaybeOne<{
             email: string | null;
             provider: string | null;
@@ -88,11 +88,12 @@ export async function GET(request: Request) {
                 settings = {
                     role,
                     profilePic: safeProfilePicOrNull(merchant.profilePic),
-                    alias: aliasRecord?.alias || null,
-                    isAnonymous: aliasRecord?.isAnonymous || false,
+                    alias: null,
+                    isAnonymous: false,
                     verified: merchant.verified,
                     tier: merchant.tier,
                     merchantId: merchant.merchantId,
+                    commitSlug: merchant.commitSlug,
                     displayName: merchant.displayName,
                     displayNameLocked: merchant.displayNameLocked,
                     pushEnabled: merchant.pushEnabled,

@@ -150,7 +150,7 @@ export async function GET(
                     createdAt: customer.createdAt,
                 } : null,
                 merchant: merchant ? {
-                    tier: merchant.tier,
+                    merchantId: merchant.merchantId,
                     verified: merchant.verified,
                     availableBalanceUsdc: (Number(merchant.availableBalanceUsdc) / 1_000_000).toFixed(2),
                     reservedBalanceUsdc: (Number(merchant.reservedBalanceUsdc) / 1_000_000).toFixed(2),

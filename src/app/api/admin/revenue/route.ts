@@ -3,7 +3,6 @@ import { requireRootAdmin } from "@/lib/admin/guard";
 import { prisma } from "@/lib/prisma";
 import { pgQuery } from "@/lib/serverPg";
 import {
-    PREMIUM_PAYMENT_RECIPIENT_ADDRESS as RETIRED_PLAN_RECIPIENT_ADDRESS,
     SUBSCRIPT_PROTOCOL_FEE_BPS,
     CCTP_CONFIG,
 } from "@/lib/contracts/constants";
@@ -65,20 +64,18 @@ export async function GET(request: Request) {
             h24: new Date(now.getTime() - 24 * 60 * 60 * 1000),
         };
 
-        const premiumRecipient = RETIRED_PLAN_RECIPIENT_ADDRESS.toLowerCase();
-
-        /* Merchant volume that earns us the protocol fee: confirmed receipts that are not premium
-           payments to ourselves. */
+        /* Revenue attribution comes from immutable receipt provenance, never from the recipient
+           address. A normal wallet transfer to a treasury address is not platform revenue. */
         const merchantVolumeWhere = (from?: Date) => ({
             status: "CONFIRMED",
-            merchantAddress: { not: premiumRecipient },
+            sourceType: { in: ["COMMERCE_PAYMENT", "SUBSCRIPTION"] },
             ...(from ? { confirmedAt: { gte: from } } : {}),
         });
 
         /* Historical premium plans. Preserved for accounting; new paid plans are disabled. */
         const premiumWhere = (from?: Date) => ({
             status: "CONFIRMED",
-            merchantAddress: premiumRecipient,
+            sourceType: "RETIRED_PREMIUM",
             ...(from ? { confirmedAt: { gte: from } } : {}),
         });
 

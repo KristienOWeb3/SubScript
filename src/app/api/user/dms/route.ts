@@ -385,6 +385,7 @@ export async function POST(request: Request) {
                         merchantAddress: normalizedReceiver,
                         amountUsdc: amountMicros,
                         title: title || `${amountUsdc} USDC Transfer`,
+                        sourceType: "WALLET_TRANSFER",
                     }).catch((err) => console.error("Failed to bind transfer receipt:", err));
                 }
                 await sendSettlementReceipts({

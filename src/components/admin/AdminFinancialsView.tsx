@@ -224,7 +224,7 @@ export function AdminFinancialsView() {
         <div>
           <h2 className="text-xl font-bold text-[#0f172a]">Financials & Settlement Ledger</h2>
           <p className="text-xs text-[#64748b]">
-            Platform-wide reconciled volume, 1% fee revenue, metered vault escrows, merchant payouts, and refund ledger.
+            Platform-wide reconciled volume, metered vault escrows, merchant payouts, and refund ledger.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -263,7 +263,7 @@ export function AdminFinancialsView() {
       )}
 
       {/* Summary KPI Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between text-[#64748b]">
             <span className="text-[11px] font-bold uppercase tracking-wider">Total Settled GMV</span>
@@ -274,19 +274,6 @@ export function AdminFinancialsView() {
           </p>
           <p className="mt-1 text-[11px] text-[#64748b]">
             {data?.summary.totalSettledCount || 0} confirmed on-chain receipts
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Platform 1% Revenue</span>
-            <TrendingUp className="h-4 w-4 text-emerald-600" />
-          </div>
-          <p className="mt-2 text-2xl font-black text-emerald-600">
-            ${data?.summary.feeRevenueUsdc || "0.00"}
-          </p>
-          <p className="mt-1 text-[11px] text-[#64748b]">
-            ${data?.summary.feeRevenue30dUsdc || "0.00"} last 30 days
           </p>
         </div>
 
@@ -356,7 +343,7 @@ export function AdminFinancialsView() {
           <p className="text-base font-black text-[#0f172a] mt-0.5">
             ${data?.summary.volume24hUsdc || "0.00"}
           </p>
-          <p className="text-[10px] text-[#94a3b8]">1% fee: ${data?.summary.feeRevenue24hUsdc || "0.00"}</p>
+          <p className="text-[10px] text-[#94a3b8]">Past 24 hours</p>
         </div>
 
         <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-3">

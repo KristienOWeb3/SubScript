@@ -65,8 +65,9 @@ export default function UsagePage() {
           </li>
           <li>
             <span className="font-bold text-[#111827]">Customer commits once per cycle.</span> They open{" "}
-            <span className="font-mono">/dashboard/user?tab=commit</span>, choose your merchant address, and escrow
-            the standard 2 USDC from their SubScript wallet. The vault goes{" "}
+            <span className="font-mono">/dashboard/user?tab=commit</span>, enter your immutable Commit name, and
+            escrow the standard 2 USDC from their SubScript wallet. They should never be asked for your Merchant ID,
+            DNS name, or wallet address. The vault goes{" "}
             <span className="font-bold text-[#2775CA]">active</span> for the 30-day cycle; settlement closes it,
             so the next cycle requires a fresh commitment.
           </li>

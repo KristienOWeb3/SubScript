@@ -181,6 +181,9 @@ model Merchant {
   // Immutable public identity, decoupled from any .sub/.hq/.biz DNS handle. Generated once and
   // never editable by anyone (a DB trigger enforces immutability). Not routable for P2P.
   merchantId              String           @unique @default(dbgenerated("('merc_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))")) @map("merchant_id")
+  // Immutable, URL-safe public locator for /commit/<name>. This is not a user cmt_* bearer ID and
+  // is never accepted as authorization. A DB trigger derives it from displayName on insert.
+  commitSlug              String           @unique @default(dbgenerated("('merchant-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))")) @map("commit_slug")
   // Admin-governed business name shown on checkout, receipts, and user dashboards. Set once by a
   // self-serve merchant (then locked) or supplied by an admin on invite; only admins change it after.
   displayName             String           @default("") @map("display_name")
@@ -643,6 +646,9 @@ model Receipt {
   beneficiaryAddress   String?   @map("beneficiary_address")
   merchantAddress      String    @map("merchant_address")
   amountUsdc           BigInt    @map("amount_usdc")
+  /// Immutable provenance used by analytics and revenue attribution. A wallet transfer is still a
+  /// valid receipt, but it must never be counted as merchant GMV or protocol revenue.
+  sourceType           String    @default("COMMERCE_PAYMENT") @map("source_type")
   /* What the payment was for, in the payer's words: the checkout title, plan name, or
      intent title captured at settlement. Nullable because receipts written before this
      column existed have no recorded subject, and receipts indexed straight from an Arc
@@ -663,8 +669,28 @@ model Receipt {
   @@index([beneficiaryAddress], map: "receipts_beneficiary_address_idx")
   @@index([merchantAddress])
   @@index([status])
+  @@index([sourceType, status, confirmedAt], map: "receipts_source_status_confirmed_idx")
   @@index([paymentLinkId])
   @@map("receipts")
+}
+
+/// Server-only operational ledger for user-paid Arc gas reimbursements. These rows are never
+/// merchant payments, receipts, GMV, subscription revenue, or protocol fees.
+model ArcNetworkFeeRecovery {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionType         String   @default("ARC_NETWORK_FEE") @map("transaction_type")
+  requestKey              String   @unique(map: "arc_network_fee_recoveries_request_key_unique") @map("request_key")
+  senderWallet            String   @map("sender_wallet")
+  treasuryRecipient       String   @map("treasury_recipient")
+  feeMicros               BigInt   @map("fee_micros")
+  feeTxHash               String?  @unique(map: "arc_network_fee_recoveries_fee_tx_hash_unique") @map("fee_tx_hash")
+  parentTransactionHashes String[] @default([]) @map("parent_transaction_hashes")
+  recoveryStatus          String   @map("recovery_status")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([senderWallet, createdAt(sort: Desc)], map: "arc_network_fee_recoveries_sender_created_idx")
+  @@map("arc_network_fee_recoveries")
 }
 
 model MerchantEmailTemplate {
@@ -1382,5 +1408,3 @@ model DmBlock {
   @@index([blockedAddress])
   @@map("dm_blocks")
 }
-
-

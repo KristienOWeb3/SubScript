@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionWallet } from "@/lib/auth";
+import { getVerifiedSessionToken } from "@/lib/auth";
+import { authorizeFinancialStepUp } from "@/lib/auth/stepUp";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { clearSessionCookie } from "@/lib/authCookies";
@@ -14,8 +15,21 @@ const STANDARD_ABI = [
 
 export async function DELETE(request: Request) {
     try {
-        const wallet = await getSessionWallet(request.headers);
-        if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const session = await getVerifiedSessionToken(request.headers);
+        if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const stepUp = await authorizeFinancialStepUp({
+            headers: request.headers,
+            wallet: session.wallet,
+            session,
+            binding: { action: "deleteAccount", resourceId: session.wallet },
+        });
+        if (!stepUp.ok) {
+            return NextResponse.json({
+                error: "For your security, sign in again before deleting your account.",
+                code: "RECENT_AUTH_REQUIRED",
+            }, { status: stepUp.status });
+        }
+        const wallet = session.wallet;
         const normalized = wallet.toLowerCase();
 
         const roleCheck = await requireAccountRole(normalized, "USER");
@@ -122,48 +136,41 @@ export async function DELETE(request: Request) {
             UPDATE customers SET closure_status = 'READY_TO_ANONYMIZE' WHERE wallet_address = ${normalized}
         `;
 
-        /* Profile erasure. Receipts/ledger rows are retained (they are the counterparty's
-           records too); everything identifying the profile goes. */
-        const anonymousAlias = `anonymous-${crypto.randomUUID()}`;
-        await prisma.$transaction([
-            prisma.session.deleteMany({ where: { wallet: normalized } }),
-            prisma.addressAlias.deleteMany({ where: { address: normalized } }),
-            prisma.customer.updateMany({
-                where: { walletAddress: normalized },
-                data: {
-                    email: "",
-                }
-            }),
-            prisma.accountRole.deleteMany({ where: { address: normalized } }),
-        ]);
-
-        // Transition 4: Set state to CLOSED
-        await prisma.$executeRaw`
-            UPDATE customers SET closure_status = 'CLOSED' WHERE wallet_address = ${normalized}
-        `;
-
-        // Anonymize key table references to prevent silent email-based reactivation
+        /* Profile erasure is atomic. Receipts/ledger rows are retained (they are the counterparty's
+           records too), but all identity/session changes either commit together or roll back together.
+           This prevents a mid-delete database failure from leaving an account partially anonymous. */
         const deletedIdPlaceholder = `deleted-${crypto.randomUUID()}`;
-        await prisma.$executeRaw`
-            UPDATE user_embedded_wallets 
-            SET email = ${deletedIdPlaceholder}, updated_at = now() 
-            WHERE wallet_address = ${normalized}
-        `;
-        await prisma.$executeRaw`
-            UPDATE auth_identities 
-            SET disabled_at = now(), current_email = ${deletedIdPlaceholder} 
-            WHERE wallet_address = ${normalized}
-        `;
-
-        await prisma.auditEvent.create({
-            data: {
-                actor: normalized,
-                action: "ACCOUNT_DELETED",
-                resourceType: "ACCOUNT",
-                resourceId: normalized,
-                metadata: { initiatedBy: "user" },
-            },
-        }).catch(() => { /* audit best-effort */ });
+        await prisma.$transaction(async (tx) => {
+            await tx.session.deleteMany({ where: { wallet: normalized } });
+            await tx.addressAlias.deleteMany({ where: { address: normalized } });
+            await tx.customer.updateMany({
+                where: { walletAddress: normalized },
+                data: { email: "" },
+            });
+            await tx.accountRole.deleteMany({ where: { address: normalized } });
+            await tx.$executeRaw`
+                UPDATE user_embedded_wallets
+                SET email = ${deletedIdPlaceholder}, updated_at = now()
+                WHERE wallet_address = ${normalized}
+            `;
+            await tx.$executeRaw`
+                UPDATE auth_identities
+                SET disabled_at = now(), current_email = ${deletedIdPlaceholder}
+                WHERE wallet_address = ${normalized}
+            `;
+            await tx.$executeRaw`
+                UPDATE customers SET closure_status = 'CLOSED' WHERE wallet_address = ${normalized}
+            `;
+            await tx.auditEvent.create({
+                data: {
+                    actor: normalized,
+                    action: "ACCOUNT_DELETED",
+                    resourceType: "ACCOUNT",
+                    resourceId: normalized,
+                    metadata: { initiatedBy: "user" },
+                },
+            });
+        });
 
         const response = NextResponse.json({
             success: true,

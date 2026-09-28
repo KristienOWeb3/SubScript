@@ -8,7 +8,7 @@ import { getAccountRole } from "@/lib/accounts/roles";
 import { uploadProfilePicture } from "@/lib/storage";
 
 
-/* Users receive .sub names; enterprises receive business namespaces. */
+/* DNS aliases are a consumer convenience only. Merchant identity is merchant_id + display_name. */
 const USER_ALIAS_REGEX = /^[a-z0-9-]{3,15}\.sub$/;
 const ENTERPRISE_ALIAS_REGEX = /^[a-z0-9-]{3,15}\.(hq|biz)$/;
 const MAX_PROFILE_PIC_BYTES = 2 * 1024 * 1024;
@@ -44,6 +44,7 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const queryAddress = searchParams.get("address");
         const queryAlias = searchParams.get("alias");
+        const merchantCommitOnly = searchParams.get("merchantCommitOnly") === "true";
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available" }, { status: 500 });
@@ -52,6 +53,28 @@ export async function GET(request: Request) {
         // 1. Resolve alias to address
         if (queryAlias) {
             const normalizedAlias = queryAlias.toLowerCase().trim();
+
+            // First check if this query matches an immutable merchant commit slug
+            const merchant = await prisma.merchant.findUnique({
+                where: { commitSlug: normalizedAlias },
+                select: { walletAddress: true, displayName: true, verified: true, profilePic: true, commitSlug: true },
+            }).catch(() => null);
+
+            if (merchant) {
+                return NextResponse.json({
+                    success: true,
+                    address: merchant.walletAddress,
+                    alias: merchant.commitSlug,
+                    commitSlug: merchant.commitSlug,
+                    displayName: merchant.displayName,
+                    is_anonymous: false,
+                    profile_pic: merchant.profilePic || null,
+                    verified: merchant.verified || false,
+                });
+            }
+            if (merchantCommitOnly) {
+                return NextResponse.json({ success: true, address: null, alias: normalizedAlias });
+            }
             /* Exact registered names never contain SQL LIKE wildcards. Reject anything outside
                the public alias grammar before using ILIKE so `%`/`_` cannot broaden a lookup. */
             if (!USER_ALIAS_REGEX.test(normalizedAlias) && !ENTERPRISE_ALIAS_REGEX.test(normalizedAlias)) {
@@ -74,9 +97,10 @@ export async function GET(request: Request) {
 
             // Fetch profile picture for resolved address
             const role = await getAccountRole(data.address) || "USER";
-            const profile = role === "ENTERPRISE"
-                ? await prisma.merchant.findUnique({ where: { walletAddress: data.address }, select: { profilePic: true, verified: true } }).catch(() => null)
-                : await prisma.customer.findUnique({ where: { walletAddress: data.address }, select: { profilePic: true } }).catch(() => null);
+            if (role === "ENTERPRISE") {
+                return NextResponse.json({ success: true, address: null, alias: normalizedAlias });
+            }
+            const profile = await prisma.customer.findUnique({ where: { walletAddress: data.address }, select: { profilePic: true } }).catch(() => null);
 
             return NextResponse.json({
                 success: true,
@@ -102,6 +126,24 @@ export async function GET(request: Request) {
 
         const role = await getAccountRole(targetAddress) || "USER";
 
+        if (role === "ENTERPRISE") {
+            const profile = await prisma.merchant.findUnique({
+                where: { walletAddress: targetAddress },
+                select: { profilePic: true, verified: true },
+            }).catch(() => null);
+            return NextResponse.json({
+                success: true,
+                address: targetAddress,
+                alias: null,
+                is_anonymous: false,
+                role,
+                profile_pic: profile?.profilePic || null,
+                verified: profile?.verified || false,
+                change_cooldown_days: null,
+                next_change_at: null,
+            });
+        }
+
         const { data, error } = await supabaseAdmin
             .from("address_aliases")
             .select("address, alias, is_anonymous, last_changed_at")
@@ -113,9 +155,10 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        const profile = role === "ENTERPRISE"
-            ? await prisma.merchant.findUnique({ where: { walletAddress: targetAddress }, select: { profilePic: true, verified: true } }).catch(() => null)
-            : await prisma.customer.findUnique({ where: { walletAddress: targetAddress }, select: { profilePic: true } }).catch(() => null);
+        const profile = await prisma.customer.findUnique({
+            where: { walletAddress: targetAddress },
+            select: { profilePic: true },
+        }).catch(() => null);
 
         const nextChangeAt = aliasCooldownUntil(data?.last_changed_at);
 
@@ -126,7 +169,7 @@ export async function GET(request: Request) {
             is_anonymous: data?.is_anonymous || false,
             role,
             profile_pic: profile?.profilePic || null,
-            verified: "verified" in (profile || {}) ? Boolean((profile as any)?.verified) : false,
+            verified: false,
             // Cooldown info: how long until this wallet may change its DNS name again.
             change_cooldown_days: ALIAS_CHANGE_COOLDOWN_DAYS,
             next_change_at: nextChangeAt ? nextChangeAt.toISOString() : null,
@@ -192,15 +235,14 @@ export async function POST(request: Request) {
         }
 
         if (alias !== null && alias !== undefined && alias !== "") {
+            if (role === "ENTERPRISE") {
+                return NextResponse.json({ error: "Merchant identity uses merchant ID and display name, not DNS." }, { status: 403 });
+            }
             const normalizedAlias = String(alias).toLowerCase().trim();
-            const allowed = role === "ENTERPRISE"
-                ? ENTERPRISE_ALIAS_REGEX.test(normalizedAlias)
-                : USER_ALIAS_REGEX.test(normalizedAlias);
+            const allowed = USER_ALIAS_REGEX.test(normalizedAlias);
             if (!allowed) {
                 return NextResponse.json({
-                    error: role === "ENTERPRISE"
-                        ? "Bad Request: Enterprise DNS names must be 3-15 characters and end with '.hq' or '.biz'"
-                        : "Bad Request: User DNS names must be 3-15 characters and end with '.sub'"
+                    error: "Bad Request: User DNS names must be 3-15 characters and end with '.sub'"
                 }, { status: 400 });
             }
 

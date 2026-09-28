@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, AlertTriangle, XCircle, Loader2 } from "@/components/icons";
 
@@ -62,20 +62,75 @@ export default function ConfirmModal({
   const Icon = config.icon;
 
   const [inputMatch, setInputMatch] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const onCancelRef = useRef(onCancel);
+  const isLoadingRef = useRef(isLoading);
 
   useEffect(() => {
-    if (open) {
-      setInputMatch("");
-    }
-  }, [open]);
+    onCancelRef.current = onCancel;
+    isLoadingRef.current = isLoading;
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setInputMatch("");
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const focusTimer = window.setTimeout(() => {
+      const initialTarget = requiredMatchText
+        ? dialogRef.current?.querySelector<HTMLInputElement>("input")
+        : cancelButtonRef.current;
+      initialTarget?.focus();
+    }, 0);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isLoadingRef.current) {
+        event.preventDefault();
+        onCancelRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [open, requiredMatchText]);
 
   const isMatchValid = !requiredMatchText || inputMatch.trim() === requiredMatchText;
 
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <motion.div
+          key="confirm-modal-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="dashboard-modal-overlay fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4"
+        >
           <motion.div
+            ref={dialogRef}
             initial={{ opacity: 0, scale: 0.95, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 8 }}
@@ -84,7 +139,7 @@ export default function ConfirmModal({
             aria-modal="true"
             aria-labelledby="confirm-modal-title"
             aria-describedby="confirm-modal-desc"
-            className={`relative w-full max-w-sm space-y-4 overflow-hidden rounded-3xl border bg-[#FFFFF0] p-6 text-left shadow-2xl text-black ${config.borderColor}`}
+            className={`dashboard-modal-surface relative transform-gpu w-full max-w-sm space-y-4 overflow-hidden rounded-3xl border bg-[#FFFFF0] p-6 text-left shadow-2xl text-black ${config.borderColor}`}
           >
             <div className="flex items-center gap-3">
               <div className={`rounded-2xl border p-2.5 ${config.bgAccent} ${config.borderColor}`}>
@@ -116,6 +171,7 @@ export default function ConfirmModal({
 
             <div className="flex gap-2.5 pt-2">
               <button
+                ref={cancelButtonRef}
                 type="button"
                 onClick={onCancel}
                 disabled={isLoading}
@@ -134,7 +190,7 @@ export default function ConfirmModal({
               </button>
             </div>
           </motion.div>
-        </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );

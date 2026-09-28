@@ -69,6 +69,7 @@ export default [
             "react-hooks/purity": "warn",
             "react-hooks/immutability": "warn",
             "react-hooks/error-boundaries": "warn",
+            "react-hooks/refs": "warn",
         },
     },
 ];

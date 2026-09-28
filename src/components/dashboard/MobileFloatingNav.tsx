@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import type { LucideIcon } from "@/components/icons";
-import { MessageSquare } from "@/components/icons";
+import { Wallet } from "@/components/icons";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 
 export interface MobileNavTab<T extends string = string> {
@@ -403,7 +403,7 @@ export default function MobileFloatingNav<T extends string = string>({
           aria-label="Open Payments"
         >
           {!isInboxActive && <LiquidGlassEffect />}
-          <MessageSquare
+          <Wallet
             className={`h-4.5 w-4.5 shrink-0 relative z-10 ${
               isInboxActive
                 ? "!text-[#FFFFF0] !bg-[#FFFFF0] dark:!text-white dark:!bg-white"

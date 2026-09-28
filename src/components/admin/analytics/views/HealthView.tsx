@@ -13,8 +13,7 @@ import {
   Bell,
   CheckCircle2,
   XCircle,
-  Zap,
-} from "@/components/icons";
+  } from "@/components/icons";
 
 interface HealthViewProps {
   analytics: any;

@@ -79,19 +79,33 @@ export default function AccountHoldModal({ isOpen, onClose, onHoldChange }: Acco
         }
     };
 
-    if (!isOpen) return null;
-
     const onHold = state?.onHold ?? false;
     const runningToTerm = state?.runningToTerm ?? [];
 
     return (
-        <div
-            onClick={(e) => {
-                if (e.target === e.currentTarget && !busy) onClose();
-            }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md animate-in fade-in duration-200"
-        >
-            <div className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] p-6 text-[#111827] shadow-2xl dark:border-white/15 dark:bg-[#121212] dark:text-white sm:p-7">
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    key="account-hold-modal"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget && !busy) onClose();
+                    }}
+                    className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 font-sans"
+                >
+                    <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="account-hold-title"
+                        initial={{ scale: 0.96, opacity: 0, y: 8 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0.96, opacity: 0, y: 8 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        className="dashboard-modal-surface relative w-full max-w-lg overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] p-6 text-[#111827] shadow-2xl dark:border-white/15 dark:bg-[#121212] dark:text-white sm:p-7 transform-gpu"
+                    >
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-black/10 pb-4 dark:border-white/10">
                     <div className="flex items-center gap-3">
@@ -236,7 +250,7 @@ export default function AccountHoldModal({ isOpen, onClose, onHoldChange }: Acco
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+                            className="dashboard-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
                         >
                             <motion.div
                                 initial={{ scale: 0.95, opacity: 0 }}
@@ -269,7 +283,9 @@ export default function AccountHoldModal({ isOpen, onClose, onHoldChange }: Acco
                         </motion.div>
                     )}
                 </AnimatePresence>
-            </div>
-        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 }

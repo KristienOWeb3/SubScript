@@ -22,7 +22,7 @@ import { SkeletonRows } from "@/components/ui/skeletons";
  * The one setting here today is the withdrawal hold, driven by /api/admin/withdrawal-holds.
  * That route's validation is the contract this form follows: a reason of 3+ characters is
  * mandatory when placing a hold, an expiry must be in the future, and alias resolution
- * (merchant.sub) happens server-side on POST, so nothing here tries to repeat it.
+ * (alice.sub) happens server-side on POST, so nothing here tries to repeat it.
  *
  * GET returns the 200 most recent holds with an `active` flag, so a lookup that finds
  * nothing can only claim "nothing in the 200 most recent" and the copy says exactly that.
@@ -293,7 +293,7 @@ export function AdminAccountSettingsView({ viewerWallet }: { viewerWallet: strin
                     <div>
                         <h3 className="text-sm font-black text-[#0f172a]">Look up an account</h3>
                         <p className="mt-0.5 text-[11px] text-slate-500">
-                            A wallet address, or a SubScript name like merchant.sub. The server resolves names for you.
+                            A wallet address, or a SubScript name like alice.sub. The server resolves names for you.
                         </p>
                     </div>
 
@@ -303,7 +303,7 @@ export function AdminAccountSettingsView({ viewerWallet }: { viewerWallet: strin
                             type="text"
                             value={lookup}
                             onChange={(e) => setLookup(e.target.value)}
-                            placeholder="0x… or merchant.sub"
+                            placeholder="0x… or alice.sub"
                             spellCheck={false}
                             className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 font-mono text-xs text-[#0f172a] placeholder-slate-400 transition focus:border-[#2775ca] focus:outline-none"
                         />

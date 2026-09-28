@@ -580,6 +580,7 @@ export async function POST(request: Request) {
                         merchantAddress: String(args.to),
                         amountUsdc: args.amount,
                         title: "USDC Transfer",
+                        sourceType: "WALLET_TRANSFER",
                         isShielded: body.isShielded || false,
                     });
                     boundReceiptId = bound.receiptId;

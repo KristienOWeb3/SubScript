@@ -1,6 +1,20 @@
 /**
  * Utility to get the absolute or relative dashboard/landing redirect URL based on user role and hostname.
  */
+export const APP_ROUTES = {
+    home: "/",
+    login: "/signin",
+    signup: "/signup",
+    userDashboard: "/user",
+    userSettings: "/user?tab=dns",
+    merchantDashboard: "/merchant",
+    merchantSettings: "/merchant?tab=settings",
+    merchantAdvancedSettings: "/merchant?tab=settings&section=advanced",
+    merchantAdvancedSettingsLegacy: "/merchant?tab=advanced",
+    support: "/support",
+    accountDeletionComplete: "/signin?accountDeleted=1",
+} as const;
+
 export function getSafeRelativePath(value: string | null | undefined): string {
     if (!value || !value.startsWith("/") || value.startsWith("//")) return "";
 
@@ -36,7 +50,7 @@ export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, curre
 
         // Dashboard routes live on the dashboard subdomain
         if (role === "USER") {
-            const cleanPath = path.replace(/^\/dashboard\/user/, "").replace(/^\/dashboard/, "");
+            const cleanPath = path.replace(/^\/dashboard\/user/, "").replace(/^\/dashboard/, "").replace(/^\/user/, "");
             const suffix = cleanPath ? (cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`) : "";
             return `${protocol}//dashboard.subscriptonarc.com/user${suffix}`;
         } else {
@@ -52,7 +66,7 @@ export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, curre
     }
 
     if (role === "USER") {
-        const cleanPath = path.replace(/^\/dashboard\/user/, "").replace(/^\/dashboard/, "");
+        const cleanPath = path.replace(/^\/dashboard\/user/, "").replace(/^\/dashboard/, "").replace(/^\/user/, "");
         const suffix = cleanPath ? (cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`) : "";
         return `/user${suffix}`;
     } else {

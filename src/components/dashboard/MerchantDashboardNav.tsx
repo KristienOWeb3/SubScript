@@ -9,6 +9,8 @@ import {
     Building2,
     Check,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     Code2,
     HelpCircle,
     Key,
@@ -17,13 +19,13 @@ import {
     Shield,
     ShieldCheck,
     Sliders,
+    Settings,
     SquaresFour,
-    User,
+    SubscriptionRenewal,
+    CheckoutPlaybook,
     Webhook,
     X,
     CreditCard,
-    Zap,
-    Crown,
     LogOut,
 } from "@/components/icons";
 
@@ -63,6 +65,30 @@ export default function MerchantDashboardNav({
     const [developerOpen, setDeveloperOpen] = useState(true);
     const [moreOpen, setMoreOpen] = useState(false);
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(false);
+
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem("subscript_merchant_sidebar_collapsed");
+            if (stored === "true") {
+                setIsCollapsed(true);
+            }
+        } catch {
+            /* ignore storage errors */
+        }
+    }, []);
+
+    const toggleCollapse = () => {
+        setIsCollapsed((prev) => {
+            const next = !prev;
+            try {
+                localStorage.setItem("subscript_merchant_sidebar_collapsed", String(next));
+            } catch {
+                /* ignore storage errors */
+            }
+            return next;
+        });
+    };
 
     useEffect(() => {
         if (paymentIds.has(activeId)) setPaymentsOpen(true);
@@ -78,51 +104,66 @@ export default function MerchantDashboardNav({
         "flex w-full items-center gap-2 rounded-full px-3.5 py-2.5 text-left text-xs font-semibold transition-all duration-200 whitespace-nowrap";
     const selectedRow =
         "bg-[#FFFFF0] text-[#082824] shadow-md font-bold [&_.koboyo-icon]:bg-[#082824]";
+    const collapsedRow =
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all duration-200 relative";
     const rowClass = (active: boolean) =>
-        `${baseRow} ${
-            active ? selectedRow : "text-white/80 hover:bg-white/10 hover:text-white"
-        }`;
+        isCollapsed
+            ? `${collapsedRow} ${
+                active ? selectedRow : "text-white/80 hover:bg-white/10 hover:text-white"
+            }`
+            : `${baseRow} ${
+                active ? selectedRow : "text-white/80 hover:bg-white/10 hover:text-white"
+            }`;
     const childClass = (active: boolean) =>
-        `flex w-full items-center gap-1.5 rounded-full px-3 py-1.5 pl-6 text-left text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${
-            active ? selectedRow : "text-white/70 hover:bg-white/10 hover:text-white"
-        }`;
+        isCollapsed
+            ? `flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-200 ${
+                active ? selectedRow : "text-white/70 hover:bg-white/10 hover:text-white"
+            }`
+            : `flex w-full items-center gap-1.5 rounded-full px-3 py-1.5 pl-6 text-left text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${
+                active ? selectedRow : "text-white/70 hover:bg-white/10 hover:text-white"
+            }`;
 
     return (
         <>
             <aside
                 aria-busy={isLoading}
-                className="merchant-rail relative hidden h-full w-[clamp(230px,17.3vw,288px)] shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#353935] px-3.5 sm:px-4 pb-5 pt-6 text-white md:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className={`merchant-rail relative hidden h-full shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#353935] pb-5 pt-6 text-white md:flex transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+                    isCollapsed
+                        ? "w-16 px-2"
+                        : "w-[clamp(230px,17.3vw,288px)] px-3.5 sm:px-4"
+                }`}
             >
                 {isLoading && (
                     <div
-                        className="merchant-rail-skeleton absolute inset-0 z-20 bg-[#353935] px-5 pb-6 pt-7"
+                        className="merchant-rail-skeleton absolute inset-0 z-20 bg-[#353935] px-3 pb-6 pt-7"
                         aria-hidden="true"
                     >
-                        <div className="flex items-center justify-between">
-                            <div className="h-6 w-32 rounded-lg bg-white/10 animate-pulse" />
+                        <div className={`flex items-center ${isCollapsed ? "justify-center" : "justify-between"}`}>
+                            {!isCollapsed && <div className="h-6 w-32 rounded-lg bg-white/10 animate-pulse" />}
                             <div className="h-8 w-8 rounded-full bg-white/10 animate-pulse" />
                         </div>
-                        <div className="mt-4 flex items-center gap-2.5 rounded-full bg-white/5 p-2.5">
-                            <div className="h-9 w-9 shrink-0 rounded-full bg-white/15 animate-pulse" />
-                            <div className="h-3 flex-1 rounded-full bg-white/15 animate-pulse" />
-                            <div className="h-4 w-4 rounded-full bg-white/10 animate-pulse" />
+                        <div className={`mt-4 flex items-center ${isCollapsed ? "justify-center" : "gap-2.5"} rounded-full bg-white/5 p-2`}>
+                            <div className="h-8 w-8 shrink-0 rounded-full bg-white/15 animate-pulse" />
+                            {!isCollapsed && <div className="h-3 flex-1 rounded-full bg-white/15 animate-pulse" />}
                         </div>
                         <div className="mt-8 space-y-2">
                             {Array.from({ length: 7 }).map((_, index) => (
                                 <div
                                     key={index}
-                                    className="flex items-center gap-2.5 rounded-full px-4 py-2.5"
+                                    className={`flex items-center ${isCollapsed ? "justify-center" : "gap-2.5"} rounded-full px-2 py-2.5`}
                                 >
                                     <div className="h-4 w-4 shrink-0 rounded-md bg-white/10 animate-pulse" />
-                                    <div
-                                        className={`h-3 rounded-full bg-white/10 animate-pulse ${
-                                            index % 3 === 0
-                                                ? "w-28"
-                                                : index % 2 === 0
-                                                ? "w-20"
-                                                : "w-24"
-                                        }`}
-                                    />
+                                    {!isCollapsed && (
+                                        <div
+                                            className={`h-3 rounded-full bg-white/10 animate-pulse ${
+                                                index % 3 === 0
+                                                    ? "w-28"
+                                                    : index % 2 === 0
+                                                    ? "w-20"
+                                                    : "w-24"
+                                            }`}
+                                        />
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -130,29 +171,37 @@ export default function MerchantDashboardNav({
                 )}
 
                 <div className={`flex min-h-full flex-col ${isLoading ? "invisible" : ""}`}>
-                    {/* Header: Title + Advanced Settings Button */}
-                    <div className="flex items-center justify-between">
-                        <span className="text-[20px] font-extrabold tracking-tight text-white">
-                            MERCHANT
-                        </span>
-                        <div className="relative">
-                            <button
-                                onClick={() => onSelect("advanced")}
-                                className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[#D4E3E8] text-[#082824] transition hover:brightness-95 shadow-sm"
-                                aria-label="Open Advanced Settings"
-                                title="Advanced Settings"
-                            >
-                                <Zap className="h-4 w-4" />
-                            </button>
-                        </div>
+                    {/* Header: Title + Retract/Expand Toggle Button */}
+                    <div className={`flex items-center ${isCollapsed ? "justify-center" : "justify-between"}`}>
+                        {!isCollapsed && (
+                            <span className="text-[20px] font-extrabold tracking-tight text-white select-none">
+                                MERCHANT
+                            </span>
+                        )}
+                        <button
+                            type="button"
+                            onClick={toggleCollapse}
+                            className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#D4E3E8] text-[#082824] transition hover:brightness-95 shadow-sm"
+                            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                        >
+                            {isCollapsed ? (
+                                <ChevronRight className="h-4 w-4 stroke-[2.5]" />
+                            ) : (
+                                <ChevronLeft className="h-4 w-4 stroke-[2.5]" />
+                            )}
+                        </button>
                     </div>
 
                     {/* Identity Pill Card */}
-                    <div className="relative mt-4">
+                    <div className={`relative mt-4 ${isCollapsed ? "flex justify-center" : ""}`}>
                         <button
                             onClick={() => setAccountMenuOpen((prev) => !prev)}
-                            className="flex w-full items-center gap-2.5 rounded-full bg-[#D4E3E8] p-2 text-left transition hover:bg-[#c6d8de] shadow-sm border border-black/5"
+                            className={`flex items-center ${
+                                isCollapsed ? "justify-center h-10 w-10 p-0" : "w-full gap-2.5 p-2"
+                            } rounded-full bg-[#D4E3E8] text-left transition hover:bg-[#c6d8de] shadow-sm border border-black/5`}
                             aria-expanded={accountMenuOpen}
+                            title={identityLabel}
                         >
                             <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#FFFFF0] text-xs font-bold text-[#082824] shadow-sm border border-black/10">
                                 {avatarUrl ? (
@@ -165,77 +214,84 @@ export default function MerchantDashboardNav({
                                     identityLabel.slice(0, 1).toUpperCase()
                                 )}
                             </span>
-                            <span className="min-w-0 flex-1 truncate text-xs font-bold text-[#082824]">
-                                {identityLabel}
-                            </span>
-                            {verified && (
-                                <span
-                                    title="Verified Merchant"
-                                    className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm shrink-0 font-black"
-                                >
-                                    <Check className="h-2.5 w-2.5 stroke-[3]" />
-                                </span>
+                            {!isCollapsed && (
+                                <>
+                                    <span className="min-w-0 flex-1 truncate text-xs font-bold text-[#082824]">
+                                        {identityLabel}
+                                    </span>
+                                    {verified && (
+                                        <span
+                                            title="Verified Merchant"
+                                            className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm shrink-0 font-black"
+                                        >
+                                            <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                        </span>
+                                    )}
+                                    <ChevronDown
+                                        className={`h-3.5 w-3.5 text-[#082824]/60 transition ${
+                                            accountMenuOpen ? "rotate-180" : ""
+                                        }`}
+                                    />
+                                </>
                             )}
-                            <ChevronDown
-                                className={`h-3.5 w-3.5 text-[#082824]/60 transition ${
-                                    accountMenuOpen ? "rotate-180" : ""
-                                }`}
-                            />
                         </button>
 
                         {accountMenuOpen && (
-                            <div className="merchant-rail-menu absolute left-0 right-0 top-full z-30 mt-2 space-y-1 rounded-2xl border border-white/15 bg-[#2D322E] p-2 shadow-2xl text-white">
-                                {isAdmin && (
-                                    <Link
-                                        href="/admin"
-                                        onClick={() => setAccountMenuOpen(false)}
-                                        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 transition"
-                                    >
-                                        <Shield className="h-4 w-4 text-white" /> Admin Console
-                                    </Link>
-                                )}
-                                <button
-                                    onClick={() => {
-                                        onSelect("settings");
-                                        setAccountMenuOpen(false);
-                                    }}
-                                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 transition"
-                                >
-                                    <Sliders className="h-4 w-4 text-white/70" /> Account Settings
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        onSelect("advanced");
-                                        setAccountMenuOpen(false);
-                                    }}
-                                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 transition"
-                                >
-                                    <Zap className="h-4 w-4 text-white/70" /> Advanced Settings
-                                </button>
-                                <Link
-                                    href="/support"
-                                    target="_blank"
+                            <>
+                                <div
+                                    className="fixed inset-0 z-20"
                                     onClick={() => setAccountMenuOpen(false)}
-                                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 transition"
+                                />
+                                <div
+                                    className={`merchant-rail-menu ${
+                                        isCollapsed
+                                            ? "fixed left-[72px] top-[70px] w-52"
+                                            : "absolute left-0 right-0 top-full mt-2"
+                                    } z-30 space-y-1 rounded-2xl border border-white/15 bg-[#2D322E] p-2 shadow-2xl text-white`}
                                 >
-                                    <HelpCircle className="h-4 w-4 text-white/70" /> Help Center
-                                </Link>
-                                <button
-                                    onClick={() => {
-                                        setAccountMenuOpen(false);
-                                        onLogout?.();
-                                    }}
-                                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 transition border-t border-white/10 mt-1 pt-2"
-                                >
-                                    <LogOut className="h-4 w-4 text-red-400" /> Log out
-                                </button>
-                            </div>
+                                    {isAdmin && (
+                                        <Link
+                                            href="/admin"
+                                            onClick={() => setAccountMenuOpen(false)}
+                                            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 transition"
+                                        >
+                                            <Shield className="h-4 w-4 text-white" /> Admin Console
+                                        </Link>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            onSelect("settings");
+                                            setAccountMenuOpen(false);
+                                        }}
+                                        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 transition"
+                                    >
+                                        <Settings className="h-4 w-4 text-white/70" /> Merchant Settings
+                                    </button>
+                                    <Link
+                                        href="/support"
+                                        target="_blank"
+                                        onClick={() => setAccountMenuOpen(false)}
+                                        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 transition"
+                                    >
+                                        <HelpCircle className="h-4 w-4 text-white/70" /> Help Center
+                                    </Link>
+                                    <button
+                                        onClick={() => {
+                                            setAccountMenuOpen(false);
+                                            onLogout?.();
+                                        }}
+                                        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 transition border-t border-white/10 mt-1 pt-2"
+                                    >
+                                        <LogOut className="h-4 w-4 text-red-400" /> Log out
+                                    </button>
+                                </div>
+                            </>
                         )}
                     </div>
 
                     {/* Navigation Items */}
                     <nav
-                        className="mt-6 space-y-1.5"
+                        className={`mt-6 space-y-1.5 ${isCollapsed ? "flex flex-col items-center" : ""}`}
                         aria-label="Merchant dashboard navigation"
                     >
                         {/* 1. Overview */}
@@ -243,150 +299,259 @@ export default function MerchantDashboardNav({
                             onClick={() => onSelect("overview")}
                             className={rowClass(activeId === "overview")}
                             title="Overview"
+                            aria-label="Overview"
                         >
                             <SquaresFour className="h-4 w-4 shrink-0" />
-                            <span>Overview</span>
+                            {!isCollapsed && <span>Overview</span>}
                         </button>
 
                         {/* 2. Payments & Payroll Group */}
-                        <div>
-                            <button
-                                onClick={() => setPaymentsOpen((open) => !open)}
-                                className="flex w-full items-center gap-2.5 rounded-full px-3.5 sm:px-4 py-2.5 text-left text-[13px] font-semibold text-white/90 hover:bg-white/10 transition-all duration-200 whitespace-nowrap"
-                                aria-expanded={paymentsOpen}
-                                title="Payments and Payroll"
-                            >
-                                <Sliders className="h-4 w-4 shrink-0" />
-                                <span className="flex-1 whitespace-nowrap">Payments &amp; Payroll</span>
-                                <ChevronDown
-                                    className={`h-3.5 w-3.5 shrink-0 transition ${
-                                        paymentsOpen ? "rotate-180" : ""
-                                    }`}
-                                />
-                            </button>
+                        {isCollapsed ? (
+                            <div className="flex flex-col items-center space-y-1 w-full">
+                                <button
+                                    onClick={() => {
+                                        setPaymentsOpen((open) => !open);
+                                        if (!isPaymentsActive) {
+                                            onSelect("payment-links-subscriptions");
+                                        }
+                                    }}
+                                    className={rowClass(isPaymentsActive)}
+                                    title="Payments & Payroll"
+                                    aria-label="Payments and Payroll"
+                                >
+                                    <Sliders className="h-4 w-4 shrink-0" />
+                                </button>
+                                {paymentsOpen && (
+                                    <div className="flex flex-col items-center space-y-1 py-1 w-full">
+                                        <button
+                                            onClick={() => onSelect("payment-links-subscriptions")}
+                                            className={childClass(
+                                                activeId === "payment-links" &&
+                                                    (!activeSubTab || activeSubTab === "subscriptions")
+                                            )}
+                                            title="Subscriptions"
+                                            aria-label="Subscriptions"
+                                        >
+                                            <SubscriptionRenewal className="h-3.5 w-3.5 shrink-0" />
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("payment-links-one-time")}
+                                            className={childClass(
+                                                activeId === "payment-links" &&
+                                                    activeSubTab === "one-time"
+                                            )}
+                                            title="One Time"
+                                            aria-label="One Time"
+                                        >
+                                            <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("payment-links-commit")}
+                                            className={childClass(
+                                                activeId === "payment-links" &&
+                                                    activeSubTab === "commit"
+                                            )}
+                                            title="Vault"
+                                            aria-label="Vault"
+                                        >
+                                            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("payroll")}
+                                            className={childClass(activeId === "payroll")}
+                                            title="Payroll"
+                                            aria-label="Payroll"
+                                        >
+                                            <Building2 className="h-3.5 w-3.5 shrink-0" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div>
+                                <button
+                                    onClick={() => setPaymentsOpen((open) => !open)}
+                                    className="flex w-full items-center gap-2.5 rounded-full px-3.5 sm:px-4 py-2.5 text-left text-[13px] font-semibold text-white/90 hover:bg-white/10 transition-all duration-200 whitespace-nowrap"
+                                    aria-expanded={paymentsOpen}
+                                    title="Payments and Payroll"
+                                >
+                                    <Sliders className="h-4 w-4 shrink-0" />
+                                    <span className="flex-1 whitespace-nowrap">Payments &amp; Payroll</span>
+                                    <ChevronDown
+                                        className={`h-3.5 w-3.5 shrink-0 transition ${
+                                            paymentsOpen ? "rotate-180" : ""
+                                        }`}
+                                    />
+                                </button>
 
-                            {paymentsOpen && (
-                                <div className="mt-1 space-y-1">
-                                    <button
-                                        onClick={() => onSelect("payment-links-subscriptions")}
-                                        className={childClass(
-                                            activeId === "payment-links" &&
-                                                (!activeSubTab || activeSubTab === "subscriptions")
-                                        )}
-                                    >
-                                        <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                                        <span>Subscriptions</span>
-                                    </button>
-                                    <button
-                                        onClick={() => onSelect("payment-links-one-time")}
-                                        className={childClass(
-                                            activeId === "payment-links" &&
-                                                activeSubTab === "one-time"
-                                        )}
-                                    >
-                                        <CreditCard className="h-3.5 w-3.5 shrink-0" />
-                                        <span>One Time</span>
-                                    </button>
-                                    <button
-                                        onClick={() => onSelect("payment-links-commit")}
-                                        className={childClass(
-                                            activeId === "payment-links" &&
-                                                activeSubTab === "commit"
-                                        )}
-                                    >
-                                        <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
-                                        <span>Vault</span>
-                                    </button>
-                                    <button
-                                        onClick={() => onSelect("payroll")}
-                                        className={childClass(activeId === "payroll")}
-                                    >
-                                        <Building2 className="h-3.5 w-3.5 shrink-0" />
-                                        <span>Payroll</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                                {paymentsOpen && (
+                                    <div className="mt-1 space-y-1">
+                                        <button
+                                            onClick={() => onSelect("payment-links-subscriptions")}
+                                            className={childClass(
+                                                activeId === "payment-links" &&
+                                                    (!activeSubTab || activeSubTab === "subscriptions")
+                                            )}
+                                        >
+                                            <SubscriptionRenewal className="h-3.5 w-3.5 shrink-0" />
+                                            <span>Subscriptions</span>
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("payment-links-one-time")}
+                                            className={childClass(
+                                                activeId === "payment-links" &&
+                                                    activeSubTab === "one-time"
+                                            )}
+                                        >
+                                            <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                                            <span>One Time</span>
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("payment-links-commit")}
+                                            className={childClass(
+                                                activeId === "payment-links" &&
+                                                    activeSubTab === "commit"
+                                            )}
+                                        >
+                                            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                                            <span>Vault</span>
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("payroll")}
+                                            className={childClass(activeId === "payroll")}
+                                        >
+                                            <Building2 className="h-3.5 w-3.5 shrink-0" />
+                                            <span>Payroll</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* 3. Developer Tools Group */}
-                        <div>
-                            <button
-                                onClick={() => setDeveloperOpen((open) => !open)}
-                                className="flex w-full items-center gap-2.5 rounded-full px-3.5 sm:px-4 py-2.5 text-left text-[13px] font-semibold text-white/90 hover:bg-white/10 transition-all duration-200 whitespace-nowrap"
-                                aria-expanded={developerOpen}
-                                title="Developer Tools"
-                            >
-                                <Code2 className="h-4 w-4 shrink-0" />
-                                <span className="flex-1 whitespace-nowrap">Developer Tools</span>
-                                <ChevronDown
-                                    className={`h-3.5 w-3.5 shrink-0 transition ${
-                                        developerOpen ? "rotate-180" : ""
-                                    }`}
-                                />
-                            </button>
+                        {isCollapsed ? (
+                            <div className="flex flex-col items-center space-y-1 w-full">
+                                <button
+                                    onClick={() => {
+                                        setDeveloperOpen((open) => !open);
+                                        if (!isDeveloperActive) {
+                                            onSelect("apikeys");
+                                        }
+                                    }}
+                                    className={rowClass(isDeveloperActive)}
+                                    title="Developer Tools"
+                                    aria-label="Developer Tools"
+                                >
+                                    <Code2 className="h-4 w-4 shrink-0" />
+                                </button>
+                                {developerOpen && (
+                                    <div className="flex flex-col items-center space-y-1 py-1 w-full">
+                                        <button
+                                            onClick={() => onSelect("apikeys")}
+                                            className={childClass(activeId === "apikeys")}
+                                            title="API Keys"
+                                            aria-label="API Keys"
+                                        >
+                                            <Key className="h-3.5 w-3.5 shrink-0" />
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("checkout")}
+                                            className={childClass(activeId === "checkout")}
+                                            title="Checkout Setup"
+                                            aria-label="Checkout Setup"
+                                        >
+                                            <CheckoutPlaybook className="h-3.5 w-3.5 shrink-0" />
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("webhooks")}
+                                            className={childClass(activeId === "webhooks")}
+                                            title="Webhooks"
+                                            aria-label="Webhooks"
+                                        >
+                                            <Webhook className="h-3.5 w-3.5 shrink-0" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div>
+                                <button
+                                    onClick={() => setDeveloperOpen((open) => !open)}
+                                    className="flex w-full items-center gap-2.5 rounded-full px-3.5 sm:px-4 py-2.5 text-left text-[13px] font-semibold text-white/90 hover:bg-white/10 transition-all duration-200 whitespace-nowrap"
+                                    aria-expanded={developerOpen}
+                                    title="Developer Tools"
+                                >
+                                    <Code2 className="h-4 w-4 shrink-0" />
+                                    <span className="flex-1 whitespace-nowrap">Developer Tools</span>
+                                    <ChevronDown
+                                        className={`h-3.5 w-3.5 shrink-0 transition ${
+                                            developerOpen ? "rotate-180" : ""
+                                        }`}
+                                    />
+                                </button>
 
-                            {developerOpen && (
-                                <div className="mt-1 space-y-1">
-                                    <button
-                                        onClick={() => onSelect("apikeys")}
-                                        className={childClass(activeId === "apikeys")}
-                                    >
-                                        <Key className="h-3.5 w-3.5 shrink-0" />
-                                        <span>API Keys</span>
-                                    </button>
-                                    <button
-                                        onClick={() => onSelect("checkout")}
-                                        className={childClass(activeId === "checkout")}
-                                    >
-                                        <Code2 className="h-3.5 w-3.5 shrink-0" />
-                                        <span>Checkout Setup</span>
-                                    </button>
-                                    <button
-                                        onClick={() => onSelect("webhooks")}
-                                        className={childClass(activeId === "webhooks")}
-                                    >
-                                        <Webhook className="h-3.5 w-3.5 shrink-0" />
-                                        <span>Webhooks</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                                {developerOpen && (
+                                    <div className="mt-1 space-y-1">
+                                        <button
+                                            onClick={() => onSelect("apikeys")}
+                                            className={childClass(activeId === "apikeys")}
+                                        >
+                                            <Key className="h-3.5 w-3.5 shrink-0" />
+                                            <span>API Keys</span>
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("checkout")}
+                                            className={childClass(activeId === "checkout")}
+                                        >
+                                            <CheckoutPlaybook className="h-3.5 w-3.5 shrink-0" />
+                                            <span>Checkout Setup</span>
+                                        </button>
+                                        <button
+                                            onClick={() => onSelect("webhooks")}
+                                            className={childClass(activeId === "webhooks")}
+                                        >
+                                            <Webhook className="h-3.5 w-3.5 shrink-0" />
+                                            <span>Webhooks</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </nav>
 
-                    {/* Bottom: Advanced, Settings & Help Center */}
-                    <div className="mt-auto space-y-1.5 pt-6">
-                        <button
-                            onClick={() => onSelect("advanced")}
-                            className={rowClass(activeId === "advanced")}
-                            title="Advanced"
-                        >
-                            <Zap className="h-4 w-4 shrink-0" />
-                            <span>Advanced</span>
-                        </button>
+                    {/* Bottom: Settings & Help Center */}
+                    <div className={`mt-auto space-y-1.5 pt-6 ${isCollapsed ? "flex flex-col items-center" : ""}`}>
                         <button
                             onClick={() => onSelect("settings")}
-                            className={rowClass(activeId === "settings")}
+                            className={rowClass(activeId === "settings" || activeId === "advanced")}
                             title="Settings"
+                            aria-label="Settings"
                         >
-                            <User className="h-4 w-4 shrink-0" />
-                            <span>Settings</span>
+                            <Settings className="h-4 w-4 shrink-0" />
+                            {!isCollapsed && <span>Settings</span>}
                         </button>
                         <Link
                             href="/support"
                             target="_blank"
                             className={rowClass(false)}
                             title="Help Center"
+                            aria-label="Help Center"
                         >
                             <HelpCircle className="h-4 w-4 shrink-0" />
-                            <span>Help Center</span>
+                            {!isCollapsed && <span>Help Center</span>}
                         </Link>
                         <button
                             onClick={() => onLogout?.()}
-                            className="flex w-full items-center gap-2 rounded-full px-3.5 py-2.5 text-left text-xs font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200 whitespace-nowrap"
+                            className={
+                                isCollapsed
+                                    ? "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200"
+                                    : "flex w-full items-center gap-2 rounded-full px-3.5 py-2.5 text-left text-xs font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200 whitespace-nowrap"
+                            }
                             title="Log out"
+                            aria-label="Log out"
                         >
                             <LogOut className="h-4 w-4 shrink-0 text-red-400" />
-                            <span>Log out</span>
+                            {!isCollapsed && <span>Log out</span>}
                         </button>
                     </div>
                 </div>
@@ -459,7 +624,7 @@ export default function MerchantDashboardNav({
                                 }}
                                 className={childClass(activeId === "checkout")}
                             >
-                                <Code2 className="h-4 w-4" /> Checkout Setup
+                                <CheckoutPlaybook className="h-4 w-4" /> Checkout Setup
                             </button>
                             <button
                                 onClick={() => {
@@ -472,21 +637,12 @@ export default function MerchantDashboardNav({
                             </button>
                             <button
                                 onClick={() => {
-                                    onSelect("advanced");
-                                    setMoreOpen(false);
-                                }}
-                                className={childClass(activeId === "advanced")}
-                            >
-                                <Zap className="h-4 w-4" /> Advanced
-                            </button>
-                            <button
-                                onClick={() => {
                                     onSelect("settings");
                                     setMoreOpen(false);
                                 }}
                                 className={childClass(activeId === "settings")}
                             >
-                                <User className="h-4 w-4" /> Settings
+                                <Settings className="h-4 w-4" /> Settings
                             </button>
                             <Link
                                 href="/support"

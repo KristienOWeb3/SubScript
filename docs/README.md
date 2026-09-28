@@ -6,6 +6,7 @@ material lives here, grouped by purpose.
 ## Product
 
 - [Features and services](product/features-and-services.md)
+- Public merchant identity guide: [`/docs/merchant-identity`](https://subscriptonarc.com/docs/merchant-identity)
 - [Deployment-scoped features and backlog](product/deployment-scoped-features.md)
 - [Platform feature coverage](platform-feature-coverage.md)
 - [Protocol features and problems solved](subscript-protocol-features-and-problems-solved.md)

@@ -21,6 +21,7 @@ interface MultiWalletAuthRowProps {
   googleAvailable?: boolean;
   externalWalletEnabled?: boolean;
   onGoogleSuccess: (data: any) => void;
+  onGoogleError?: (error: string | null) => void;
   connectors: readonly Connector[];
   onSelectConnector: (connector: Connector) => void;
   onNoWalletDetected: (message: string) => void;
@@ -36,6 +37,7 @@ export function MultiWalletAuthRow({
   googleAvailable = true,
   externalWalletEnabled = true,
   onGoogleSuccess,
+  onGoogleError,
   connectors,
   onSelectConnector,
   onNoWalletDetected,
@@ -109,7 +111,12 @@ export function MultiWalletAuthRow({
       {/* Google Sign-in */}
       {googleAvailable && (
         <div className="shrink-0">
-          <CircleGoogleWalletButton onSuccess={onGoogleSuccess} variant="icon" disabled={disabled} />
+          <CircleGoogleWalletButton
+            onSuccess={onGoogleSuccess}
+            onError={onGoogleError}
+            variant="icon"
+            disabled={disabled}
+          />
         </div>
       )}
 
@@ -120,9 +127,10 @@ export function MultiWalletAuthRow({
                When clicked, explicitly display error that no wallet is detected. */
             <button
               type="button"
-              onClick={() =>
-                onNoWalletDetected("No Web3 wallet detected. Please install a browser extension like MetaMask, Rabby, or OKX to continue.")
-              }
+              onClick={() => {
+                onGoogleError?.(null);
+                onNoWalletDetected("No Web3 wallet detected. Please install a browser extension like MetaMask, Rabby, or OKX to continue.");
+              }}
               disabled={disabled || isBusy}
               title="MetaMask (No wallet detected)"
               className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"
@@ -139,7 +147,10 @@ export function MultiWalletAuthRow({
                 <button
                   key={connector.uid || connector.id}
                   type="button"
-                  onClick={() => onSelectConnector(connector)}
+                  onClick={() => {
+                    onGoogleError?.(null);
+                    onSelectConnector(connector);
+                  }}
                   disabled={disabled || isBusy}
                   title={`Connect ${connector.name}`}
                   className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"

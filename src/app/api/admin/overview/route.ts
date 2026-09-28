@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { requireScope } from "@/lib/admin/guard";
 import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
 import { jsonOk } from "@/lib/http/json";
+import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
+
+const COMMERCE_RECEIPT_SOURCES = ["COMMERCE_PAYMENT", "SUBSCRIPTION"] as const;
 
 const MICRO_USDC = 1_000_000n;
 
@@ -56,7 +59,8 @@ export async function GET(request: Request) {
         take: 100,
         select: {
           walletAddress: true,
-          tier: true,
+          merchantId: true,
+          displayName: true,
           verified: true,
           profilePic: true,
           createdAt: true,
@@ -66,12 +70,12 @@ export async function GET(request: Request) {
       () => prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } }),
       () => prisma.accountRole.count(),
       () => prisma.receipt.aggregate({
-        where: { status: "CONFIRMED" },
+        where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] } },
         _sum: { amountUsdc: true },
         _count: true,
       }),
       () => prisma.receipt.aggregate({
-        where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
+        where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] }, createdAt: { gte: thirtyDaysAgo } },
         _sum: { amountUsdc: true },
         _count: true,
       }),
@@ -79,7 +83,7 @@ export async function GET(request: Request) {
       () => prisma.kycVerification.count({ where: { status: { in: ["PENDING", "IN_REVIEW"] } } }),
       () => prisma.receipt.count({ where: { status: { not: "CONFIRMED" }, createdAt: { lt: sevenDaysAgo } } }),
       () => prisma.receipt.findMany({
-        where: { status: "CONFIRMED", createdAt: { gte: fourteenDaysAgo } },
+        where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] }, createdAt: { gte: fourteenDaysAgo } },
         select: { createdAt: true, amountUsdc: true },
         orderBy: { createdAt: "asc" },
       }),
@@ -90,16 +94,10 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    const merchantAddresses = merchantsRaw.map((m) => m.walletAddress.toLowerCase());
-    const aliases = await prisma.addressAlias.findMany({
-      where: { address: { in: merchantAddresses } },
-    });
-    const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
-
     const merchants = merchantsRaw.map((m) => ({
       walletAddress: m.walletAddress,
-      merchantName: aliasMap.get(m.walletAddress.toLowerCase()) || m.walletAddress.slice(0, 10),
-      tier: m.tier,
+      merchantId: m.merchantId,
+      merchantName: resolveMerchantDisplayName(m.displayName),
       verified: m.verified,
       profilePic: m.profilePic,
       createdAt: m.createdAt,
