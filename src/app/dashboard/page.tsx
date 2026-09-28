@@ -622,7 +622,7 @@ export default function DashboardPage() {
                     params.set("section", "advanced");
                     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
                 }
-            } else if (tab && ["overview", "payment-links", "payroll", "apikeys", "checkout", "webhooks", "settings"].includes(tab)) {
+            } else if (tab && ["overview", "payment-links", "payroll", "apikeys", "checkout", "webhooks", "settings", "offramp"].includes(tab)) {
                 setActiveTab(tab as TabId);
             }
         }
