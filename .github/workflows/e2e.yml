@@ -73,6 +73,9 @@ jobs:
         with:
           version: 2.109.1
 
+      - name: Browser restart session persistence
+        run: node --test --test-isolation=none src/lib/auth/__tests__/session-browser.test.mjs
+
       - name: Start isolated Supabase stack
         run: supabase start
 

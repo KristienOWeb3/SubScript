@@ -44,6 +44,9 @@ jobs:
       - name: Financial safety regressions
         run: npm run test:security
 
+      - name: Session recovery regressions
+        run: node --test --test-isolation=none src/lib/auth/__tests__/session-persistence.test.mjs
+
       - name: Production dependency audit
         run: npm run audit:production
 
