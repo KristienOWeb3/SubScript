@@ -1364,10 +1364,13 @@ export default function DashboardPage() {
 
 
     useEffect(() => {
+        let cancelled = false;
         const restoreSession = async () => {
             try {
-                const res = await fetch("/api/auth/session");
+                const res = await fetch("/api/auth/session", { cache: "no-store" });
+                if (!res.ok) throw new Error("Session check unavailable");
                 const data = await res.json();
+                if (cancelled) return;
                 if (data.loggedIn && data.wallet) {
                     if (!data.role) {
                         console.warn("Missing account role");
@@ -1393,10 +1396,11 @@ export default function DashboardPage() {
             } catch (err) {
                 console.error("Error restoring session:", err);
             } finally {
-                setIsAuthLoading(false);
+                if (!cancelled) setIsAuthLoading(false);
             }
         };
         restoreSession();
+        return () => { cancelled = true; };
     }, [router]);
 
 
@@ -1414,10 +1418,13 @@ export default function DashboardPage() {
             return;
         }
 
+        let cancelled = false;
         const verifySession = async () => {
             try {
-                const res = await fetch("/api/auth/session");
+                const res = await fetch("/api/auth/session", { cache: "no-store" });
+                if (!res.ok) throw new Error("Session check unavailable");
                 const data = await res.json();
+                if (cancelled) return;
                 if (data.loggedIn) {
                     if (data.isEmbedded) {
                         setEmbeddedWallet({
@@ -1440,6 +1447,7 @@ export default function DashboardPage() {
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
+                    setSessionAlert(null);
                 } else {
                     setSessionWallet(null);
                 }
@@ -1452,6 +1460,7 @@ export default function DashboardPage() {
         if (isConnected && !embeddedWallet) {
             verifySession();
         }
+        return () => { cancelled = true; };
     }, [address, isConnected, embeddedWallet, router]);
 
     const handleSendOtp = async (e: React.FormEvent) => {
@@ -5647,7 +5656,7 @@ Please complete the following implementation tasks:
                             <p className="text-xs text-white/50 leading-relaxed font-sans font-normal">
                                 {sessionAlert === "role_missing" && "Your active profile is missing an assigned role. Please complete your registration."}
                                 {sessionAlert === "wrong_role" && "This is the Enterprise Merchant dashboard, but your session is registered as a User Account."}
-                                {sessionAlert === "wallet_mismatch" && "Your connected wallet address does not match your active session. Please sign in again."}
+                                {sessionAlert === "wallet_mismatch" && "Your account is still signed in. Disconnect this wallet, then connect the wallet for your account."}
                             </p>
                         </div>
 
@@ -5658,15 +5667,15 @@ Please complete the following implementation tasks:
                                 } else if (sessionAlert === "wrong_role") {
                                     window.location.href = getDashboardUrl("USER", APP_ROUTES.userDashboard);
                                 } else {
-                                    await fetch("/api/auth/logout", { method: "POST" });
-                                    window.location.href = getDashboardUrl("USER", APP_ROUTES.login);
+                                    disconnect();
+                                    setSessionAlert(null);
                                 }
                             }}
                             className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
                         >
                             {sessionAlert === "role_missing" && "Complete Account Setup"}
                             {sessionAlert === "wrong_role" && "Switch to User Dashboard"}
-                            {sessionAlert === "wallet_mismatch" && "Return to Login"}
+                            {sessionAlert === "wallet_mismatch" && "Disconnect Wallet"}
                         </button>
                     </div>
                 </div>

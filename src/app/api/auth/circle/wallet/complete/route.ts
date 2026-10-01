@@ -163,7 +163,7 @@ export async function POST(request: Request) {
             }
         }
 
-        const sessionDuration = 24 * 60 * 60 * 1000; // 1 day
+        const sessionDuration = 30 * 24 * 60 * 60 * 1000; // 30 days (persists across browser restarts)
         const { token: jwt, expiresAt } = await createSessionToken(walletAddress, sessionDuration);
 
         await ensureDefaultAliasFromEmail(walletAddress, emailVal);

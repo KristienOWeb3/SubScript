@@ -6,7 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useDisconnect, useReadContract, useReadContracts, useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { useDisconnect, useReadContract, useReadContracts, useAccount, useConfig, useSwitchChain, useWriteContract } from "wagmi";
+import { getAccount } from "wagmi/actions";
 import {
   formatUnits,
   createPublicClient,
@@ -623,6 +624,7 @@ export default function UserDashboard() {
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+  const sessionCheckId = useRef(0);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -1203,7 +1205,15 @@ export default function UserDashboard() {
 
   const { address: accountAddress, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
+  const walletConfig = useConfig();
+  const { writeContractAsync: writeConnectedWalletContract } = useWriteContract();
+  const writeContractAsync: typeof writeConnectedWalletContract = useCallback(async (...args) => {
+    const connectedWallet = getAccount(walletConfig).address;
+    if (!userWallet || connectedWallet?.toLowerCase() !== userWallet.toLowerCase()) {
+      throw new Error("Connect the wallet for your signed-in SubScript account before sending.");
+    }
+    return Reflect.apply(writeConnectedWalletContract, undefined, args) as ReturnType<typeof writeConnectedWalletContract>;
+  }, [walletConfig, userWallet, writeConnectedWalletContract]);
   /* Operators can pause browser-wallet signing. A cross-chain withdrawal from a browser wallet needs
      three signatures from it, so the Send sheet has to know before it offers the route. */
   const { externalWalletEnabled } = usePlatformFlags();
@@ -1436,13 +1446,22 @@ export default function UserDashboard() {
   }, []);
 
   const verifySession = useCallback(async () => {
+    const checkId = ++sessionCheckId.current;
     try {
       setRedirectMessage(null);
-      const res = await fetch("/api/auth/session");
+      setRedirectUrl(null);
+      setLoading(true);
+      const res = await fetch("/api/auth/session", { cache: "no-store" });
+      if (checkId !== sessionCheckId.current) return;
+      if (!res.ok) throw new Error("Session check unavailable");
       const data = await res.json();
-      if (!data.loggedIn) {
+      if (checkId !== sessionCheckId.current) return;
+      if (data.loggedIn === false) {
         redirectTo(getDashboardUrl("USER", "/signin"), "Please sign in or create an account to access your dashboard.");
         return;
+      }
+      if (data.loggedIn !== true || typeof data.wallet !== "string") {
+        throw new Error("Invalid session response");
       }
 
       if (data.role && data.role !== "USER") {
@@ -1452,10 +1471,10 @@ export default function UserDashboard() {
       }
 
       if (!data.isEmbedded && accountAddress && data.wallet.toLowerCase() !== accountAddress.toLowerCase()) {
-        console.warn("Session wallet mismatch, logging out");
-        await fetch("/api/auth/logout", { method: "POST" });
-        redirectTo(getDashboardUrl("USER", "/signin"), "Signing you out...");
-        return;
+        console.warn("Connected wallet does not match session wallet; disconnecting Wagmi to prevent conflict");
+        try {
+          disconnect();
+        } catch {}
       }
 
       setUserWallet(data.wallet);
@@ -1464,16 +1483,19 @@ export default function UserDashboard() {
       setIsEmbeddedWalletSession(Boolean(data.isEmbedded));
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
+      if (checkId !== sessionCheckId.current) return;
       console.error("Session verification error:", e);
-      redirectTo(getDashboardUrl("USER", "/signin"), "Please sign in or create an account to continue.");
+      setRedirectUrl(null);
+      setRedirectMessage("We couldn’t check your session. Please try again.");
     } finally {
-      setLoading(false);
+      if (checkId === sessionCheckId.current) setLoading(false);
     }
   }, [accountAddress, redirectTo]);
 
   useEffect(() => {
-    verifySession();
-  }, [verifySession, accountAddress]);
+    void verifySession();
+    return () => { sessionCheckId.current++; };
+  }, [verifySession]);
 
   useEffect(() => {
     if (redirectUrl && redirectMessage) {
@@ -3703,16 +3725,16 @@ export default function UserDashboard() {
                 if (redirectUrl) {
                   window.location.href = redirectUrl;
                 } else {
-                  window.location.href = getDashboardUrl("USER", "/signin");
+                  void verifySession();
                 }
               }}
               className="w-full py-2.5 bg-[#2775CA] hover:bg-[#1f62ab] text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99]"
             >
               <Loader2 className="w-3.5 h-3.5 animate-spin text-white/70" />
-              <span>{isSignupTarget ? "Proceed to Sign Up" : "Proceed to Sign In"}</span>
+              <span>{!redirectUrl ? "Try Again" : isSignupTarget ? "Proceed to Sign Up" : "Proceed to Sign In"}</span>
             </button>
 
-            <button
+            {redirectUrl && <button
               type="button"
               onClick={() => {
                 window.location.href = getDashboardUrl("USER", isSignupTarget ? "/signin" : "/signup");
@@ -3720,7 +3742,7 @@ export default function UserDashboard() {
               className="w-full py-2.5 bg-black/5 hover:bg-black/10 text-[#111827] font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all border border-black/10 active:scale-[0.99]"
             >
               <span>{isSignupTarget ? "Sign In Instead" : "Create Account / Sign Up"}</span>
-            </button>
+            </button>}
           </div>
         </div>
       </div>

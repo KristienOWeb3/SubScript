@@ -128,7 +128,10 @@ export type VerifiedSessionToken = {
  * the authenticated wallet, and the token's own expiry (never extended) so callers
  * can re-issue the exact same session cookie with current scoping options.
  */
-export async function getVerifiedSessionToken(headers: Headers): Promise<VerifiedSessionToken | null> {
+export async function getVerifiedSessionToken(
+    headers: Headers,
+    options: { throwOnDatabaseError?: boolean } = {},
+): Promise<VerifiedSessionToken | null> {
     const cookieStore = headers.get("cookie") || "";
     const tokens = getCookieValues(cookieStore, "subscript_session_token");
 
@@ -233,6 +236,9 @@ export async function getVerifiedSessionToken(headers: Headers): Promise<Verifie
             tokenHash: candidates[0]?.hash,
             reason: "db-error",
         });
+        // Session discovery must distinguish an outage from an expired or revoked login.
+        // Other authenticated callers retain the default fail-closed behavior.
+        if (options.throwOnDatabaseError) throw e;
         return null;
     }
 }
