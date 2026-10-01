@@ -248,10 +248,13 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     }, []);
 
     useEffect(() => {
+        let cancelled = false;
         const restoreSession = async () => {
             try {
-                const res = await fetch("/api/auth/session");
+                const res = await fetch("/api/auth/session", { cache: "no-store" });
+                if (!res.ok) throw new Error("Session check unavailable");
                 const data = await res.json();
+                if (cancelled) return;
                 if (data.loggedIn && data.wallet) {
                     setSessionWallet(data.wallet.toLowerCase());
                     if (data.isEmbedded) {
@@ -266,10 +269,11 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             } catch (err) {
                 console.error("Error restoring session:", err);
             } finally {
-                setIsAuthLoading(false);
+                if (!cancelled) setIsAuthLoading(false);
             }
         };
         restoreSession();
+        return () => { cancelled = true; };
     }, []);
 
     useEffect(() => {
@@ -278,10 +282,13 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             return;
         }
 
+        let cancelled = false;
         const verifySession = async () => {
             try {
-                const res = await fetch("/api/auth/session");
+                const res = await fetch("/api/auth/session", { cache: "no-store" });
+                if (!res.ok) throw new Error("Session check unavailable");
                 const data = await res.json();
+                if (cancelled) return;
                 if (data.loggedIn) {
                     if (data.isEmbedded) {
                         setEmbeddedWallet({
@@ -304,6 +311,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
         if (isConnected && !embeddedWallet) {
             verifySession();
         }
+        return () => { cancelled = true; };
     }, [address, isConnected, embeddedWallet]);
 
     /* ------------------------------------------------------------------ */

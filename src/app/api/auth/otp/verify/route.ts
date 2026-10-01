@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { email, code, rememberMe, challengeId, purpose, stepUp } = sanitizedBody;
+        const { email, code, challengeId, purpose, stepUp } = sanitizedBody;
 
         if (
             typeof email !== "string" ||
@@ -63,7 +63,6 @@ export async function POST(request: Request) {
 
         const emailVal = email.toLowerCase();
         const codeTrimmed = code.trim();
-        const rememberMeBool = Boolean(rememberMe);
         const isFinancialStepUpRequest = purpose === "financial_step_up";
         const stepUpBinding = isFinancialStepUpRequest
             ? normalizeFinancialStepUpBinding(stepUp)
@@ -81,7 +80,6 @@ export async function POST(request: Request) {
         const otpWallet = activeSession?.wallet.toLowerCase() ?? null;
 
         const emailLower = emailVal;
-        const rememberMeVal = rememberMeBool;
         const rawChallengeId = typeof challengeId === "string" ? challengeId : null;
         const challengeIdVal = (rawChallengeId && rawChallengeId.startsWith("otp/"))
             ? rawChallengeId.substring(4)
@@ -306,7 +304,7 @@ export async function POST(request: Request) {
             }
         }
 
-        const sessionDuration = rememberMeVal ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+        const sessionDuration = 30 * 24 * 60 * 60 * 1000; // 30 days (persists across browser restarts)
         const { token: jwt, expiresAt } = await createSessionToken(walletAddress, sessionDuration);
 
         /* Default the user's .sub username to their email name on first sign-up (changeable later). */

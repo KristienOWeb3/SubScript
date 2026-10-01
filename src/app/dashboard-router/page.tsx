@@ -6,21 +6,29 @@ import { getDashboardUrl } from "@/utils/navigation";
 
 export default function DashboardRouterPage() {
     const [message, setMessage] = useState("Checking your SubScript account...");
+    const [retryCount, setRetryCount] = useState(0);
+    const [unavailable, setUnavailable] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
 
         const routeByRole = async () => {
             try {
+                setUnavailable(false);
+                setMessage("Checking your SubScript account...");
                 const res = await fetch("/api/auth/session", { cache: "no-store" });
-                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error("Session check unavailable");
+                const data = await res.json();
 
                 if (cancelled) return;
 
-                if (!res.ok || !data.loggedIn) {
+                if (data.loggedIn === false) {
                     setMessage("Redirecting to sign in...");
                     window.location.href = getDashboardUrl("USER", "/signin");
                     return;
+                }
+                if (data.loggedIn !== true || typeof data.wallet !== "string") {
+                    throw new Error("Invalid session response");
                 }
 
                 const targetRole = (data.role || "USER") as "USER" | "ENTERPRISE";
@@ -29,8 +37,8 @@ export default function DashboardRouterPage() {
                 return;
             } catch {
                 if (!cancelled) {
-                    setMessage("Redirecting to sign in...");
-                    window.location.href = getDashboardUrl("USER", "/signin");
+                    setMessage("We couldn’t check your session. Please try again.");
+                    setUnavailable(true);
                 }
             }
         };
@@ -40,11 +48,18 @@ export default function DashboardRouterPage() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [retryCount]);
 
     return (
         <main className="flex min-h-screen items-center justify-center bg-[#FFFFF0] px-6 text-[#082824]">
-            <SkeletonPage label={message} className="w-full" />
+            {unavailable ? (
+                <div className="text-center space-y-4">
+                    <p role="alert">{message}</p>
+                    <button type="button" onClick={() => setRetryCount(count => count + 1)} className="rounded-xl bg-[#2775CA] px-5 py-3 font-semibold text-white">
+                        Try Again
+                    </button>
+                </div>
+            ) : <SkeletonPage label={message} className="w-full" />}
         </main>
     );
 }

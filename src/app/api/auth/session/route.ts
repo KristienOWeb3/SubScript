@@ -9,10 +9,13 @@ import { isAdminWallet } from "@/lib/admin/identity";
 
 export async function GET(request: Request) {
     try {
-        const session = await getVerifiedSessionToken(request.headers);
+        const session = await getVerifiedSessionToken(request.headers, { throwOnDatabaseError: true });
 
         if (!session) {
-            return NextResponse.json({ loggedIn: false }, { status: 200 });
+            return NextResponse.json({ loggedIn: false }, {
+                status: 200,
+                headers: { "Cache-Control": "private, no-store" },
+            });
         }
         const wallet = session.wallet;
 
@@ -65,7 +68,7 @@ export async function GET(request: Request) {
             isEmbedded,
             role,
             isAdmin
-        }, { status: 200 });
+        }, { status: 200, headers: { "Cache-Control": "private, no-store" } });
 
         /* Self-heal cookie scoping: re-issue the SAME token (original expiry, never
            extended) with the current cookie options. Sessions created before the
@@ -80,7 +83,10 @@ export async function GET(request: Request) {
         return response;
     } catch (error) {
         console.error("Session API error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: "Unable to check your session. Please retry.", code: "SESSION_UNAVAILABLE" }, {
+            status: 503,
+            headers: { "Cache-Control": "private, no-store", "Retry-After": "2" },
+        });
     }
 }
 

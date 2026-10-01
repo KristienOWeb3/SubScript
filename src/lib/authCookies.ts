@@ -33,6 +33,7 @@ function baseCookieOptions(request: Request): Partial<ResponseCookie> {
 }
 
 export function setSessionCookie(response: NextResponse, request: Request, token: string, expires: Date) {
+    const maxAge = Math.max(0, Math.floor((expires.getTime() - Date.now()) / 1000));
     response.cookies.set("subscript_session_token", token, {
         ...baseCookieOptions(request),
         /* Lax, not Strict: an installed PWA launched from the home screen makes a top-level
@@ -43,6 +44,7 @@ export function setSessionCookie(response: NextResponse, request: Request, token
            subresource requests, so CSRF protection for the session is preserved. */
         sameSite: "lax",
         expires,
+        maxAge,
     });
 }
 
