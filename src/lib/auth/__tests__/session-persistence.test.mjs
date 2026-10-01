@@ -65,9 +65,9 @@ test("a restored cookie authenticates; session discovery preserves its original 
     assert.equal(response.headers.get("cache-control"), "private, no-store");
     const cookie = response.cookies.get("subscript_session_token");
     assert.equal(cookie.value, token);
-    const jwtExpiry = Math.floor(expiresAt.getTime() / 1000) * 1000;
-    // Next's cookie serializer derives Expires from the rounded-down Max-Age.
-    assert.ok(cookie.expires.getTime() <= jwtExpiry && cookie.expires.getTime() > jwtExpiry - 1000);
+    // JWT expiry is the authorization boundary. Next derives cookie Expires from
+    // Max-Age, so its internal millisecond timestamp can drift during serialization.
+    assert.equal(jose.decodeJwt(cookie.value).exp, Math.floor(expiresAt.getTime() / 1000));
     assert.ok(cookie.maxAge > 29 * 86400 && cookie.maxAge <= 30 * 86400);
     assert.equal(cookie.domain, ".subscriptonarc.com");
     assert.equal(cookie.sameSite, "lax");
