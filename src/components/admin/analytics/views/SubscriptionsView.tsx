@@ -59,7 +59,7 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
   return (
     <div className="space-y-6">
       {/* Top Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-4">
         <StatCardWithSparkline
           label="Total Active Plans"
           value={activeTotal}
@@ -92,7 +92,7 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
       </div>
 
       {/* Donut and Composition Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-6">
         {/* Status Donut Chart */}
         <DonutMetricChart
           segments={statusSegments}

@@ -10,6 +10,7 @@ import MerchantOverview from "@/components/dashboard/MerchantOverview";
 import NotificationBell from "@/components/dashboard/NotificationBell";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import Skeleton from "@/components/ui/Skeleton";
+import Toast from "@/components/ui/Toast";
 import { SkeletonCard, SkeletonRows, SkeletonStatGrid } from "@/components/ui/skeletons";
 import { APP_ROUTES, getDashboardUrl } from "@/utils/navigation";
 import { compressAvatarImage } from "@/utils/imageCompression";
@@ -2332,7 +2333,7 @@ Please complete the following implementation tasks:
     const renderPaymentLinksTab = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
             return (
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 text-black font-sans">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-center max-w-md mx-auto space-y-6 py-12 text-black font-sans">
                     <Shield className="w-10 h-10 mx-auto text-[#082824]" />
                     <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
                     <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
@@ -2353,7 +2354,7 @@ Please complete the following implementation tasks:
         return (
             <div className="space-y-8">
                 {/* Create Payment Link Form */}
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6 shadow-sm">
                     <div>
                         <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
                             <Link2 className="w-5 h-5 text-[#082824]" />
@@ -2365,7 +2366,7 @@ Please complete the following implementation tasks:
                     </div>
 
                     <form onSubmit={handleCreatePaymentLink} className="space-y-5 font-sans text-sm sm:text-base">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 @[640px]/merchant:grid-cols-2 gap-4">
                             <div className="space-y-1.5">
                                 <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Product Title *</label>
                                 <input
@@ -2417,7 +2418,7 @@ Please complete the following implementation tasks:
 
                         {showLinkAdvanced && (
                             <div className="grid grid-cols-2 gap-4 pt-3 border-t border-black/10">
-                                <div className="col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div className="col-span-2 grid grid-cols-1 @[720px]/merchant:grid-cols-3 gap-2">
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -2485,7 +2486,7 @@ Please complete the following implementation tasks:
                                     <p className="text-xs sm:text-sm font-bold text-[#082824]">
                                         Invoice details <span className="font-normal text-black/50">(optional, turns this link into an invoice; shown on the checkout page)</span>
                                     </p>
-                                    <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="grid gap-3 @[720px]/merchant:grid-cols-3">
                                         <div className="space-y-1.5">
                                             <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Invoice Number</label>
                                             <input
@@ -2543,7 +2544,7 @@ Please complete the following implementation tasks:
                                     Payment link created
                                 </p>
                                 {createdLinkInfo && (
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-black/10 rounded-2xl p-3.5">
+                                    <div className="flex flex-col @[640px]/merchant:flex-row @[640px]/merchant:items-center justify-between gap-3 bg-white border border-black/10 rounded-2xl p-3.5">
                                         <span className="text-xs sm:text-sm font-mono text-black/80 truncate max-w-[190px] xs:max-w-[240px] sm:max-w-none flex-1">
                                             {createdLinkInfo.checkoutUrl}
                                         </span>
@@ -2586,7 +2587,7 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Existing Payment Links List */}
-                <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 text-black dark:text-white space-y-6 shadow-sm">
+                <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-4 sm:p-6 text-black dark:text-white space-y-6 shadow-sm">
                     <div>
                         <h2 className="text-lg font-bold sm:text-xl text-[#082824] dark:text-white mb-1.5">Payment Links</h2>
                         <p className="text-xs sm:text-sm text-black/70 dark:text-white/70 font-sans leading-relaxed">
@@ -2748,7 +2749,7 @@ Please complete the following implementation tasks:
                                                                         <span className="text-black font-semibold text-xs">Link Stats & Payments</span>
                                                                         <span className="text-[10px] text-black/50">Total Payments: {link.payments?.length || 0}</span>
                                                                     </div>
-                                                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-start border border-black/10 rounded-xl bg-black/[0.02] p-3">
+                                                                    <div className="grid grid-cols-1 @[640px]/merchant:grid-cols-[minmax(0,1fr)_auto] gap-3 items-start border border-black/10 rounded-xl bg-black/[0.02] p-3">
                                                                         <div className="space-y-1">
                                                                             <div className="text-[10px] text-black/50 font-semibold">Link Rules</div>
                                                                             <div className="text-[11px] text-black/70">
@@ -2891,8 +2892,8 @@ Please complete the following implementation tasks:
 
         return (
             <div className="space-y-8">
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6">
+                    <div className="flex flex-col gap-3 @[640px]/merchant:flex-row @[640px]/merchant:items-start @[640px]/merchant:justify-between">
                         <div>
                             <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
                                 <Sliders className="w-5 h-5 text-[#082824]" />
@@ -2914,7 +2915,7 @@ Please complete the following implementation tasks:
                     </div>
 
                     <form onSubmit={handleCreatePlan} className="space-y-5 font-sans text-sm sm:text-base">
-                        <div className="grid gap-4 md:grid-cols-[1.3fr_0.8fr_0.8fr] md:items-end">
+                        <div className="grid gap-4 @[800px]/merchant:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.8fr)] @[800px]/merchant:items-end">
                             <div className="space-y-1.5">
                                 <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Plan Name</label>
                                 <input
@@ -2998,7 +2999,7 @@ Please complete the following implementation tasks:
                     {planSuccess && <p className="text-xs sm:text-sm font-bold text-emerald-600">{planSuccess}</p>}
                 </div>
 
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid gap-5 @[640px]/merchant:grid-cols-2">
                     <div className="rounded-[34px] min-w-0 overflow-hidden border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="text-sm sm:text-base font-bold text-[#082824]">Active Plans</h3>
@@ -3088,12 +3089,12 @@ Please complete the following implementation tasks:
         }
 
         const renderBusinessIdentityCard = () => (
-            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4 shadow-sm">
                 <div>
                     <h3 className="text-sm font-semibold text-black">Business identity</h3>
                     <p className="mt-1 text-xs text-black/55">Keep track of the three names attached to this merchant account.</p>
                 </div>
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 @[860px]/merchant:grid-cols-3">
                     <div className="min-w-0 rounded-2xl border border-black/10 bg-[#D4E3E8] p-4 flex flex-col justify-between">
                         <div>
                             <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Merchant ID</p>
@@ -3145,7 +3146,7 @@ Please complete the following implementation tasks:
 
         const renderBackHeader = (title: string, subtitle?: string) => (
             <div className="flex flex-col gap-1 mb-6">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <button
                         type="button"
                         onClick={() => setMerchantSubView("menu")}
@@ -3367,7 +3368,7 @@ Please complete the following implementation tasks:
                     <div className="space-y-6">
                         {renderBackHeader("Appearance & Theme", "Customize how your merchant portal looks.")}
 
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-6 shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 space-y-6 shadow-sm">
                             <div>
                                 <h3 className="text-base font-bold text-[#082824]">Dashboard Theme</h3>
                                 <p className="text-xs text-black/60 mt-1">
@@ -3375,7 +3376,7 @@ Please complete the following implementation tasks:
                                 </p>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                            <div className="grid grid-cols-1 @[720px]/merchant:grid-cols-3 gap-3.5">
                                 {[
                                     {
                                         id: "light" as const,
@@ -3437,8 +3438,8 @@ Please complete the following implementation tasks:
 
                         {renderBusinessIdentityCard()}
 
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
-                            <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-black/10">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6 shadow-sm">
+                            <div className="flex flex-col @[640px]/merchant:flex-row items-start @[640px]/merchant:items-center gap-6 pb-6 border-b border-black/10">
                                 <div className="relative group shrink-0">
                                     <div className="w-20 h-20 rounded-full border border-black/15 overflow-hidden bg-[#D4E3E8] flex items-center justify-center text-[#082824] relative">
                                         {userSettings?.profilePic ? (
@@ -3458,7 +3459,7 @@ Please complete the following implementation tasks:
                                     </label>
                                 </div>
 
-                                <div className="flex-1 space-y-1">
+                                <div className="min-w-0 flex-1 space-y-1">
                                     <h3 className="text-sm font-semibold text-black">Merchant Profile Photo</h3>
                                     <p className="text-[10px] text-black/60 leading-relaxed font-sans max-w-sm">
                                         Upload a brand logo or profile picture. JPG/PNG, maximum 2MB size limit.
@@ -3478,7 +3479,7 @@ Please complete the following implementation tasks:
                                         value={payoutDestinationDraft}
                                         placeholder="0x..."
                                         onChange={(e) => { setPayoutDestinationDraft(e.target.value); setPayoutDestinationError(null); }}
-                                        className="flex-1 bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black text-xs focus:outline-none focus:border-[#8AB4DB] font-mono"
+                                        className="min-w-0 flex-1 bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black text-xs focus:outline-none focus:border-[#8AB4DB] font-mono"
                                     />
                                     <button
                                         type="button"
@@ -3529,7 +3530,7 @@ Please complete the following implementation tasks:
                     <div className="space-y-6">
                         {renderBackHeader("KYC Verification & Tier", "Identity verification and platform trust badges.")}
 
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6 shadow-sm">
                             <div className="p-4 rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/5 space-y-2">
                                 <div className="flex items-center justify-between gap-3">
                                     <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">KYC Access Tier</h4>
@@ -3565,7 +3566,7 @@ Please complete the following implementation tasks:
                     <div className="space-y-6">
                         {renderBackHeader("Failed-Renewal Policy", "Manage automatic keeper retries and customer grace periods.")}
 
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4 shadow-sm">
                             <div>
                                 <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
                                     <ArrowRightLeft className="w-4 h-4 text-[#082824]" />
@@ -3577,7 +3578,7 @@ Please complete the following implementation tasks:
                                     customer is notified. More attempts ≈ more days of grace.
                                 </p>
                             </div>
-                            <div className="flex flex-col sm:flex-row gap-3 sm:items-center font-sans">
+                            <div className="flex flex-col @[640px]/merchant:flex-row gap-3 @[640px]/merchant:items-center font-sans">
                                 <input
                                     type="number"
                                     min="1"
@@ -3683,7 +3684,7 @@ Please complete the following implementation tasks:
                             });
 
                             return (
-                                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6 shadow-sm">
                                     <div className="space-y-4">
                                         <div className="relative">
                                             <input
@@ -3850,7 +3851,7 @@ Please complete the following implementation tasks:
                     <div className="space-y-6">
                         {renderBackHeader("Notifications & Alerts", "Configure delivery channels and webhook preferences.")}
 
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6 shadow-sm">
                             <div className="space-y-4 font-sans text-xs">
                                 <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
                                     <div className="space-y-0.5">
@@ -3904,8 +3905,8 @@ Please complete the following implementation tasks:
                         {renderBackHeader("Security & Wallet Recovery", "MPC custody and multi-sig authorization.")}
 
                         <div className="space-y-6">
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black shadow-sm">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black shadow-sm">
+                                <div className="flex flex-col gap-3 @[640px]/merchant:flex-row @[640px]/merchant:items-start @[640px]/merchant:justify-between">
                                     <div>
                                         <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-black">
                                             <Lock className="h-4 w-4 text-[#082824]" />
@@ -3924,7 +3925,7 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Security Toggles */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4 shadow-sm">
                                 <div>
                                     <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
                                         <Lock className="w-4 h-4 text-[#082824]" />
@@ -3960,7 +3961,7 @@ Please complete the following implementation tasks:
                     <div className="space-y-6">
                         {renderBackHeader("Help & Support", "Get help with integrations, smart contracts, and billing.")}
 
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6 shadow-sm">
                             <div>
                                 <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
                                     <HelpCircle className="w-4 h-4 text-[#082824]" />
@@ -3971,7 +3972,7 @@ Please complete the following implementation tasks:
                                     humans read every message.
                                 </p>
                             </div>
-                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 font-sans text-xs">
+                            <div className="grid gap-3 sm:grid-cols-2 @[1080px]/merchant:grid-cols-4 font-sans text-xs">
                                 <button
                                     type="button"
                                     onClick={() => setSupportChatOpen(true)}
@@ -4013,7 +4014,7 @@ Please complete the following implementation tasks:
     const renderView = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
             return (
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-xl text-black font-sans mt-12">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-center max-w-md mx-auto space-y-6 py-12 shadow-xl text-black font-sans mt-12">
                     <Shield className="w-10 h-10 mx-auto text-[#082824]" />
                     <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
                     <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
@@ -4039,8 +4040,8 @@ Please complete the following implementation tasks:
             return (
                 <div className="space-y-8 font-sans">
                     {/* Vault Config Form and Claim Settlement */}
-                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6 shadow-sm">
+                        <div className="flex flex-col gap-3 @[640px]/merchant:flex-row @[640px]/merchant:items-start @[640px]/merchant:justify-between">
                             <div>
                                 <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
                                     <ShieldCheck className="w-5 h-5 text-[#082824]" />
@@ -4064,7 +4065,7 @@ Please complete the following implementation tasks:
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 @[640px]/merchant:grid-cols-2 gap-6">
                             {/* Claim Settled Funds card */}
                             <div className="rounded-[28px] border border-black/10 bg-[#D4E3E8] p-6 flex flex-col justify-between gap-4">
                                 <div>
@@ -4120,7 +4121,7 @@ Please complete the following implementation tasks:
                     </div>
 
                     {/* Customer Vaults list */}
-                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-6 shadow-sm">
                         <div>
                             <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2">Active Customer Deposits</h2>
                             <p className="text-sm sm:text-base text-black/70 font-sans leading-relaxed">
@@ -4206,7 +4207,7 @@ Please complete the following implementation tasks:
              case "payment-links":
                 return (
                     <div className="space-y-6" {...paymentSubTabsSwipe}>
-                        <div className="flex items-center gap-2 border-b border-black/10 pb-3">
+                        <div className="flex flex-wrap items-center gap-2 border-b border-black/10 pb-3">
                             <button
                                 type="button"
                                 onClick={() => setSubTab("subscriptions")}
@@ -4285,7 +4286,7 @@ Please complete the following implementation tasks:
             case "advanced": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#082824]" />
                             <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
                             <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
@@ -4313,13 +4314,13 @@ Please complete the following implementation tasks:
                             <ChevronLeft className="h-4 w-4" /> Back to Merchant Settings
                         </button>
                         {/* Advanced Settings Header Card */}
-                        <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-4 sm:p-6 shadow-sm">
                             <div className="flex items-start gap-4">
                                 <div className="p-3 rounded-2xl bg-[#082824]/5 dark:bg-white/10 text-[#082824] dark:text-white border border-black/10 dark:border-white/10">
                                     <Settings className="w-8 h-8" />
                                 </div>
                                 <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-1">
+                                    <div className="flex flex-wrap items-center gap-3 mb-1">
                                         <h2 className="text-xl font-bold text-[#082824] dark:text-white tracking-tight">
                                             Advanced Settings
                                         </h2>
@@ -4336,7 +4337,7 @@ Please complete the following implementation tasks:
 
                         <div className="space-y-6">
                             {/* Payout Rerouting Controls */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 shadow-sm space-y-6">
                                 <h3 className="text-sm font-semibold text-black flex items-center gap-2">
                                     <ArrowRightLeft className="w-4 h-4 text-[#082824]" />
                                     Fund Rerouting
@@ -4365,7 +4366,7 @@ Please complete the following implementation tasks:
                                     <label className="text-[10px] text-black/60 font-semibold uppercase tracking-widest block mb-2">
                                         New Destination Address
                                     </label>
-                                    <div className="flex flex-col gap-3 sm:flex-row">
+                                    <div className="flex flex-col gap-3 @[640px]/merchant:flex-row">
                                         <input
                                             type="text"
                                             value={rerouteAddress}
@@ -4392,16 +4393,16 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Arc Confidentiality & Governed Access settings card */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 shadow-sm space-y-6">
                                 <h3 className="text-sm font-semibold text-black flex items-center gap-2">
                                     <Shield className="w-4 h-4 text-[#082824]" />
                                     Arc Confidentiality
                                 </h3>
 
                                 {/* Operational switch for Shielded Batch Payouts */}
-                                <div className="flex items-center justify-between bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
+                                <div className="flex items-start justify-between gap-3 bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
                                     <div>
-                                        <div className="flex items-center gap-2 mb-1">
+                                        <div className="flex flex-wrap items-center gap-2 mb-1">
                                             <h4 className="text-xs font-semibold text-black">Confidential Batch Payouts — Preview</h4>
                                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
                                                 Not available yet
@@ -4426,7 +4427,7 @@ Please complete the following implementation tasks:
                                 {/* Governed Access panel containing a generation button for the View Key */}
                                 <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 space-y-4">
                                     <div>
-                                        <div className="flex items-center gap-2 mb-1">
+                                        <div className="flex flex-wrap items-center gap-2 mb-1">
                                             <h4 className="text-xs font-semibold text-black">Governed View Key</h4>
                                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
                                                 Preview Only
@@ -4437,8 +4438,8 @@ Please complete the following implementation tasks:
                                         </p>
                                     </div>
 
-                                    <div className="flex gap-3">
-                                        <div className="relative flex-1">
+                                    <div className="flex flex-col @[640px]/merchant:flex-row gap-3">
+                                        <div className="relative min-w-0 flex-1">
                                             <input
                                                 type="text"
                                                 value=""
@@ -4463,7 +4464,7 @@ Please complete the following implementation tasks:
                                     </div>
 
                                     {viewKey && !isViewKeyRegistered && (
-                                        <div className="flex items-center justify-between pt-2">
+                                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                                             <span className="text-[10px] text-amber-800 font-semibold flex items-center gap-1">
                                                 <AlertTriangle className="w-3 h-3" /> Key generated but not registered on-chain
                                             </span>
@@ -4479,7 +4480,7 @@ Please complete the following implementation tasks:
                                     )}
 
                                     {isViewKeyRegistered && (
-                                        <div className="flex items-center justify-between pt-2">
+                                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                                             <span className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1">
                                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> View Key is active and registered
                                             </span>
@@ -4497,7 +4498,7 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Manual Keeper Execution Control */}
-                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-6">
+                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-4 sm:p-6 shadow-sm space-y-6">
                                 <h3 className="text-sm font-semibold text-[#082824] dark:text-white flex items-center gap-2">
                                     <Activity className="w-4 h-4 text-[#082824] dark:text-emerald-400" />
                                     Keeper Force Execution
@@ -4505,7 +4506,7 @@ Please complete the following implementation tasks:
                                 <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
                                     Force the SubScript protocol keepers to check and execute any due subscription payments for your wallet immediately on-chain, bypassing the standard scheduler loop.
                                 </p>
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-2xl p-5">
+                                <div className="flex flex-col @[640px]/merchant:flex-row items-stretch @[640px]/merchant:items-center justify-between gap-4 bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-2xl p-5">
                                     <div>
                                         <p className="text-[10px] text-black/50 dark:text-white/50 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
                                         <p className="text-xs font-semibold text-black/80 dark:text-white/80">Schedule: Idle (60s cycles)</p>
@@ -4528,7 +4529,7 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Advanced Features Overview */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div className="grid grid-cols-1 @[640px]/merchant:grid-cols-2 gap-5">
                                 {[
                                     { icon: ArrowRightLeft, title: "Fund Rerouting", desc: "Route subscription funds to cold storage, multisig, or custom wallets.", active: true },
                                     { icon: Activity, title: "Priority Execution", desc: "Keeper bots prioritize your subscription renewals in the execution queue.", active: true },
@@ -4550,9 +4551,9 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* Quick Jump Developer Portal & Merchant Operations */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+                        <div className="grid grid-cols-1 @[860px]/merchant:grid-cols-3 gap-6 pt-4">
                             {/* Merchant KYC / Verification Status */}
-                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-4">
+                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-4 sm:p-6 shadow-sm space-y-4">
                                 <div className="flex items-center justify-between">
                                     <h4 className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-2">
                                         <Shield className="w-4 h-4 text-[#082824] dark:text-emerald-400" /> Business Verification
@@ -4571,7 +4572,7 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Developer Portal Quick Jump */}
-                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-4">
+                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-4 sm:p-6 shadow-sm space-y-4">
                                 <h4 className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-2">
                                     <Terminal className="w-4 h-4 text-[#082824] dark:text-sky-400" /> Developer Quick-Jump
                                 </h4>
@@ -4593,7 +4594,7 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Notification Preferences */}
-                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-4">
+                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-4 sm:p-6 shadow-sm space-y-4">
                                 <h4 className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-2">
                                     <Bell className="w-4 h-4 text-[#082824] dark:text-amber-400" /> Notification Toggles
                                 </h4>
@@ -4630,7 +4631,7 @@ Please complete the following implementation tasks:
             case "apikeys": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#082824]" />
                             <h2 className="text-xl font-bold text-[#082824]">Verify Wallet Ownership</h2>
                             <p className="text-xs sm:text-sm text-black/60 leading-relaxed max-w-xs mx-auto">
@@ -4655,8 +4656,8 @@ Please complete the following implementation tasks:
                 const activeKeyMode = (activeKey?.mode || (activePublishableKey.startsWith("pk_live_") ? "LIVE" : "TEST")).toUpperCase();
 
                 return (
-                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black space-y-8 shadow-sm font-sans">
-                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-8 shadow-sm font-sans">
+                        <div className="flex flex-col @[640px]/merchant:flex-row @[640px]/merchant:items-start justify-between gap-4">
                             <div>
                                 <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
                                     <Key className="w-5 h-5 text-[#082824]" />
@@ -4716,7 +4717,7 @@ Please complete the following implementation tasks:
                                     </p>
                                 </div>
                                 <div className="space-y-3 pt-2">
-                                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                                    <div className="flex flex-col @[640px]/merchant:flex-row items-center justify-center gap-3">
                                         <button
                                             onClick={() => handleRollKeys("LIVE")}
                                             disabled={isRolling}
@@ -4769,7 +4770,7 @@ Please complete the following implementation tasks:
                                         )}
                                     </div>
                                     <div className="flex items-center justify-between gap-4 bg-white rounded-2xl p-4 border border-black/10">
-                                        <code className="text-xs sm:text-sm font-mono text-black/90 break-all select-all font-semibold">{activePublishableKey}</code>
+                                        <code className="text-xs sm:text-sm font-mono text-black/90 min-w-0 flex-1 break-all select-all font-semibold">{activePublishableKey}</code>
                                         <button 
                                             onClick={() => handleCopy(activePublishableKey, "Publishable Key")}
                                             className="p-2.5 text-black/60 hover:text-black rounded-xl hover:bg-black/5 transition-all"
@@ -4814,7 +4815,7 @@ Please complete the following implementation tasks:
                                     {activeSecretAvailable ? (
                                         <>
                                             <div className="flex items-center justify-between gap-4 bg-white rounded-2xl p-4 border border-black/10 font-mono">
-                                                <code className="text-xs sm:text-sm text-black/90 break-all font-semibold">
+                                                <code className="text-xs sm:text-sm text-black/90 min-w-0 flex-1 break-all font-semibold">
                                                     {revealSecret
                                                         ? activeSecretKey
                                                         : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
@@ -4849,7 +4850,7 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {activeKeyMode === "TEST" && (
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-xs sm:text-sm text-[#082824]">
+                                    <div className="flex flex-col @[640px]/merchant:flex-row @[640px]/merchant:items-center justify-between gap-2.5 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-xs sm:text-sm text-[#082824]">
                                         <div className="flex items-center gap-2">
                                             <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
                                             <span>Active key is in <strong>TEST / Sandbox</strong> mode (Arc Testnet).</span>
@@ -4866,7 +4867,7 @@ Please complete the following implementation tasks:
                                 )}
 
                                 {/* Roll Keys */}
-                                <div className="pt-6 border-t border-black/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-sans">
+                                <div className="pt-6 border-t border-black/10 flex flex-col @[640px]/merchant:flex-row @[640px]/merchant:items-center justify-between gap-4 font-sans">
                                     <div>
                                         <h3 className="text-sm sm:text-base font-bold text-[#082824] mb-1">Rotation / Roll Credentials</h3>
                                         <p className="text-xs sm:text-sm text-black/60 max-w-md">
@@ -4874,7 +4875,7 @@ Please complete the following implementation tasks:
                                             {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one. The new key is revealed and copied once, here."}
                                         </p>
                                     </div>
-                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+                                    <div className="flex flex-col @[640px]/merchant:flex-row items-stretch @[640px]/merchant:items-center gap-2.5 shrink-0">
                                         {copiedText === "API Secret Key Rolled" && (
                                             <span className="text-xs text-[#082824] font-bold self-center">API Secret Key Rolled</span>
                                         )}
@@ -4908,8 +4909,8 @@ Please complete the following implementation tasks:
                 return (
                     <div className="space-y-8 font-sans">
                         {/* Fastest path: the CLI (no SDK, plain REST). */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black shadow-sm space-y-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black shadow-sm space-y-4">
+                            <div className="flex flex-col @[640px]/merchant:flex-row @[640px]/merchant:items-center @[640px]/merchant:justify-between gap-4">
                                 <div>
                                     <h2 className="text-lg sm:text-xl font-bold text-[#082824] flex items-center gap-2.5">
                                         <Code2 className="w-5 h-5 text-[#082824]" />
@@ -4929,7 +4930,7 @@ Please complete the following implementation tasks:
                                 </a>
                             </div>
                             <div className="flex items-center gap-3 bg-[#D4E3E8]/60 border border-black/10 rounded-2xl px-5 py-3.5">
-                                <code className="flex-1 text-xs sm:text-sm font-mono text-[#082824] font-bold break-all">npx @subscriptonarc/cli</code>
+                                <code className="min-w-0 flex-1 text-xs sm:text-sm font-mono text-[#082824] font-bold break-all">npx @subscriptonarc/cli</code>
                                 <button
                                     onClick={() => handleCopy("npx @subscriptonarc/cli", "CLI Command")}
                                     className="shrink-0 p-2 text-black/60 hover:text-black rounded-xl hover:bg-black/5 transition-colors"
@@ -4940,9 +4941,9 @@ Please complete the following implementation tasks:
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+                        <div className="grid grid-cols-1 @[640px]/merchant:grid-cols-2 gap-8 items-stretch">
                             {/* Configurator Form */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black flex flex-col justify-between shadow-sm">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black flex flex-col justify-between shadow-sm">
                                 <div>
                                     <h2 className="text-lg sm:text-xl font-bold text-[#082824] mb-6 flex items-center gap-2.5">
                                         <CheckoutPlaybook className="w-5 h-5 text-[#082824]" />
@@ -5056,7 +5057,7 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Code output Block */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black flex flex-col justify-between space-y-4 shadow-sm">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black flex flex-col justify-between space-y-4 shadow-sm">
                                 <div className="space-y-1">
                                     <h3 className="text-sm sm:text-base font-bold text-[#082824]">Checkout Snippet (REST · no SDK)</h3>
                                     <p className="text-xs text-black/60 font-sans">A fetch-based checkout button + intent route. No SDK to install.</p>
@@ -5113,7 +5114,7 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* MCP Config */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black space-y-4 shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4 shadow-sm">
                             <div className="space-y-1">
                                 <h3 className="text-sm sm:text-base font-bold text-[#082824]">cursor_mcp.json</h3>
                                 <p className="text-xs text-black/60 font-sans mt-0.5">Drop-in MCP context for Cursor or compatible agents.</p>
@@ -5144,7 +5145,7 @@ Please complete the following implementation tasks:
             case "webhooks": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#082824]" />
                             <h2 className="text-xl font-bold text-[#082824]">Verify Wallet Ownership</h2>
                             <p className="text-xs sm:text-sm text-black/60 leading-relaxed max-w-xs mx-auto">
@@ -5175,7 +5176,7 @@ Please complete the following implementation tasks:
                 return (
                     <div className="space-y-8 text-black font-sans">
                         {/* Webhook Endpoints Config */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-6">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 shadow-sm space-y-6">
                             <div>
                                 <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
                                     <Sliders className="w-5 h-5 text-[#082824]" />
@@ -5199,14 +5200,14 @@ Please complete the following implementation tasks:
 
                             {/* Add endpoint form */}
                             <form onSubmit={handleAddWebhook} className="space-y-3 font-sans">
-                                <div className="flex flex-col sm:flex-row gap-3">
+                                <div className="flex flex-col @[640px]/merchant:flex-row gap-3">
                                     <input
                                         type="url"
                                         value={webhookUrlInput}
                                         onChange={(e) => setWebhookUrlInput(e.target.value)}
                                         placeholder="https://your-api.com/webhooks/subscript"
                                         required
-                                        className="flex-1 rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-sm sm:text-base text-black outline-none transition-colors focus:border-[#8AB4DB]"
+                                        className="min-w-0 flex-1 rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-sm sm:text-base text-black outline-none transition-colors focus:border-[#8AB4DB]"
                                     />
                                     <button
                                         type="submit"
@@ -5240,7 +5241,7 @@ Please complete the following implementation tasks:
                                 ) : (
                                     <div className="space-y-3">
                                         {webhookEndpoints.map((ep) => (
-                                            <div key={ep.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+                                            <div key={ep.id} className="flex flex-col @[640px]/merchant:flex-row @[640px]/merchant:items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
                                                 <div className="space-y-1.5 min-w-0 flex-1 font-sans">
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-mono text-sm sm:text-base font-bold text-[#082824] truncate">{ep.url}</span>
@@ -5302,7 +5303,7 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* Webhook health checks */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-4">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 shadow-sm space-y-4">
                             <div>
                                 <h2 className="text-lg sm:text-xl font-bold text-[#082824]">Webhook health checks</h2>
                                 <p className="mt-1 text-xs sm:text-sm text-black/70 font-sans">
@@ -5340,9 +5341,9 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* Event Feed and Inspector */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+                        <div className="grid grid-cols-1 @[640px]/merchant:grid-cols-2 gap-6 items-stretch">
                             {/* Event Feed */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm flex flex-col justify-between">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 shadow-sm flex flex-col justify-between">
                                 <div>
                                     <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
                                         <h2 className="text-lg sm:text-xl font-bold text-[#082824] flex items-center gap-2.5">
@@ -5438,7 +5439,7 @@ Please complete the following implementation tasks:
                                                             : "bg-white border-black/10 hover:bg-black/[0.03]"
                                                     }`}
                                                 >
-                                                    <div className="font-mono text-xs sm:text-sm space-y-1 max-w-[70%]">
+                                                    <div className="min-w-0 break-words font-mono text-xs sm:text-sm space-y-1 max-w-[70%]">
                                                         <div className="flex items-center gap-1.5 flex-wrap">
                                                             <span className="font-bold text-[#082824]">{item.event}</span>
                                                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
@@ -5482,7 +5483,7 @@ Please complete the following implementation tasks:
                                         const totalPages = Math.ceil(webhookEvents.length / webhookPageSize);
                                         if (totalPages <= 1) return null;
                                         return (
-                                            <div className="flex items-center justify-between pt-4 mt-3 border-t border-black/10 font-sans">
+                                            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 mt-3 border-t border-black/10 font-sans">
                                                 <span className="text-xs text-black/60 font-bold uppercase tracking-wider">
                                                     Page {webhooksPage + 1} of {totalPages}
                                                 </span>
@@ -5509,7 +5510,7 @@ Please complete the following implementation tasks:
                                     })()}
                                 </div>
                                 
-                                <div className="mt-6 pt-4 border-t border-black/10 text-xs text-black/60 flex items-center justify-between font-sans">
+                                <div className="mt-6 pt-4 border-t border-black/10 text-xs text-black/60 flex flex-wrap gap-3 items-center justify-between font-sans">
                                     <div className="flex items-center gap-2 font-semibold">
                                         <span className={`w-2.5 h-2.5 ${hasActiveEndpoints && webhookEvents.length > 0 ? "bg-[#8AB4DB]" : "bg-black/20"} rounded-full`} />
                                         <span>{hasActiveEndpoints ? `Logged: ${webhookEvents.length} events` : `0 deliveries logged`}</span>
@@ -5526,7 +5527,7 @@ Please complete the following implementation tasks:
 
                             {/* Payload Inspector */}
                             <div className="rounded-[34px] border border-black/10 overflow-hidden flex flex-col justify-between shadow-sm bg-[#FFFFF0]">
-                                <div className="flex items-center justify-between border-b border-black/10 px-6 sm:px-8 py-5 bg-[#D4E3E8]/40">
+                                <div className="flex flex-wrap gap-3 items-center justify-between border-b border-black/10 px-4 sm:px-6 py-5 bg-[#D4E3E8]/40">
                                     <span className="text-xs sm:text-sm font-bold text-[#082824] uppercase tracking-wider font-mono">Payload Inspector</span>
                                     <button
                                         onClick={() => handleReplayWebhook(selectedWebhook)}
@@ -5538,7 +5539,7 @@ Please complete the following implementation tasks:
                                     </button>
                                 </div>
                                 
-                                <div className="flex-1 p-6 sm:p-8 font-mono text-xs sm:text-sm text-black/80 overflow-y-auto min-h-[300px] leading-relaxed select-all">
+                                <div className="min-w-0 flex-1 p-4 sm:p-6 font-mono text-xs sm:text-sm text-black/80 overflow-y-auto min-h-[300px] leading-relaxed select-all">
                                     {replayStatus && (
                                         <p className={`p-4 border rounded-2xl mb-4 font-sans text-xs sm:text-sm ${
                                             replayStatus.includes("successfully") 
@@ -5639,7 +5640,7 @@ Please complete the following implementation tasks:
                     isLoading={Boolean(isLoading)}
                     onLogout={handleLogout}
                 />
-                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[28px] md:border md:border-black/10">
+                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100dvh-14px)] md:rounded-tl-[28px] md:border md:border-black/10">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
                 <div className="dashboard-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4">
@@ -5681,7 +5682,7 @@ Please complete the following implementation tasks:
                 </div>
             )}
             {/* Dashboard Content */}
-            <main className="mx-auto max-w-[1600px] px-4 pb-12 pt-6 sm:px-7 md:pt-8">
+            <main className="@container/merchant min-w-0 mx-auto max-w-[1600px] px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-12 pt-6 sm:px-7 md:pt-8">
                 {/* Top Workspace Header */}
                 <div className="mb-6 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
@@ -5696,7 +5697,7 @@ Please complete the following implementation tasks:
                                 }}
                             />
                         </div>
-                        <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-[#082824] truncate">
+                        <h1 className="min-w-0 text-lg sm:text-2xl xl:text-3xl font-extrabold tracking-tight leading-tight text-[#082824]">
                             Merchant Dashboard
                         </h1>
                     </div>
@@ -5737,9 +5738,9 @@ Please complete the following implementation tasks:
                 )}
                 
                 {/* Footer */}
-                <footer className="mt-16 pt-8 border-t border-black/10 flex flex-col sm:flex-row justify-between items-center text-[10px] text-black/40 gap-4">
+                <footer className="mt-16 pt-8 border-t border-black/10 flex flex-col @[640px]/merchant:flex-row justify-between items-center text-[10px] text-black/40 gap-4">
                     <span>© 2026 SubScript Protocol. All rights reserved.</span>
-                    <div className="flex gap-4">
+                    <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
                         <Link href="/terms" className="hover:text-black transition">Terms of Service</Link>
                         <Link href="/privacy" className="hover:text-black transition">Privacy Policy</Link>
                         <Link href="/compliance" className="hover:text-black transition">Compliance</Link>
@@ -5938,15 +5939,12 @@ Please complete the following implementation tasks:
                     onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
                 />
             )}
-            {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
-                            {showToast && (
-                                <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
-                                    <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-                                    <span className="text-xs font-bold uppercase tracking-wider text-white">
-                                        {toastMessage}
-                                    </span>
-                                </div>
-                            )}
+            {/* High-fidelity toast notification for settlement confirmation */}
+            <Toast
+                visible={showToast}
+                message={toastMessage}
+                onClose={() => setShowToast(false)}
+            />
                         </div>
                     );
                 }
@@ -5977,7 +5975,7 @@ function MerchantPlanRow({
 
     return (
         <div data-testid="merchant-plan-row" className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="flex flex-col gap-3 @[640px]/merchant:flex-row @[640px]/merchant:items-start @[640px]/merchant:justify-between sm:gap-4">
                 <div className="min-w-0 w-full">
                     <p className="truncate text-sm font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
                     <p className="mt-1 text-xs font-bold text-[#082824]">
@@ -6171,7 +6169,7 @@ function PlanPromotionPanel({
     return (
         <div data-testid="plan-promotion-panel" className="mt-3 rounded-xl border border-amber-300/10 bg-amber-400/[0.03] p-3 font-sans">
             {!editing && promotion && (
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-2 @[640px]/merchant:flex-row @[640px]/merchant:items-center @[640px]/merchant:justify-between">
                     <div className="min-w-0">
                         <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-800 dark:text-amber-300">
                             Promotion · {promotion.active ? "Live" : "Off"} · {promotion.redemptionCount}{promotion.maxRedemptions ? `/${promotion.maxRedemptions}` : ""} redeemed
@@ -6480,7 +6478,7 @@ function LocalCustomerVaultRow({
             </div>
 
             {/* Live usage accrual tool */}
-            <form onSubmit={handleReportUsage} className="flex flex-col sm:flex-row gap-3 sm:items-end border-t border-black/10 pt-4">
+            <form onSubmit={handleReportUsage} className="flex flex-col @[640px]/merchant:flex-row gap-3 @[640px]/merchant:items-end border-t border-black/10 pt-4">
                 <label className="flex-1 space-y-1.5">
                     <span className="text-xs sm:text-sm font-bold text-[#082824]">Bill usage (USDC)</span>
                     <input

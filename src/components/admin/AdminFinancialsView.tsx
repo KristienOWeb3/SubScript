@@ -218,7 +218,7 @@ export function AdminFinancialsView() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
       {/* Header with Quick Actions */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -263,7 +263,7 @@ export function AdminFinancialsView() {
       )}
 
       {/* Summary KPI Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-4">
         <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between text-[#64748b]">
             <span className="text-[11px] font-bold uppercase tracking-wider">Total Settled GMV</span>
@@ -329,7 +329,7 @@ export function AdminFinancialsView() {
       <AdminGasReservesCard sponsor={data?.sponsorStatus} />
 
       {/* Secondary Metrics Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-3">
         <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-3">
           <span className="text-[10px] font-black uppercase text-[#64748b]">30-Day GMV</span>
           <p className="text-base font-black text-[#0f172a] mt-0.5">
@@ -385,7 +385,7 @@ export function AdminFinancialsView() {
 
       {/* Sub-Tabs and Search */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#e2e8f0] pb-2">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setActiveTab("escrows")}
@@ -447,7 +447,7 @@ export function AdminFinancialsView() {
       {/* Tab 1: Metered Vault Escrows Table */}
       {activeTab === "escrows" && (
         <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-          <div className="border-b border-[#e2e8f0] px-6 py-4 flex items-center justify-between">
+          <div className="border-b border-[#e2e8f0] px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-[#0f172a]">Metered Vault Escrow Balances</h3>
               <p className="text-xs text-[#64748b]">Active customer escrow balances committed to merchants on Arc</p>
@@ -506,7 +506,7 @@ export function AdminFinancialsView() {
       {/* Tab 2: Merchant Payout Batches Table */}
       {activeTab === "payouts" && (
         <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-          <div className="border-b border-[#e2e8f0] px-6 py-4 flex items-center justify-between">
+          <div className="border-b border-[#e2e8f0] px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-[#0f172a]">Merchant Payout Disbursements</h3>
               <p className="text-xs text-[#64748b]">Recorded batch payouts disbursed to merchant wallets</p>
@@ -573,7 +573,7 @@ export function AdminFinancialsView() {
       {/* Tab 3: Administrative Refund Ledger */}
       {activeTab === "refunds" && (
         <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-          <div className="border-b border-[#e2e8f0] px-6 py-4 flex items-center justify-between">
+          <div className="border-b border-[#e2e8f0] px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-[#0f172a]">Administrative Refund & Dispute Ledger</h3>
               <p className="text-xs text-[#64748b]">Dual-controlled administrative adjustments and refund history</p>
@@ -630,7 +630,7 @@ export function AdminFinancialsView() {
       {/* Tab 4: Exception & Dunning Queue */}
       {activeTab === "exceptions" && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {/* Stuck Payments */}
             <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
               <h3 className="text-sm font-bold text-[#0f172a] mb-1">Uncredited or Pending Payments</h3>
@@ -638,7 +638,7 @@ export function AdminFinancialsView() {
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {data?.stuckPayments && data.stuckPayments.length > 0 ? (
                   data.stuckPayments.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50/50 text-xs">
+                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50/50 text-xs">
                       <div>
                         <span className="font-mono font-bold text-slate-900">{p.txHash.slice(0, 12)}...</span>
                         <p className="text-[11px] text-amber-800 mt-0.5">{p.reason} (${p.amountUsdc})</p>
@@ -661,7 +661,7 @@ export function AdminFinancialsView() {
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {data?.dunningFailures && data.dunningFailures.length > 0 ? (
                   data.dunningFailures.map((d) => (
-                    <div key={d.subscriptionId} className="flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50/50 text-xs">
+                    <div key={d.subscriptionId} className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-red-200 bg-red-50/50 text-xs">
                       <div>
                         <span className="font-mono font-bold text-slate-900">Sub #{d.subscriptionId}</span>
                         <p className="text-[11px] text-red-700 mt-0.5">
@@ -685,7 +685,7 @@ export function AdminFinancialsView() {
       {/* Admin Refund Modal */}
       {refundOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl border border-gray-200">
+          <div className="min-w-0 w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl bg-white p-4 sm:p-6 shadow-2xl border border-gray-200">
             <h3 className="text-base font-bold text-[#0f172a] flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-[#2775ca]" />
               Issue Administrative Refund / Dispute
@@ -709,7 +709,7 @@ export function AdminFinancialsView() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-black uppercase tracking-wider text-[#64748b] block mb-1">
                     Amount (USDC)
@@ -751,7 +751,7 @@ export function AdminFinancialsView() {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setRefundOpen(false)}

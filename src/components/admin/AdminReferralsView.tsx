@@ -389,7 +389,7 @@ export function AdminReferralsView() {
       )}
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-4">
         {/* Total Referrals */}
         <div className={CARD}>
           <div className="flex items-center justify-between">
@@ -400,8 +400,8 @@ export function AdminReferralsView() {
               <Gift className="h-4 w-4" />
             </span>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-black text-[#0f172a]">
+          <div className="mt-3 flex flex-wrap items-baseline gap-2">
+            <span className="min-w-0 break-all font-mono text-2xl font-black text-[#0f172a]">
               {summary?.totalReferrals?.toLocaleString() ?? 0}
             </span>
             <span className="text-[11px] font-semibold text-emerald-600">
@@ -425,8 +425,8 @@ export function AdminReferralsView() {
               <Users className="h-4 w-4" />
             </span>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-black text-[#0f172a]">
+          <div className="mt-3 flex flex-wrap items-baseline gap-2">
+            <span className="min-w-0 break-all font-mono text-2xl font-black text-[#0f172a]">
               {summary?.uniqueReferrers?.toLocaleString() ?? 0}
             </span>
             <span className="text-[11px] font-semibold text-[#64748b]">
@@ -454,8 +454,8 @@ export function AdminReferralsView() {
               <ShieldCheck className="h-4 w-4" />
             </span>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-black text-[#0f172a]">
+          <div className="mt-3 flex flex-wrap items-baseline gap-2">
+            <span className="min-w-0 break-all font-mono text-2xl font-black text-[#0f172a]">
               {summary?.conversionRatePercent ?? 0}%
             </span>
             <span className="text-[11px] font-semibold text-emerald-600">
@@ -477,8 +477,8 @@ export function AdminReferralsView() {
               <DollarSign className="h-4 w-4" />
             </span>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-black text-[#0f172a]">
+          <div className="mt-3 flex flex-wrap items-baseline gap-2">
+            <span className="min-w-0 break-all font-mono text-2xl font-black text-[#0f172a]">
               ${summary?.totalAttributedVolumeUsdc ?? "0.00"}
             </span>
             <span className="text-[11px] font-semibold text-[#64748b]">
@@ -1513,7 +1513,7 @@ function TreeNodeInspectorModal({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[#e2e8f0] bg-white p-6 shadow-2xl space-y-6 text-[#0f172a]"
+        className="relative w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-[#e2e8f0] bg-white p-4 sm:p-6 shadow-2xl space-y-6 text-[#0f172a]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[#f1f5f9] pb-4">
@@ -1541,7 +1541,7 @@ function TreeNodeInspectorModal({
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-[#64748b]">Wallet Address</span>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="font-mono text-xs font-bold text-[#0f172a] select-all">{node.address}</span>
+                <span className="min-w-0 font-mono text-xs font-bold text-[#0f172a] select-all [overflow-wrap:anywhere]">{node.address}</span>
                 <button
                   type="button"
                   onClick={() => onCopy(node.address, `insp-${node.id}`)}
@@ -1559,7 +1559,7 @@ function TreeNodeInspectorModal({
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#e2e8f0]">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-[#e2e8f0]">
             <div>
               <span className="text-[9px] font-black uppercase tracking-wider text-[#64748b]">Account Role</span>
               <p className="font-bold text-xs text-[#0f172a]">{node.role}</p>
@@ -1606,7 +1606,7 @@ function TreeNodeInspectorModal({
               This user has not directly referred any new accounts yet.
             </p>
           ) : (
-            <div className="max-h-56 overflow-y-auto rounded-xl border border-[#e2e8f0] bg-white">
+            <div className="max-h-56 overflow-auto rounded-xl border border-[#e2e8f0] bg-white">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-[#f1f5f9] bg-[#f8fafc] text-[10px] font-black text-[#64748b] uppercase">

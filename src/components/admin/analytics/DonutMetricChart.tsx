@@ -243,7 +243,7 @@ export function DonutMetricChart({
                             <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748b] truncate max-w-[110px]">
                                 {activeSegment ? activeSegment.displayLabel : centerLabel}
                             </span>
-                            <span className="text-base sm:text-lg font-black text-[#0f172a] truncate max-w-[120px]">
+                            <span className="text-sm font-black text-[#0f172a] break-all max-w-[120px]">
                                 {activeSegment
                                     ? `${activeSegment.value.toLocaleString()} (${activeSegment.percent}%)`
                                     : centerValue ?? total.toLocaleString()}
@@ -264,7 +264,7 @@ export function DonutMetricChart({
                                         onMouseLeave={() => setActiveIdx(null)}
                                         onFocus={() => setActiveIdx(idx)}
                                         onBlur={() => setActiveIdx(null)}
-                                        className={`flex w-full items-center justify-between gap-2 rounded-xl p-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2775ca] focus-visible:ring-offset-1 ${
+                                        className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-xl p-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2775ca] focus-visible:ring-offset-1 ${
                                             reducedMotion ? "" : "transition-colors"
                                         } ${isActive ? "bg-[#f1f5f9]" : "hover:bg-[#f8fafc]"}`}
                                     >
@@ -285,7 +285,7 @@ export function DonutMetricChart({
                                                 )}
                                             </span>
                                         </span>
-                                        <span className="shrink-0 text-right">
+                                        <span className="min-w-0 break-all text-right">
                                             <span className="text-xs font-black text-[#0f172a]">
                                                 {arc.value.toLocaleString()}
                                             </span>
@@ -300,28 +300,30 @@ export function DonutMetricChart({
             )}
 
             {hasData && (
-                <table className="sr-only">
-                    <caption>{title ? `${title} by segment` : "Breakdown by segment"}</caption>
-                    <thead>
-                        <tr>
-                            <th scope="col">Segment</th>
-                            <th scope="col">Value</th>
-                            <th scope="col">Share</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {arcs.map((arc, idx) => (
-                            <tr key={`${arc.label}-${idx}`}>
-                                <th scope="row">
-                                    {arc.displayLabel}
-                                    {arc.sublabel ? ` (${arc.sublabel})` : ""}
-                                </th>
-                                <td>{arc.value.toLocaleString()}</td>
-                                <td>{arc.percent}%</td>
+                <div className="sr-only">
+                    <table>
+                        <caption>{title ? `${title} by segment` : "Breakdown by segment"}</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Segment</th>
+                                <th scope="col">Value</th>
+                                <th scope="col">Share</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {arcs.map((arc, idx) => (
+                                <tr key={`${arc.label}-${idx}`}>
+                                    <th scope="row">
+                                        {arc.displayLabel}
+                                        {arc.sublabel ? ` (${arc.sublabel})` : ""}
+                                    </th>
+                                    <td>{arc.value.toLocaleString()}</td>
+                                    <td>{arc.percent}%</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             )}
         </div>
     );

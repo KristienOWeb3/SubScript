@@ -60,7 +60,7 @@ function RetractableTimeframePicker({
     }, [expanded]);
 
     return (
-        <div ref={containerRef} role="group" aria-label="Earnings timeframe" className="relative inline-flex items-center">
+        <div ref={containerRef} role="group" aria-label="Earnings timeframe" className="relative inline-flex max-w-full items-center">
             <div className="merchant-timeframe-track inline-flex items-center rounded-full p-0.5 transition-colors">
                 {!expanded ? (
                     <button
@@ -145,7 +145,7 @@ function OverviewCard({
 }) {
     return (
         <section
-            className={`rounded-[28px] p-5 sm:p-6 shadow-sm transition-all bg-[#FFFFF0] dark:bg-[#1f2023] text-[#082824] dark:text-white border border-black/10 dark:border-white/10 ${className}`}
+            className={`min-w-0 rounded-[28px] p-4 sm:p-6 shadow-sm transition-all bg-[#FFFFF0] dark:bg-[#1f2023] text-[#082824] dark:text-white border border-black/10 dark:border-white/10 ${className}`}
         >
             {children}
         </section>
@@ -262,11 +262,15 @@ export default function MerchantOverview({
         overview?.grossUsdcMicros ?? overview?.gross30dUsdcMicros
     );
     const series = overview?.series ?? [];
+    const walletAmount = balanceVisible ? walletBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "••••••••";
+    const vaultAmount = balanceVisible ? vaultBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "••••••••";
+    const earningsAmount = balanceVisible ? earnings : "••••••••";
+    const projectionAmount = `$${projected30DaySettlement.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     return (
-        <div className="max-w-[1340px] mx-auto space-y-4 sm:space-y-5 pb-20 text-black md:pb-6 text-sm">
+        <div className="@container/overview min-w-0 max-w-[1340px] mx-auto space-y-4 sm:space-y-5 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6 text-black text-sm">
             {/* Top 4 Stat Cards Row */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-5">
+            <div className="grid grid-cols-1 gap-4 @[560px]/overview:grid-cols-2 @[1120px]/overview:grid-cols-4 sm:gap-5">
                 {/* 1. Spendable Card */}
                 <OverviewCard className="min-h-[220px] flex flex-col justify-between">
                     <div>
@@ -285,14 +289,9 @@ export default function MerchantOverview({
                                 <div className="h-3.5 w-40 rounded bg-black/[0.05] animate-pulse" />
                             </div>
                         ) : (
-                            <div className="mt-4">
-                                <p className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[#082824]">
-                                    {balanceVisible
-                                        ? `${walletBalance.toLocaleString("en-US", {
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2,
-                                          })}`
-                                        : "••••••••"}
+                            <div className="@container/balance mt-4">
+                                <p className="font-extrabold tracking-tight text-[#082824]" style={{ fontSize: `min(36px, ${150 / walletAmount.length}cqi)` }}>
+                                    {walletAmount}
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Instant spendable balance
@@ -305,7 +304,7 @@ export default function MerchantOverview({
                         {onReceive && (
                             <button
                                 onClick={onReceive}
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white px-5 py-2 text-xs font-bold text-[#082824] shadow-sm transition hover:bg-black/5 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+                                className="min-w-0 w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-bold text-[#082824] shadow-sm transition hover:bg-black/5 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
                             >
                                 <ArrowDown className="h-3.5 w-3.5 shrink-0 text-[#2775CA]" />
                                 Deposit
@@ -325,7 +324,7 @@ export default function MerchantOverview({
                 {/* 2. Earnings Card */}
                 <OverviewCard className="min-h-[220px] flex flex-col justify-between">
                     <div>
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5 min-w-0">
                                 <h2 className="text-base font-bold sm:text-lg text-[#082824] truncate">
                                     Earnings
@@ -356,9 +355,9 @@ export default function MerchantOverview({
                                 <div className="h-3.5 w-48 rounded bg-black/[0.05] animate-pulse" />
                             </div>
                         ) : (
-                            <div className="mt-4">
-                                <p className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[#082824]">
-                                    {balanceVisible ? `${earnings}` : "••••••••"}
+                            <div className="@container/balance mt-4">
+                                <p className="font-extrabold tracking-tight text-[#082824]" style={{ fontSize: `min(36px, ${150 / earningsAmount.length}cqi)` }}>
+                                    {earningsAmount}
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Net settled ({rangeCaption})
@@ -404,14 +403,9 @@ export default function MerchantOverview({
                                 <div className="h-3.5 w-40 rounded bg-black/[0.05] animate-pulse" />
                             </div>
                         ) : (
-                            <div className="mt-4">
-                                <p className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[#082824]">
-                                    {balanceVisible
-                                        ? `${vaultBalance.toLocaleString("en-US", {
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2,
-                                          })}`
-                                        : "••••••••"}
+                            <div className="@container/balance mt-4">
+                                <p className="font-extrabold tracking-tight text-[#082824]" style={{ fontSize: `min(36px, ${150 / vaultAmount.length}cqi)` }}>
+                                    {vaultAmount}
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Ready to Withdraw on Arc
@@ -447,12 +441,9 @@ export default function MerchantOverview({
                                 <div className="h-3.5 w-40 rounded bg-black/[0.05] animate-pulse" />
                             </div>
                         ) : (
-                            <div className="mt-4">
-                                <p className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[#082824]">
-                                    ${projected30DaySettlement.toLocaleString("en-US", {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                    })}
+                            <div className="@container/balance mt-4">
+                                <p className="font-extrabold tracking-tight text-[#082824]" style={{ fontSize: `min(36px, ${150 / projectionAmount.length}cqi)` }}>
+                                    {projectionAmount}
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Expected recurring renewals
@@ -471,9 +462,9 @@ export default function MerchantOverview({
             </div>
 
             {/* Middle Row: Live Transactions Overview Chart & Plans Ranking */}
-            <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-12">
+            <div className="grid grid-cols-1 gap-4 sm:gap-5 @[900px]/overview:grid-cols-12">
                 {/* Transactions Overview Chart Card */}
-                <OverviewCard className="lg:col-span-8 min-h-[360px] flex flex-col justify-between">
+                <OverviewCard className="@[900px]/overview:col-span-8 min-h-[360px] flex flex-col justify-between">
                     <div>
                         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-black/10">
                             <div>
@@ -523,7 +514,7 @@ export default function MerchantOverview({
                 </OverviewCard>
 
                 {/* Plans Ranking Card */}
-                <OverviewCard className="lg:col-span-4 min-h-[360px] flex flex-col justify-between">
+                <OverviewCard className="@[900px]/overview:col-span-4 min-h-[360px] flex flex-col justify-between">
                     <div>
                         <div className="flex items-center justify-between pb-3 border-b border-black/10">
                             <h2 className="text-lg font-bold text-[#082824]">
@@ -624,7 +615,7 @@ export default function MerchantOverview({
                             key={plan.id}
                             type="button"
                             onClick={() => setSelectedPlanFilter(plan.id)}
-                            className={`rounded-full px-4 py-1.5 text-xs font-bold transition shadow-sm ${
+                            className={`max-w-full break-words rounded-full px-4 py-1.5 text-xs font-bold transition shadow-sm ${
                                 selectedPlanFilter === plan.id
                                     ? "bg-[#082824] text-white dark:bg-white dark:text-[#082824]"
                                     : "bg-black/5 text-black/70 hover:bg-black/10 hover:text-black dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/20 border border-black/10 dark:border-white/10"
@@ -643,7 +634,7 @@ export default function MerchantOverview({
                     </div>
                 ) : filteredRows.length > 0 ? (
                     <>
-                        <div className="mt-4 hidden overflow-x-auto md:block">
+                        <div className="mt-4 hidden min-w-0 overflow-x-auto @[760px]/overview:block">
                             <table className="w-full min-w-[680px] text-left text-xs">
                                 <thead className="border-b border-black/10 text-black/50">
                                     <tr>
@@ -696,22 +687,22 @@ export default function MerchantOverview({
                         </div>
 
                         {/* Mobile Cards */}
-                        <div className="mt-4 space-y-2 md:hidden">
+                        <div className="mt-4 space-y-2 @[760px]/overview:hidden">
                             {filteredRows.map((row) => (
                                 <div
                                     key={row.id}
                                     className="p-3 rounded-2xl bg-white/70 dark:bg-white/[0.04] border border-black/5 dark:border-white/10 space-y-2"
                                 >
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-mono text-xs font-bold text-[#082824] dark:text-white">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="min-w-0 break-all font-mono text-xs font-bold text-[#082824] dark:text-white">
                                             {row.shortSubAddress || row.displayAddress}
                                         </span>
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 dark:border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
+                                        <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 dark:border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
                                             Active
                                         </span>
                                     </div>
-                                    <div className="flex items-center justify-between text-xs text-black/70">
-                                        <span>{row.planName || "Direct / Custom"}</span>
+                                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 text-xs text-black/70">
+                                        <span className="min-w-0 break-words">{row.planName || "Direct / Custom"}</span>
                                         <span
                                             className={`font-bold text-[#082824] ${
                                                 ""

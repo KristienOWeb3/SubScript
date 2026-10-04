@@ -74,8 +74,8 @@ export function AdminRiskSignalsCard() {
 
   return (
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ShieldAlert className="h-5 w-5 text-amber-600" />
           <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
             Risk & Velocity Detection
@@ -107,7 +107,7 @@ export function AdminRiskSignalsCard() {
       )}
 
       {/* Signal Stat Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-3">
         <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5">
           <span className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1">
             <Activity className="h-3 w-3 text-amber-600" /> Velocity Structuring
@@ -147,7 +147,7 @@ export function AdminRiskSignalsCard() {
             {data.highVelocityPayers.map((p) => (
               <div
                 key={p.payerAddress}
-                className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-xs text-amber-900"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-xs text-amber-900"
               >
                 <div>
                   <span className="font-mono font-semibold">{p.payerAddress}</span>

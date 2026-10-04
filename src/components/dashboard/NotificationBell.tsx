@@ -109,8 +109,9 @@ export default function NotificationBell({
     const updatePosition = useCallback(() => {
         if (!buttonRef.current) return;
         const rect = buttonRef.current.getBoundingClientRect();
-        const right = window.innerWidth - rect.right;
-        const top = rect.bottom + 10;
+        const rawRight = window.innerWidth - rect.right;
+        const right = Math.max(12, Math.min(rawRight, Math.max(12, window.innerWidth - 410)));
+        const top = Math.max(12, Math.min(rect.bottom + 10, window.innerHeight - 120));
         setDesktopPos({ top, right });
     }, []);
 
@@ -291,12 +292,12 @@ export default function NotificationBell({
     const skeletonContent = (
         <div className="p-4 space-y-3">
             {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="notification-panel-skeleton flex items-start gap-3 p-3 rounded-2xl bg-black/[0.03] border border-black/5 animate-pulse">
-                    <div className="w-8 h-8 rounded-xl bg-black/10 shrink-0" />
+                <div key={i} className="notification-panel-skeleton flex items-start gap-3 p-3 rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] border border-black/5 dark:border-white/5">
+                    <div className="w-8 h-8 rounded-xl subscript-skeleton shrink-0" />
                     <div className="flex-1 space-y-2">
-                        <div className="h-4 bg-black/10 rounded w-3/4" />
-                        <div className="h-3.5 bg-black/5 rounded w-5/6" />
-                        <div className="h-3 bg-black/5 rounded w-1/3" />
+                        <div className="h-4 subscript-skeleton rounded w-3/4" />
+                        <div className="h-3.5 subscript-skeleton subscript-skeleton--faint rounded w-5/6" />
+                        <div className="h-3 subscript-skeleton subscript-skeleton--faint rounded w-1/3" />
                     </div>
                 </div>
             ))}
@@ -304,11 +305,11 @@ export default function NotificationBell({
     );
 
     const panelContent = (
-        <div ref={panelRef} className="notification-panel flex flex-col h-full w-full bg-[#FFFFF0] text-black">
+        <div ref={panelRef} className="notification-panel flex flex-col h-full w-full bg-[#FFFFF0] dark:bg-[#0e0f12] text-black dark:text-white">
             {/* Header */}
-            <div className="notification-panel-header flex items-center justify-between gap-3 border-b border-black/10 px-5 py-4 shrink-0 bg-white/70 backdrop-blur-xl">
+            <div className="notification-panel-header flex flex-wrap items-center justify-between gap-2 border-b border-black/10 dark:border-white/10 px-4 sm:px-5 py-4 shrink-0 bg-white/70 dark:bg-white/[0.04] backdrop-blur-xl">
                 <div className="flex items-center gap-2.5">
-                    <h3 className="text-base font-extrabold tracking-tight text-[#111827]">
+                    <h3 className="text-base font-extrabold tracking-tight text-[#111827] dark:text-white">
                         Notifications
                     </h3>
                     {unread > 0 && (
@@ -335,7 +336,7 @@ export default function NotificationBell({
                         type="button"
                         onClick={() => setOpen(false)}
                         aria-label="Close notifications"
-                        className="notification-panel-icon-button rounded-full p-1 text-black/40 transition hover:bg-black/10 hover:text-black"
+                        className="notification-panel-icon-button rounded-full p-1 text-black/40 dark:text-white/40 transition hover:bg-black/10 dark:hover:bg-white/10 hover:text-black dark:hover:text-white"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -348,38 +349,38 @@ export default function NotificationBell({
                     skeletonContent
                 ) : failed ? (
                     <div className="px-5 py-12 text-center space-y-3">
-                        <p className="text-sm text-black/60">We couldn&apos;t load your notifications.</p>
+                        <p className="text-sm text-black/60 dark:text-white/60">We couldn&apos;t load your notifications.</p>
                         <button
                             type="button"
                             onClick={() => void load()}
-                            className="notification-panel-tile px-4 py-2 rounded-xl text-sm font-semibold bg-black/5 border border-black/10 text-black hover:bg-black/10 transition flex items-center gap-2 mx-auto"
+                            className="notification-panel-tile px-4 py-2 rounded-xl text-sm font-semibold bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-black dark:text-white hover:bg-black/10 dark:hover:bg-white/15 transition flex items-center gap-2 mx-auto"
                         >
                             <RefreshCw className="w-3.5 h-3.5" /> Try again
                         </button>
                     </div>
                 ) : items.length === 0 ? (
                     <div className="px-5 py-14 text-center space-y-3">
-                        <div className="notification-panel-tile mx-auto w-12 h-12 rounded-2xl bg-black/[0.03] border border-black/5 flex items-center justify-center shadow-inner">
-                            <Bell className="h-5 w-5 text-black/30" />
+                        <div className="notification-panel-tile mx-auto w-12 h-12 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/5 dark:border-white/10 flex items-center justify-center shadow-inner">
+                            <Bell className="h-5 w-5 text-black/30 dark:text-white/40" />
                         </div>
-                        <p className="text-sm font-bold text-black/75">Nothing new</p>
-                        <p className="text-sm text-black/55 max-w-xs mx-auto leading-relaxed">
+                        <p className="text-sm font-bold text-black/75 dark:text-white/90">Nothing new</p>
+                        <p className="text-sm text-black/55 dark:text-white/60 max-w-xs mx-auto leading-relaxed">
                             Payment activity and anything we need to tell you will show up here.
                         </p>
                     </div>
                 ) : (
-                    <ul className="divide-y divide-black/5">
+                    <ul className="divide-y divide-black/5 dark:divide-white/5">
                         {items.map((item) => {
                             const isUnread = !item.readAt;
                             const actionUrl = normalizeNotificationActionUrl(item.url);
                             const itemContent = (
                                 <div className="flex items-start gap-3.5 group">
-                                    <div className="notification-panel-tile p-2 rounded-xl bg-black/[0.04] border border-black/5 shrink-0 group-hover:border-black/10 transition-colors">
+                                    <div className="notification-panel-tile p-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/5 dark:border-white/10 shrink-0 group-hover:border-black/10 dark:group-hover:border-white/20 transition-colors">
                                         {getSourceIcon(item.source)}
                                     </div>
                                     <div className="min-w-0 flex-1 space-y-1">
                                         <div className="flex items-start justify-between gap-2">
-                                            <p className={`text-sm leading-snug ${isUnread ? "font-extrabold text-[#111827]" : "font-semibold text-black/75"}`}>
+                                            <p className={`text-sm leading-snug ${isUnread ? "font-extrabold text-[#111827] dark:text-white" : "font-semibold text-black/75 dark:text-white/70"}`}>
                                                 {item.title}
                                             </p>
                                             {isUnread && (
@@ -389,8 +390,8 @@ export default function NotificationBell({
                                                 />
                                             )}
                                         </div>
-                                        <p className="text-sm leading-relaxed text-black/60">{item.body}</p>
-                                        <p className="text-xs text-black/45 pt-0.5">
+                                        <p className="text-sm leading-relaxed text-black/60 dark:text-white/60">{item.body}</p>
+                                        <p className="text-xs text-black/45 dark:text-white/45 pt-0.5">
                                             {relativeTime(item.createdAt)}
                                         </p>
                                     </div>
@@ -401,7 +402,7 @@ export default function NotificationBell({
                                 <li
                                     key={item.id}
                                     data-unread={isUnread ? "true" : "false"}
-                                    className={`notification-panel-row px-5 py-3.5 transition-all ${isUnread ? "bg-black/[0.02] hover:bg-black/[0.05]" : "hover:bg-black/[0.03]"}`}
+                                    className={`notification-panel-row px-5 py-3.5 transition-all ${isUnread ? "bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.05] dark:hover:bg-white/[0.05]" : "hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"}`}
                                 >
                                     {actionUrl ? (
                                         <a
@@ -443,8 +444,8 @@ export default function NotificationBell({
                 aria-expanded={open}
                 className={`relative grid h-9 w-9 place-items-center rounded-full border transition-all duration-200 focus:outline-none ${
                     open
-                        ? "border-black/30 bg-black/10 text-black scale-105"
-                        : "border-black/10 bg-black/[0.04] text-black/70 hover:border-black/30 hover:bg-black/[0.08] hover:text-black"
+                        ? "border-black/30 bg-black/10 text-black dark:border-white/25 dark:bg-white/15 dark:text-white scale-105"
+                        : "border-black/10 bg-black/[0.04] text-black/70 hover:border-black/30 hover:bg-black/[0.08] hover:text-black dark:border-white/10 dark:bg-white/[0.06] dark:text-white/80 dark:hover:border-white/20 dark:hover:bg-white/[0.12] dark:hover:text-white"
                 }`}
             >
                 <AnimatePresence mode="wait" initial={false}>
@@ -456,7 +457,7 @@ export default function NotificationBell({
                             exit={{ rotate: 90, opacity: 0 }}
                             transition={{ duration: 0.15 }}
                         >
-                            <X className="h-4 w-4 text-black" />
+                            <X className="h-4 w-4 text-black dark:text-white" />
                         </motion.div>
                     ) : (
                         <motion.div
@@ -493,7 +494,7 @@ export default function NotificationBell({
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: -20, scale: 0.96 }}
                                     transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                                    className="notification-panel-shell fixed left-3 right-3 top-[76px] bottom-20 z-[99999] sm:hidden flex flex-col overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] backdrop-blur-2xl shadow-[0_30px_70px_rgba(0,0,0,0.35)]"
+                                    className="notification-panel-shell fixed left-3 right-3 top-[calc(76px+env(safe-area-inset-top))] bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[99999] sm:hidden flex flex-col overflow-hidden rounded-3xl border border-black/15 dark:border-white/15 bg-[#FFFFF0] dark:bg-[#0e0f12] backdrop-blur-2xl shadow-[0_30px_70px_rgba(0,0,0,0.35)]"
                                     style={{ "--nb-accent": accent } as React.CSSProperties}
                                 >
                                     {panelContent}
@@ -507,11 +508,12 @@ export default function NotificationBell({
                                     initial={{ opacity: 0, y: -10, scale: 0.95 }}
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                                    transition={{ duration: 0.18, ease: "easeOut" }}
-                                    className="notification-panel-shell fixed z-[99999] w-[390px] max-w-[calc(100vw-2rem)] max-h-[32rem] hidden sm:flex flex-col overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
+                                    transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                                    className="notification-panel-shell fixed z-[99999] w-[390px] max-w-[calc(100vw-2rem)] max-h-[32rem] hidden sm:flex flex-col overflow-hidden rounded-3xl border border-black/15 dark:border-white/15 bg-[#FFFFF0] dark:bg-[#0e0f12] backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
                                     style={{
                                         top: `${desktopPos.top}px`,
                                         right: `${desktopPos.right}px`,
+                                        maxHeight: `min(32rem, calc(100dvh - ${desktopPos.top + 12}px))`,
                                         "--nb-accent": accent,
                                     } as React.CSSProperties}
                                 >

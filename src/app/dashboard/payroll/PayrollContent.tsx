@@ -12,6 +12,7 @@ import {
     BarChart3, Link2, Sliders, Key, Code2, Webhook, Settings, CheckoutPlaybook
 } from "@/components/icons";
 import DashboardHeader from "@/components/DashboardHeader";
+import Toast from "@/components/ui/Toast";
 import Skeleton from "@/components/ui/Skeleton";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import WithdrawModal from "@/components/WithdrawModal";
@@ -860,8 +861,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
     if (!isMounted) {
         return (
-            <div className="min-h-screen bg-[#FFFFF0] dark:bg-[#17181a] text-[#082824] dark:text-white relative z-10 p-6 md:p-10 space-y-6 animate-pulse max-w-6xl mx-auto">
-                <div className="flex justify-between items-center">
+            <div className="min-h-[100dvh] bg-[#FFFFF0] dark:bg-[#17181a] text-[#082824] dark:text-white relative z-10 p-4 sm:p-6 md:p-10 space-y-6 animate-pulse max-w-6xl mx-auto">
+                <div className="flex flex-wrap gap-3 justify-between items-center">
                     <div className="h-8 w-48 rounded-xl subscript-skeleton" />
                     <div className="h-10 w-32 rounded-xl subscript-skeleton" />
                 </div>
@@ -876,7 +877,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     }
 
     return (
-        <div data-mounted={isMounted} className={embedded ? "text-[#082824] dark:text-white" : "min-h-screen bg-[#FFFFF0] dark:bg-[#17181a] text-[#082824] dark:text-white"}>
+        <div data-mounted={isMounted} className={embedded ? "min-w-0 text-[#082824] dark:text-white" : "min-h-[100dvh] min-w-0 bg-[#FFFFF0] dark:bg-[#17181a] text-[#082824] dark:text-white"}>
             <div className="relative z-10">
                 {!embedded && (
                 <DashboardHeader
@@ -889,7 +890,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 )}
 
                 {/* Main Content Layout */}
-                <main className={embedded ? "" : "max-w-7xl mx-auto px-6 pt-28 pb-12"}>
+                <main className={embedded ? "min-w-0" : "min-w-0 max-w-7xl mx-auto px-4 sm:px-6 pt-28 pb-12"}>
                     {/* Header Row */}
                     {!embedded && (
                     <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-black/10 dark:border-white/10">
@@ -952,7 +953,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                             </div>
 
                             {/* Right Column: Active Tab Content */}
-                            <div className={embedded ? "col-span-1 lg:col-span-4 min-h-[500px]" : "col-span-1 lg:col-span-3 min-h-[500px]"}>
+                            <div className={embedded ? "@container/payroll min-w-0 col-span-1 lg:col-span-4 min-h-[500px]" : "@container/payroll min-w-0 col-span-1 lg:col-span-3 min-h-[500px]"}>
                                 {/* Mobile back button */}
                                 <div className={embedded ? "hidden" : "lg:hidden mb-6"}>
                                     <Link
@@ -987,10 +988,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                         <div className="transition-all">
                                             
                                             {/* Header Section */}
-                                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
+                                            <div className="flex flex-col @[640px]/payroll:flex-row justify-between items-start @[640px]/payroll:items-center gap-4 mb-8">
                                                 <div>
-                                                    <h2 className="text-2xl font-bold text-[#082824] dark:text-white uppercase tracking-tight flex items-center gap-3 font-sans">
-                                                        <Building2 size={24} className="text-[#082824] dark:text-white" />
+                                                    <h2 className="text-xl sm:text-2xl font-bold text-[#082824] dark:text-white uppercase tracking-tight flex items-center gap-3 font-sans">
+                                                        <Building2 size={24} className="shrink-0 text-[#082824] dark:text-white" />
                                                         Institutional Payroll
                                                     </h2>
                                                     <p className="text-xs text-black/60 dark:text-white/60 font-sans mt-1">
@@ -1018,7 +1019,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                         transition={{ duration: 0.2, ease: "easeOut" }}
                                                         className="overflow-hidden mb-6"
                                                     >
-                                                        <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm relative overflow-hidden mb-6">
+                                                        <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-4 sm:p-6 shadow-sm relative overflow-hidden mb-6">
                                                             <h3 className="text-sm font-bold text-[#082824] dark:text-white uppercase tracking-wider mb-5 flex items-center gap-2 font-sans">
                                                                 <Plus size={16} className="text-[#082824] dark:text-white" />
                                                                 Create Payroll Campaign
@@ -1037,7 +1038,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                             </div>
 
                                                             {/* Frequency and Shielded selection */}
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                                            <div className="grid grid-cols-1 @[640px]/payroll:grid-cols-2 gap-4 mb-4">
                                                                 {/* Frequency */}
                                                                 <div>
                                                                     <label className="text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 mb-2 block font-sans">Pay Frequency</label>
@@ -1066,7 +1067,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                                                 {/* Shielded toggle */}
                                                                 <div>
-                                                                    <div className="flex items-center justify-between mb-2">
+                                                                    <div className="flex flex-wrap gap-2 items-center justify-between mb-2">
                                                                         <label className="text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 block font-sans">
                                                                             Privacy Mode
                                                                         </label>
@@ -1106,7 +1107,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                 </div>
 
                                                                 {/* Headers */}
-                                                                <div className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-1.5 px-1">
+                                                                <div className="hidden @[480px]/payroll:grid grid-cols-[minmax(0,1fr)_140px_36px] gap-2 mb-1.5 px-1">
                                                                     <span className="text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/40 font-sans">Wallet Address</span>
                                                                     <span className="text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/40 font-sans">Salary (USDC)</span>
                                                                     <span />
@@ -1121,27 +1122,30 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                             animate={{ opacity: 1, x: 0 }}
                                                                             exit={{ opacity: 0, x: 10 }}
                                                                             transition={{ duration: 0.15, ease: "easeOut" }}
-                                                                            className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-2 items-center"
+                                                                            className="grid grid-cols-[minmax(0,1fr)_36px] @[480px]/payroll:grid-cols-[minmax(0,1fr)_140px_36px] gap-2 mb-4 @[480px]/payroll:mb-2 items-center"
                                                                         >
                                                                             <input
                                                                                 type="text"
+                                                                                aria-label="Recipient wallet address"
                                                                                 placeholder="0x..."
                                                                                 value={recipient.employeeWallet}
                                                                                 onChange={(e) => updateRecipient(recipient.id, "employeeWallet", e.target.value)}
-                                                                                className="w-full bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-2 text-xs text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors font-mono"
+                                                                                className="min-w-0 w-full col-span-2 @[480px]/payroll:col-span-1 bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-2 text-xs text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors font-mono"
                                                                             />
                                                                             <input
                                                                                 type="number"
+                                                                                aria-label="Salary in USDC"
                                                                                 placeholder="0.00"
                                                                                 value={recipient.salaryAmountUsdc}
                                                                                 onChange={(e) => updateRecipient(recipient.id, "salaryAmountUsdc", e.target.value)}
                                                                                 min={0}
                                                                                 step={0.01}
-                                                                                className="w-full bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-2 text-xs text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans"
+                                                                                className="min-w-0 w-full bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-2 text-xs text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans"
                                                                             />
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => removeRecipientRow(recipient.id)}
+                                                                                aria-label="Remove recipient"
                                                                                 disabled={formRecipients.length <= 1}
                                                                                 className="p-2 text-red-400 hover:text-red-300 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center"
                                                                             >
@@ -1152,10 +1156,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                 </AnimatePresence>
 
                                                                 {/* Total */}
-                                                                <div className="flex justify-end items-center gap-2 pr-12 pt-3 text-[10px] font-bold uppercase tracking-wider text-black/50 dark:text-white/50">
+                                                                <div className="flex flex-wrap justify-end items-center gap-2 @[480px]/payroll:pr-12 pt-3 text-[10px] font-bold uppercase tracking-wider text-black/50 dark:text-white/50">
                                                                     <DollarSign size={12} className="text-[#8AB4DB]" />
                                                                     Total per cycle:
-                                                                    <span className="text-[#082824] dark:text-white font-extrabold text-sm ml-1">
+                                                                    <span className="min-w-0 break-all text-[#082824] dark:text-white font-extrabold text-sm ml-1">
                                                                         {formTotalUsdc.toFixed(2)} USDC
                                                                     </span>
                                                                 </div>
@@ -1242,7 +1246,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                             {/* Empty State */}
                                             {!pageIsLoading && !loadError && campaigns.length === 0 && (
-                                                <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-black/40 p-12 text-center space-y-6 max-w-lg mx-auto shadow-sm">
+                                                <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-black/40 px-4 py-8 sm:p-10 text-center space-y-6 max-w-lg mx-auto shadow-sm">
                                                     <Calendar size={40} className="text-black/30 dark:text-white/20 mx-auto" />
                                                     <div className="space-y-2">
                                                         <h3 className="text-sm font-bold text-[#082824] dark:text-white uppercase tracking-wider">No Payroll Campaigns</h3>
@@ -1280,12 +1284,12 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                 initial={{ opacity: 0, y: 15 }}
                                                                 animate={{ opacity: 1, y: 0 }}
                                                                 transition={{ duration: 0.15, ease: "easeOut", delay: index * 0.05 }}
-                                                                className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm relative overflow-hidden mb-6 transform-gpu"
+                                                                className="min-w-0 rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-4 sm:p-6 shadow-sm relative overflow-hidden mb-6 transform-gpu"
                                                             >
                                                                 {/* Top title and status details */}
-                                                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
-                                                                    <div className="flex flex-wrap items-center gap-3">
-                                                                        <h3 className="text-base font-bold text-[#082824] dark:text-white tracking-wide font-sans">{campaign.title}</h3>
+                                                                <div className="flex flex-col @[760px]/payroll:flex-row justify-between items-start @[760px]/payroll:items-center gap-4 mb-5">
+                                                                    <div className="min-w-0 flex flex-wrap items-center gap-3">
+                                                                        <h3 className="min-w-0 break-words text-base font-bold text-[#082824] dark:text-white tracking-wide font-sans">{campaign.title}</h3>
 
                                                                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
                                                                             campaign.status === "ACTIVE"
@@ -1312,7 +1316,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                     </div>
 
                                                                     {/* Action panel buttons */}
-                                                                    <div className="flex gap-2 font-sans">
+                                                                    <div className="flex flex-wrap gap-2 font-sans">
                                                                         <button
                                                                             className="px-3 py-1.5 rounded-lg bg-[#D4E3E8] hover:brightness-95 dark:bg-white/10 dark:hover:bg-white/20 border border-black/10 dark:border-white/10 text-[#082824] dark:text-white text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                                                                             onClick={() => handleToggleStatus(campaign)}
@@ -1390,7 +1394,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     {/* Footer wrapper */}
                     <footer className={embedded ? "hidden" : "mt-16 pt-8 border-t border-black/10 dark:border-white/10 flex flex-col sm:flex-row justify-between items-center text-[10px] text-black/40 dark:text-white/40 gap-4"}>
                         <span>© 2026 SubScript Protocol. All rights reserved.</span>
-                        <div className="flex gap-4">
+                        <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
                             <Link href="/terms" className="hover:text-[#082824] dark:hover:text-white transition">Terms of Service</Link>
                             <Link href="/privacy" className="hover:text-[#082824] dark:hover:text-white transition">Privacy Policy</Link>
                             <Link href="/compliance" className="hover:text-[#082824] dark:hover:text-white transition">Compliance</Link>
@@ -1413,15 +1417,13 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 }}
                 isWithdrawing={isWithdrawing}
             />
-            {/* High-fidelity glassmorphic toast notification */}
-            {toast.visible && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 border border-black/10 dark:border-white/10 bg-white dark:bg-[#1f2023] rounded-2xl px-6 py-4 flex items-center gap-3 shadow-lg font-sans">
-                    <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-[#082824] dark:text-white">
-                        {toast.message}
-                    </span>
-                </div>
-            )}
+            {/* High-fidelity toast notification */}
+            <Toast
+                visible={toast.visible}
+                message={toast.message}
+                type={toast.type}
+                onClose={() => setToast((prev) => ({ ...prev, visible: false }))}
+            />
 
             <ConfirmModal
                 open={Boolean(deleteTargetId)}
@@ -1465,7 +1467,7 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                     >
                         <div className="mt-3 bg-black/[0.02] dark:bg-white/[0.03] rounded-2xl border border-black/10 dark:border-white/10 p-4 font-sans">
                             {/* Table header */}
-                            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 pb-2 border-b border-black/10 dark:border-white/10 mb-2">
+                            <div className="grid grid-cols-2 gap-2 pb-2 border-b border-black/10 dark:border-white/10 mb-2">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/40 font-sans">
                                     Wallet
                                 </span>
@@ -1478,12 +1480,12 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                             {recipients.map((r) => (
                                 <div
                                     key={r.id}
-                                    className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 py-1.5 text-xs"
+                                    className="grid grid-cols-2 gap-2 py-1.5 text-xs"
                                 >
                                     <span className="text-black/60 dark:text-white/60 font-mono truncate" title={r.employeeWallet}>
                                         {r.employeeAlias || (r.employeeWallet.startsWith("0x") && r.employeeWallet.length === 42 ? `${r.employeeWallet.slice(0, 6)}...${r.employeeWallet.slice(-4)}` : r.employeeWallet)}
                                     </span>
-                                    <span className="text-[#082824] dark:text-white font-medium text-right">
+                                    <span className="min-w-0 break-words text-[#082824] dark:text-white font-medium text-right">
                                         {formatUsdc(r.salaryAmountUsdc)} USDC
                                     </span>
                                 </div>

@@ -18,8 +18,8 @@ export default function UpgradePage() {
     }, [router]);
 
     return (
-        <div className="min-h-screen bg-[#FFFFF0] dark:bg-[#111111] text-[#082824] dark:text-white flex flex-col items-center justify-center p-6 text-center font-sans">
-            <div className="max-w-md w-full rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-8 sm:p-10 shadow-sm space-y-6">
+        <div className="min-h-[100dvh] bg-[#FFFFF0] dark:bg-[#111111] text-[#082824] dark:text-white flex flex-col items-center justify-center p-4 sm:p-6 text-center font-sans">
+            <div className="min-w-0 max-w-md w-full rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-5 sm:p-10 shadow-sm space-y-6">
                 <div className="w-14 h-14 mx-auto rounded-2xl bg-[#8AB4DB]/20 border border-[#8AB4DB]/30 flex items-center justify-center text-[#082824] dark:text-[#8AB4DB]">
                     <Settings className="w-7 h-7 animate-pulse" />
                 </div>
@@ -34,9 +34,9 @@ export default function UpgradePage() {
                 <div className="pt-2">
                     <Link
                         href={APP_ROUTES.merchantAdvancedSettings}
-                        className="w-full py-3.5 bg-[#000000] hover:bg-black/85 dark:bg-white dark:text-black text-white font-bold rounded-full text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
+                        className="w-full px-4 py-3.5 bg-[#000000] hover:bg-black/85 dark:bg-white dark:text-black text-white font-bold rounded-full text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
                     >
-                        Go to Advanced Settings <ArrowRight className="w-4 h-4" />
+                        Go to Advanced Settings <ArrowRight className="w-4 h-4 shrink-0" />
                     </Link>
                 </div>
             </div>

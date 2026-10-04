@@ -125,35 +125,35 @@ export function AdminTransactionInspectorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-2xl border border-gray-200 space-y-4">
+      <div className="min-w-0 w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl bg-white p-4 sm:p-6 shadow-2xl border border-gray-200 space-y-4 [overflow-wrap:anywhere]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-          <div className="flex items-center gap-2">
-            <Search className="h-5 w-5 text-[#2775ca]" />
+        <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Search className="h-5 w-5 shrink-0 text-[#2775ca]" />
             <h3 className="text-base font-bold text-[#0f172a]">Single-Transaction Inspector</h3>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
           >
             ✕
           </button>
         </div>
 
         {/* Search Bar */}
-        <form onSubmit={handleSearch} className="flex gap-2">
+        <form onSubmit={handleSearch} className="flex flex-col gap-2 sm:flex-row">
           <input
             type="text"
             required
             placeholder="Enter txHash (0x...), receiptId, intentId, or wallet address"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="flex-1 rounded-lg border border-[#cbd5e1] px-3.5 py-2 text-xs font-mono text-[#0f172a] focus:border-[#2775ca] focus:outline-none"
+            className="min-w-0 flex-1 rounded-lg border border-[#cbd5e1] px-3.5 py-2 text-xs font-mono text-[#0f172a] focus:border-[#2775ca] focus:outline-none"
           />
           <button
             type="submit"
             disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg bg-[#2775ca] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1f5fa6] disabled:opacity-50"
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#2775ca] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1f5fa6] disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             Inspect
@@ -184,12 +184,12 @@ export function AdminTransactionInspectorModal({
             {/* Receipt Summary if available */}
             {result.transaction.receipt && (
               <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-bold text-[#0f172a] flex items-center gap-1.5">
                     <ReceiptText className="h-4 w-4 text-[#2775ca]" />
                     Durable Receipt: {result.transaction.receipt.receiptId}
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {result.transaction.receipt.isShielded && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700">
                         <Shield className="h-3 w-3" /> Shielded Arc Memo
@@ -201,7 +201,7 @@ export function AdminTransactionInspectorModal({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
                   <div>
                     <span className="text-gray-500">Payer:</span>{" "}
                     <span className="font-mono text-gray-900">{result.transaction.receipt.payerAddress}</span>
@@ -242,7 +242,7 @@ export function AdminTransactionInspectorModal({
                   <span>Subscription #{result.transaction.subscription.subscriptionId}</span>
                   <span className="text-blue-700 font-bold">{result.transaction.subscription.status}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                   <div>
                     <span className="text-gray-500">Subscriber:</span>{" "}
                     <span className="font-mono">{result.transaction.subscription.subscriberAddress}</span>
@@ -261,7 +261,7 @@ export function AdminTransactionInspectorModal({
                 <h4 className="font-bold text-[#0f172a] text-xs mb-2">Ledger Entries</h4>
                 <div className="space-y-1.5">
                   {result.transaction.ledgerEntries.map((l) => (
-                    <div key={l.id} className="flex items-center justify-between rounded-lg border border-gray-100 p-2 text-[11px]">
+                    <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 p-2 text-[11px]">
                       <div>
                         <span className="font-bold text-gray-900">{l.entryType}</span>
                         <span className="text-gray-500 ml-2 font-mono">({l.referenceType || "LEDGER"})</span>

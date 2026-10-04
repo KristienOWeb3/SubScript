@@ -113,7 +113,8 @@ export function RunwayGaugeChart({
                     height={SIZE / 2 + 15}
                     role="img"
                     aria-label={ariaLabel}
-                    className="overflow-visible"
+                    viewBox={`0 0 ${SIZE} ${SIZE / 2 + 15}`}
+                    className="max-w-full h-auto overflow-visible"
                 >
                     {/* Track */}
                     <path
@@ -163,7 +164,7 @@ export function RunwayGaugeChart({
                 </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-[#f1f5f9] pt-3 text-[11px] text-[#64748b]">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#f1f5f9] pt-3 text-[11px] text-[#64748b]">
                 <span>Target: {targetLabel}</span>
                 <span>Daily burn: ~{dailyBurnRateUsdc} USDC</span>
             </div>

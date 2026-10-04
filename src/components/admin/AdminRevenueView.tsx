@@ -59,7 +59,7 @@ const SOURCE_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
   bank_rails: Landmark,
 };
 
-const CARD = "rounded-xl border border-[#e2e8f0] bg-white p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]";
+const CARD = "min-w-0 rounded-xl border border-[#e2e8f0] bg-white p-4 sm:p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] [overflow-wrap:anywhere]";
 const TH = "px-4 py-3 text-left text-[10px] font-black uppercase tracking-wider text-[#64748b]";
 const TD = "px-4 py-3 text-xs text-[#0f172a]";
 
@@ -186,7 +186,7 @@ export function AdminRevenueView() {
           ))}
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-4">
           <div className="rounded-xl border border-[#bbf7d0] bg-[#f0fdf4] p-4">
             <p className="text-[10px] font-black uppercase tracking-wider text-[#15803d]">
               Total {WINDOW_LABELS.find((w) => w.key === activeWindow)?.label.toLowerCase()}
@@ -217,7 +217,7 @@ export function AdminRevenueView() {
       {/* The detail table: every fee surface, what it charges, what it moved, what we kept. */}
       <div className={CARD}>
         <h3 className="mb-4 text-sm font-bold">Where the money comes from</h3>
-        <div className="-mx-6 overflow-x-auto">
+        <div className="-mx-4 sm:-mx-6 overflow-x-auto">
           <table className="w-full min-w-[860px]">
             <thead className="border-y border-[#e2e8f0] bg-[#f8fafc]">
               <tr>
@@ -307,7 +307,7 @@ export function AdminRevenueView() {
             No bridge fees collected yet. They&apos;ll appear here after the first cross-chain transfer.
           </p>
         ) : (
-          <div className="-mx-6 overflow-x-auto">
+          <div className="-mx-4 sm:-mx-6 overflow-x-auto">
             <table className="w-full min-w-[640px]">
               <thead className="border-y border-[#e2e8f0] bg-[#f8fafc]">
                 <tr>

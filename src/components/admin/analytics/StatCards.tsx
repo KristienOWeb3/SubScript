@@ -175,13 +175,8 @@ export function StatCardWithSparkline({
 
       <div className="my-3 flex items-baseline justify-between gap-2">
         <div className="min-w-0 flex-1 overflow-hidden">
-          {/* Never wrap a money figure. This used to carry overflow-wrap:anywhere so a long value
-              would fold to a second line, but a number has no legal break point: $83.00 came out
-              as "$83." / "00", and in a narrower card as "$8" / "3.0" / "0" — unreadable, and on a
-              financial dashboard actively misleading about the amount.
-              It scales instead: clamped to the card's inline size so it shrinks to fit down to
-              18px and never exceeds the 24px it was designed at. */}
-          <p id={valueId} className="text-[clamp(1.125rem,7cqi,1.5rem)] font-black leading-tight text-[#0f172a] tracking-tight whitespace-nowrap">{value}</p>
+          {/* Scale values with the card width; exceptionally long values can wrap instead of clipping. */}
+          <p id={valueId} className="text-[clamp(1.125rem,7cqi,1.5rem)] font-black leading-tight text-[#0f172a] tracking-tight [overflow-wrap:anywhere]">{value}</p>
           {delta && (
             <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-bold">
               <span className={`flex items-center gap-0.5 ${deltaTone}`}>

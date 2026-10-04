@@ -6,6 +6,7 @@ import {
     isProd,
 } from "@/lib/contracts/constants";
 import { getArcRpcUrl } from "@/lib/cctp/relayer";
+import { rateLimitRetryFetch } from "@/lib/arc/transport";
 import { prisma } from "@/lib/prisma";
 import type { ArcNetworkFeeHistoryMetadata } from "@/lib/transactions/arcNetworkFeeHistory";
 
@@ -236,7 +237,7 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
             const paddedTo = ethers.zeroPadValue(normalizedWallet, 32);
             const paddedFrom = ethers.zeroPadValue(normalizedWallet, 32);
             // Query latest block
-            const blockRes = await fetch(rpcUrl, {
+            const blockRes = await rateLimitRetryFetch(rpcUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
@@ -249,40 +250,27 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                 if (Number.isFinite(latestBlock) && latestBlock > 0) {
                     const fromBlockHex = "0x" + Math.max(0, latestBlock - 5000).toString(16);
                     
-                    // Run incoming & outgoing log queries in parallel
-                    const [inLogRes, outLogRes] = await Promise.all([
-                        fetch(rpcUrl, {
+                    // Watch Transfer logs from BOTH the native precompile (native value sends, 18-dec)
+                    // and the USDC ERC-20 at 0x36… (in-app transfer() calls, 6-dec). Watching only the
+                    // precompile hid ERC-20 sends from the recipient's history even though funds arrived.
+                    const getTransferLogs = (address: string, topics: (string | null)[], id: number) =>
+                        rateLimitRetryFetch(rpcUrl, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
                                 jsonrpc: "2.0",
                                 method: "eth_getLogs",
-                                params: [{
-                                    address: NATIVE_TOKEN_EVENT_ADDRESS,
-                                    topics: [TRANSFER_EVENT_TOPIC, null, paddedTo],
-                                    fromBlock: fromBlockHex,
-                                    toBlock: "latest",
-                                }],
-                                id: 2,
+                                params: [{ address, topics, fromBlock: fromBlockHex, toBlock: "latest" }],
+                                id,
                             }),
-                            signal: AbortSignal.timeout(12000),
-                        }).catch(() => null),
-                        fetch(rpcUrl, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                jsonrpc: "2.0",
-                                method: "eth_getLogs",
-                                params: [{
-                                    address: NATIVE_TOKEN_EVENT_ADDRESS,
-                                    topics: [TRANSFER_EVENT_TOPIC, paddedFrom, null],
-                                    fromBlock: fromBlockHex,
-                                    toBlock: "latest",
-                                }],
-                                id: 3,
-                            }),
-                            signal: AbortSignal.timeout(12000),
-                        }).catch(() => null),
+                            signal: AbortSignal.timeout(15000),
+                        }).catch(() => null);
+
+                    const [inLogRes, outLogRes, inErc20Res, outErc20Res] = await Promise.all([
+                        getTransferLogs(NATIVE_TOKEN_EVENT_ADDRESS, [TRANSFER_EVENT_TOPIC, null, paddedTo], 2),
+                        getTransferLogs(NATIVE_TOKEN_EVENT_ADDRESS, [TRANSFER_EVENT_TOPIC, paddedFrom, null], 3),
+                        getTransferLogs(targetContract, [TRANSFER_EVENT_TOPIC, null, paddedTo], 4),
+                        getTransferLogs(targetContract, [TRANSFER_EVENT_TOPIC, paddedFrom, null], 5),
                     ]);
 
                     const parseLogs = async (res: Response | null, isIncoming: boolean) => {
@@ -296,8 +284,15 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                             if (fromHex === toHex) continue;
                             const rawVal = BigInt(log.data || "0x0");
                             if (rawVal <= 0n) continue;
-                            // Native precompile Transfer data is 18-decimal; convert to 6-decimal USDC micros.
-                            const microsBigInt = rawVal / 10n ** 12n;
+                            /* Convert per emitter: the native precompile reports 18-decimal Transfer
+                               data (native value sends), while the USDC ERC-20 at 0x36… reports
+                               6-decimal data (an ERC-20 transfer() call, which is how in-app sends
+                               move funds). Dividing a 6-decimal value by 1e12 would shrink a real send
+                               to dust and drop it from the recipient's history. */
+                            const emitter = String(log.address || "").toLowerCase();
+                            const microsBigInt = emitter === NATIVE_TOKEN_EVENT_ADDRESS.toLowerCase()
+                                ? rawVal / 10n ** 12n
+                                : rawVal;
                             if (microsBigInt <= 0n) continue;
 
                             const amountFormatted = formatHistoryMicros(microsBigInt);
@@ -328,7 +323,10 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                         }
                     };
 
-                    await Promise.all([parseLogs(inLogRes, true), parseLogs(outLogRes, false)]);
+                    await Promise.all([
+                        parseLogs(inLogRes, true), parseLogs(outLogRes, false),
+                        parseLogs(inErc20Res, true), parseLogs(outErc20Res, false),
+                    ]);
                 }
             }
         } catch (rpcErr) {

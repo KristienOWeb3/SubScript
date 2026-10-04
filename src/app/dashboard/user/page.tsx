@@ -13,6 +13,7 @@ import {
   createPublicClient,
   http,
   parseUnits,
+  encodeFunctionData,
   fallback
 } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
@@ -27,11 +28,12 @@ import {
   CCTP_CONFIG,
   SOLANA_CCTP_CONFIG,
 } from "@/lib/contracts/constants";
-import { calculateBridgeFee, formatFeeBps, formatMicros } from "@/lib/cctp/feeEngine";
+import { calculateBridgeFee, formatFeeBps, formatMicros, listBridgeRoutes } from "@/lib/cctp/feeEngine";
+import { createSendQuote, microsToUsdc, nativeGasToMicros, quoteEmbeddedArcReceipt, usdcToMicros, type SendQuoteRequest, type SendResult } from "@/lib/payments/sendQuote";
 import { isSolanaAddress, getSolanaRecipientAta, solanaAddressToBytes32 } from "@/lib/cctp/circleBridge";
 import { QRCode } from "react-qrcode-logo";
 import jsQR from "jsqr";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import MobileFloatingNav from "@/components/dashboard/MobileFloatingNav";
 import LoadingDots from "@/components/ui/LoadingDots";
@@ -45,7 +47,9 @@ import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import { resolveScannedTarget } from "@/lib/qr/scanTargets";
 import SendSingleModal from "@/components/SendSingleModal";
+import RollingNumber from "@/components/ui/RollingNumber";
 import DepositModal from "@/components/DepositModal";
+import Toast from "@/components/ui/Toast";
 import { ChainLogo } from "@/components/ChainLogo";
 import SupportChatModal from "@/components/support/SupportChatModal";
 import TransactionAvatar from "@/components/dashboard/TransactionAvatar";
@@ -133,12 +137,14 @@ import {
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
-import { humanStatus, humanSubscriptionStatus, normalizeReceiptStatus } from "@/lib/transactionLabels";
+import { humanStatus, humanSubscriptionStatus, normalizeReceiptStatus, sentToLabel } from "@/lib/transactionLabels";
+import { deduplicateHistory } from "@/lib/transactions/history";
+import TransactionHistoryList from "@/components/dashboard/TransactionHistoryList";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import { accountDisplayName } from "@/lib/identityDisplay";
 import { resolveMerchantDisplayName, isMerchantId } from "@/lib/merchants/identity";
-import { recordOptimisticTx, readOptimisticTxs, reconcileOptimisticTxs, type OptimisticTx } from "@/lib/optimisticTx";
+import { recordOptimisticTx, readOptimisticTxs, reconcileOptimisticTxs, removeOptimisticTx, revealOptimisticTx, updateOptimisticTx, type OptimisticTx } from "@/lib/optimisticTx";
 import { COMMIT_LIVE_REFRESH_MS } from "@/lib/vault/liveRefresh";
 
 const comingSoonUserSettings = new Set(["securityShieldEnabled", "securityMultiSigEnabled"]);
@@ -297,7 +303,7 @@ const userBottomTabs = [
   { id: "home", label: "Home", icon: Home },
   { id: "commit", label: "Commit", icon: Shield },
   { id: "links", label: "Links", icon: Link2 },
-  { id: "batch", label: "Send", icon: Send },
+  { id: "batch", label: "Batch", icon: Layers },
 ] as const;
 
 const userDesktopTabs = [
@@ -559,12 +565,31 @@ export default function UserDashboard() {
     dmScrollMutationRef.current?.disconnect();
   }, []);
 
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < 768;
+  });
+  const [isTablet, setIsTablet] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth >= 768 && window.innerWidth < 1200;
+  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const stored = localStorage.getItem("subscript_sidebar_collapsed");
+      if (stored !== null) return stored === "true";
+      return window.innerWidth < 1024;
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      const isMobileSize = window.innerWidth < 768;
+      setIsMobile(isMobileSize);
+      setIsTablet(!isMobileSize && window.innerWidth < 1200);
     };
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -572,6 +597,7 @@ export default function UserDashboard() {
   }, []);
 
   const [activeTab, setActiveTab] = useState<UserTab>("home");
+  const prefersReducedMotion = useReducedMotion();
 
   /* A tab switch always starts at the top — otherwise a scroll depth carried over
      from a longer tab can sit past the end of a shorter one, showing only background. */
@@ -581,6 +607,7 @@ export default function UserDashboard() {
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [toastType, setToastType] = useState<"success" | "error" | "info">("success");
   const [confirmModal, setConfirmModal] = useState<{
     open: boolean;
     title: string;
@@ -596,12 +623,25 @@ export default function UserDashboard() {
     isLoading?: boolean;
   } | null>(null);
 
-  const triggerToast = (message: string) => {
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const triggerToast = (message: string, type: "success" | "error" | "info" = "success") => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
     setToastMessage(message);
+    setToastType(type);
     setShowToast(true);
-    setTimeout(() => {
+    toastTimerRef.current = setTimeout(() => {
       setShowToast(false);
-    }, 3000);
+      toastTimerRef.current = null;
+    }, 3500);
   };
 
   const [focusIntentId, setFocusIntentId] = useState<string | null>(null);
@@ -755,10 +795,55 @@ export default function UserDashboard() {
     };
   }>>([]);
   const [optimisticTxs, setOptimisticTxs] = useState<OptimisticTx[]>([]);
+  const [animatingTxId, setAnimatingTxId] = useState<string | null>(null);
+  const animatingRowRef = useRef<HTMLDivElement | null>(null);
+  const lastOptimisticSendId = useRef<string | null>(null);
+  const pendingArrivalWatches = useRef(new Map<string, { cancel: () => void }>());
 
   useEffect(() => {
     setOptimisticTxs(readOptimisticTxs());
   }, []);
+
+  useEffect(() => {
+    if (!animatingTxId || !animatingRowRef.current) return;
+    if (prefersReducedMotion) return;
+
+    // Proportional smooth scroll matching prototype line 358:
+    // dh.scrollTo({top:Math.max(0,h.getBoundingClientRect().top-dh.getBoundingClientRect().top+dh.scrollTop-300),behavior:'smooth'});
+    const h = document.getElementById("dashboard-tx-history") || (document.querySelector(".dashboard-blue-panel") as HTMLElement | null);
+    if (h) {
+      let scroller: HTMLElement | null = null;
+      let p = h.parentElement;
+      while (p) {
+        const style = window.getComputedStyle(p);
+        if ((style.overflowY === "auto" || style.overflowY === "scroll") && p.scrollHeight > p.clientHeight) {
+          scroller = p;
+          break;
+        }
+        p = p.parentElement;
+      }
+      if (!scroller) {
+        const fallback = document.querySelector(".user-dashboard-content, .user-dashboard-redesign") as HTMLElement | null;
+        if (fallback && fallback.scrollHeight > fallback.clientHeight) {
+          scroller = fallback;
+        }
+      }
+
+      if (scroller) {
+        const sRect = scroller.getBoundingClientRect();
+        const hRect = h.getBoundingClientRect();
+        const targetTop = Math.max(0, hRect.top - sRect.top + scroller.scrollTop - 280);
+        scroller.scrollTo({ top: targetTop, behavior: "smooth" });
+      } else {
+        const hRect = h.getBoundingClientRect();
+        const targetTop = Math.max(0, hRect.top + window.scrollY - 280);
+        window.scrollTo({ top: targetTop, behavior: "smooth" });
+      }
+    }
+
+  }, [animatingTxId, activeTab, prefersReducedMotion]);
+
+
 
   const [allTxOpen, setAllTxOpen] = useState(false);
   const [allTxSearch, setAllTxSearch] = useState("");
@@ -1089,13 +1174,14 @@ export default function UserDashboard() {
     setIsSettingsLoading(true);
     try {
       const [res, depositsRes, scanRes] = await Promise.all([
-        fetch("/api/user/settings"),
+        fetch("/api/user/settings").catch(() => null),
         fetch("/api/user/deposits").catch(() => null),
         ARC_CCTP_ENABLED ? fetch("/api/user/cctp/scan").catch(() => null) : Promise.resolve(null),
       ]);
-      const data = await res.json();
+      void scanRes;
+      const data = res ? await res.json().catch(() => null) : null;
       const depData = depositsRes ? await depositsRes.json().catch(() => ({})) : {};
-      if (data.success) {
+      if (data?.success) {
         setUserSettings(data.settings);
         setSettingsTransactions(Array.isArray(data.receipts) ? data.receipts : []);
         if (data.settings?.profilePic) setProfilePic(data.settings.profilePic);
@@ -1180,24 +1266,24 @@ export default function UserDashboard() {
   /* Single Send lives in a pop-up modal now, so the tab body is dedicated to Batch Payouts.
      The single/batch sub-tab swap (and its swipe handler) is gone with it. */
   const [sendSingleModalOpen, setSendSingleModalOpen] = useState(false);
-  const batchFormRef = useRef<HTMLDivElement | null>(null);
+  const batchSectionRef = useRef<HTMLDivElement | null>(null);
 
-  /* "Send to multiple people" in the single-send sheet. The batch form is only mounted once the
-     tab is active, so the scroll waits a frame for it to exist. On mobile the tab renders below
-     the header, and landing on the header instead of the form reads as if nothing happened. */
+  /* "Send to multiple people" in the single-send sheet. Navigates cleanly to the batch tab
+     and scrolls to top so the user starts at the top of Batch payouts, rather than scrolling to bottom. */
   const handleGoToBatch = useCallback(() => {
     setSendSingleModalOpen(false);
     setActiveTab("batch");
-    requestAnimationFrame(() => {
-      batchFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }, []);
   const [singleRecipient, setSingleRecipient] = useState("");
   const [singleAmount, setSingleAmount] = useState("");
-  const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null } | null>(null);
+  const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null; hasAccount: boolean } | null>(null);
   const [singleResolving, setSingleResolving] = useState(false);
   const [singleSendStatus, setSingleSendStatus] = useState<string | null>(null);
   const [singleSendLoading, setSingleSendLoading] = useState(false);
+  const [singleSendFiguresPaused, setSingleSendFiguresPaused] = useState(false);
 
   const [batchSendStatus, setBatchSendStatus] = useState<string | null>(null);
   const [batchSendLoading, setBatchSendLoading] = useState(false);
@@ -1288,7 +1374,13 @@ export default function UserDashboard() {
   /* Total USDC the user holds off Arc, for the send-routing notice. */
   const elsewhereUsdc = originBalances.reduce((sum, chain) => sum + chain.balance, 0);
 
-  const walletBalance = usdcBalance !== undefined ? Number(formatUnits(usdcBalance, 6)) : 0;
+  const rawWalletBalance = usdcBalance !== undefined ? Number(formatUnits(usdcBalance, 6)) : 0;
+  /* Only hashless submissions reserve the balance. Mined transfers are already included in the RPC balance. */
+  const pendingReservedUsdc = optimisticTxs.reduce(
+    (sum, tx) => sum + (tx.txHash ? 0 : (Number(tx.amountUsdcMicros) || 0) / 1_000_000),
+    0,
+  );
+  const walletBalance = Math.max(0, rawWalletBalance - pendingReservedUsdc);
 
   const handleManualRefreshBalances = async () => {
     if (isRefreshingBalances) return;
@@ -1320,9 +1412,9 @@ export default function UserDashboard() {
 
   const loadSubscriptions = async (): Promise<Subscription[] | null> => {
     try {
-      const res = await fetch("/api/user/subscriptions");
-      const data = await res.json();
-      if (data.success) {
+      const res = await fetch("/api/user/subscriptions").catch(() => null);
+      const data = res ? await res.json().catch(() => null) : null;
+      if (data?.success) {
         setSubscriptions(data.subscriptions);
         /* Returned as well as stored. A caller that has just learned a row exists cannot read it
            back out of state in the same tick, and the resume hand-off below needs it immediately. */
@@ -1336,10 +1428,10 @@ export default function UserDashboard() {
 
   const loadRequestsCount = useCallback(async () => {
     try {
-      const res = await fetch("/api/user/dm/requests");
-      if (res.ok) {
-        const data = await res.json();
-        setPendingRequestsCount(data.pendingCount || 0);
+      const res = await fetch("/api/user/dm/requests").catch(() => null);
+      if (res?.ok) {
+        const data = await res.json().catch(() => null);
+        if (data) setPendingRequestsCount(data.pendingCount || 0);
       }
     } catch (err) {
       console.error("Failed to load requests count:", err);
@@ -1350,10 +1442,10 @@ export default function UserDashboard() {
   const loadDms = useCallback(async () => {
     const requestSequence = ++dmRequestSequence.current;
     try {
-      const res = await fetch("/api/user/dms");
-      const data = await res.json();
-      if (data.success && requestSequence === dmRequestSequence.current) setDms(data.dms);
-      if (data.success && requestSequence === dmRequestSequence.current) {
+      const res = await fetch("/api/user/dms").catch(() => null);
+      const data = res ? await res.json().catch(() => null) : null;
+      if (data?.success && requestSequence === dmRequestSequence.current) setDms(data.dms);
+      if (data?.success && requestSequence === dmRequestSequence.current) {
         if (data.connections) setDmConnections(data.connections);
         if (data.blockedAddresses) setBlockedAddresses(data.blockedAddresses);
       }
@@ -1362,6 +1454,170 @@ export default function UserDashboard() {
       console.error("Failed to load DMs:", err);
     }
   }, [loadRequestsCount]);
+
+  const cancelPendingArrivalWatch = useCallback((optimisticId: string) => {
+    pendingArrivalWatches.current.get(optimisticId)?.cancel();
+    pendingArrivalWatches.current.delete(optimisticId);
+  }, []);
+
+  const watchPendingArrival = useCallback((pendingArrivalWatch: {
+    optimisticId: string;
+    circleTxId?: string;
+    txHash?: string | null;
+    networkId: string;
+    transferId?: string;
+    recipientAddress: string;
+    recipientLabel: string;
+    amountUsdc: string;
+  }) => {
+    if (pendingArrivalWatches.current.has(pendingArrivalWatch.optimisticId)) return;
+    let cancelled = false;
+    let inFlight = false;
+    const controller = new AbortController();
+    const pollStart = Date.now();
+    const interval = window.setInterval(async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const params = new URLSearchParams();
+        if (pendingArrivalWatch.circleTxId) params.set("circleTxId", pendingArrivalWatch.circleTxId);
+        if (pendingArrivalWatch.txHash) params.set("txHash", pendingArrivalWatch.txHash);
+        const isBridge = pendingArrivalWatch.networkId !== "arc";
+        const url = isBridge
+          ? `/api/user/cctp/status/${encodeURIComponent(pendingArrivalWatch.transferId || pendingArrivalWatch.txHash || "")}`
+          : `/api/user/wallet/send/status?${params.toString()}`;
+        const res = await fetch(url, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) });
+        if (!res.ok || cancelled) return;
+        const response = await res.json();
+        if (cancelled) return;
+        const data = isBridge ? {
+          status: response.transfer?.status === "completed" && response.transfer?.mintTxHash ? "confirmed" : response.transfer?.status === "failed" ? "failed" : "pending",
+          // The deposits ledger reconciles by burn hash, not destination mint hash.
+          txHash: pendingArrivalWatch.txHash,
+        } : response;
+        if (data.status === "confirmed") {
+          window.clearInterval(interval);
+          if (cancelled) return;
+          const finalTxHash = data.txHash || pendingArrivalWatch.txHash;
+          if (finalTxHash) singleSendNetworks.current.set(finalTxHash.toLowerCase(), pendingArrivalWatch.networkId);
+          if (finalTxHash && !isBridge) {
+            void fetch("/api/user/dms", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "log-transfer",
+                receiverAddress: pendingArrivalWatch.recipientAddress,
+                amountUsdc: pendingArrivalWatch.amountUsdc,
+                txHash: finalTxHash,
+                title: `${pendingArrivalWatch.amountUsdc} USDC Sent`,
+                description: `Sent ${pendingArrivalWatch.amountUsdc} USDC.`,
+              }),
+            })
+              .then(() => loadDms().catch(() => {}))
+              .catch(console.error);
+          }
+          revealOptimisticTx(pendingArrivalWatch.optimisticId, finalTxHash);
+          setOptimisticTxs(readOptimisticTxs());
+          setTxFilter("all");
+          setActiveTab("home");
+          setAnimatingTxId(pendingArrivalWatch.optimisticId);
+          cancelPendingArrivalWatch(pendingArrivalWatch.optimisticId);
+          void refetchUsdc().catch(console.error);
+          void loadDepositsSilently();
+        } else if (data.status === "failed") {
+          window.clearInterval(interval);
+          removeOptimisticTx(pendingArrivalWatch.optimisticId);
+          setOptimisticTxs(readOptimisticTxs());
+          setSingleSendStatus("The transfer failed. Your available balance has been refreshed.");
+          void refetchUsdc().catch(console.error);
+          cancelPendingArrivalWatch(pendingArrivalWatch.optimisticId);
+        }
+      } catch {
+        // ignore network blips
+      } finally {
+        inFlight = false;
+      }
+      if (cancelled) return;
+      if (Date.now() - pollStart > (pendingArrivalWatch.networkId === "arc" ? 90_000 : 30 * 60_000)) {
+        window.clearInterval(interval);
+        cancelPendingArrivalWatch(pendingArrivalWatch.optimisticId);
+      }
+    }, 1200);
+
+    pendingArrivalWatches.current.set(pendingArrivalWatch.optimisticId, {
+      cancel: () => {
+        cancelled = true;
+        window.clearInterval(interval);
+        controller.abort();
+      },
+    });
+  }, [cancelPendingArrivalWatch, refetchUsdc, loadDms, loadDepositsSilently]);
+
+  useEffect(() => {
+    const watches = pendingArrivalWatches.current;
+    return () => {
+      watches.forEach(watch => watch.cancel());
+      watches.clear();
+    };
+  }, []);
+
+  const handleSendConfirmed = (result: SendResult) => {
+    if (result.status === "confirmed" && lastOptimisticSendId.current) {
+      if (result.txHash) singleSendNetworks.current.set(result.txHash.toLowerCase(), result.networkId);
+      updateOptimisticTx(lastOptimisticSendId.current, result.txHash);
+      setOptimisticTxs(readOptimisticTxs());
+    }
+    void refetchUsdc().catch(console.error);
+    loadDms().catch(() => {});
+    loadSubscriptions().catch(() => {});
+  };
+
+  const handleSendFailed = () => {
+    if (lastOptimisticSendId.current) removeOptimisticTx(lastOptimisticSendId.current);
+    setOptimisticTxs(readOptimisticTxs());
+    setSingleSendStatus("The transfer failed. Your available balance has been refreshed.");
+    void refetchUsdc().catch(console.error);
+  };
+
+  const handleSendModalClose = useCallback(
+    (details?: { isSuccessful?: boolean; result?: SendResult | null }) => {
+      setSendSingleModalOpen(false);
+      if (!details?.result) return;
+      const result = details.result;
+      const optimisticId =
+        lastOptimisticSendId.current ||
+        `optimistic-${result.txHash || result.circleTxId || Date.now()}`;
+      if (result.status === "failed") {
+        removeOptimisticTx(optimisticId);
+        setOptimisticTxs(readOptimisticTxs());
+        cancelPendingArrivalWatch(optimisticId);
+        void refetchUsdc().catch(console.error);
+      } else if (details.isSuccessful) {
+        revealOptimisticTx(optimisticId, result.txHash);
+        setOptimisticTxs(readOptimisticTxs());
+        setTxFilter("all");
+        setActiveTab("home");
+        setAnimatingTxId(optimisticId);
+        void refetchUsdc().catch(console.error);
+        loadDms().catch(() => {});
+        void loadDepositsSilently();
+      } else {
+        watchPendingArrival({
+          optimisticId,
+          circleTxId: result.circleTxId,
+          txHash: result.txHash || null,
+          networkId: result.networkId,
+          transferId: result.transferId,
+          recipientAddress: result.recipientAddress || singleResolved?.address || "",
+          recipientLabel:
+            singleResolved?.alias ||
+            formatAddress(result.recipientAddress || singleResolved?.address || ""),
+          amountUsdc: singleAmount || result.amountUsdc || "0",
+        });
+      }
+    },
+    [singleResolved, singleAmount, refetchUsdc, loadDms, loadDepositsSilently, cancelPendingArrivalWatch, watchPendingArrival],
+  );
 
   /* Live inbox: poll DMs while visible. On focus/visibility or a checkout completion from another
      tab, refresh every payment-backed surface so balances, receipts, subscriptions and DMs agree. */
@@ -1672,6 +1928,7 @@ export default function UserDashboard() {
     /* Stable per logical send attempt; the server derives each transfer's Circle idempotency
        key from it, so a retry with the same key cannot pay a recipient twice. */
     requestKey?: string;
+    earlySubmission?: boolean;
   }) => {
     const { requestKey, ...body } = payload;
     const res = await fetch("/api/user/wallet/send", {
@@ -1692,7 +1949,7 @@ export default function UserDashboard() {
       throw err;
     }
     return {
-      transfers: data.transfers as { receiverAddress: string; amountUsdc: string; txHash: string }[],
+      transfers: data.transfers as { receiverAddress: string; amountUsdc: string; txHash: string; circleTxId?: string }[],
       networkFee: data.networkFee as {
         type: "ARC_NETWORK_FEE";
         amountUsdc: string;
@@ -1702,6 +1959,10 @@ export default function UserDashboard() {
         unrecovered: boolean;
         recipientRole: "GAS_FEE_TREASURY";
       } | undefined,
+      circleTxId: (data.circleTxId || data.circleTxIds?.[0]) as string | undefined,
+      status: (data.status || "confirmed") as "confirmed" | "pending",
+      accepted: Boolean(data.accepted),
+      operationId: data.operationId as string | undefined,
     };
   };
 
@@ -2774,15 +3035,17 @@ export default function UserDashboard() {
 
   useEffect(() => {
     const raw = singleRecipient.trim();
+    const controller = new AbortController();
+    let cancelled = false;
+    setSingleResolved(null);
     if (!raw) {
-      setSingleResolved(null);
       setSingleResolving(false);
       return;
     }
 
-    // Solana addresses are Base58 and case-sensitive. Check before lowercasing!
+    // Base58 addresses preserve case; DNS and EVM addresses resolve separately.
     if (isSolanaAddress(raw)) {
-      setSingleResolved({ address: raw, alias: null, profilePic: null });
+      setSingleResolved({ address: raw, alias: null, profilePic: null, hasAccount: false });
       setSingleResolving(false);
       return;
     }
@@ -2790,43 +3053,35 @@ export default function UserDashboard() {
     const trimmed = raw.toLowerCase();
     setSingleResolving(true);
     const timer = setTimeout(async () => {
-      if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
-        setSingleResolved({ address: trimmed, alias: null, profilePic: null });
-        try {
-          const res = await fetch(`/api/merchant/alias?address=${trimmed}`);
-          const data = await res.json();
-          if (data.success && data.alias) {
-            setSingleResolved({ address: trimmed, alias: data.alias, profilePic: data.profile_pic });
-          }
-        } catch (e) {
-          console.warn(e);
-        } finally {
-          setSingleResolving(false);
-        }
+      const isAddress = /^0x[a-f0-9]{40}$/.test(trimmed);
+      if (!isAddress && !trimmed.endsWith(".sub")) {
+        if (!cancelled) setSingleResolving(false);
         return;
       }
-
-      if (trimmed.endsWith(".sub")) {
-        try {
-          const res = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed)}`);
-          const data = await res.json();
-          if (data.success && data.address) {
-            setSingleResolved({ address: data.address, alias: data.alias, profilePic: data.profile_pic });
-          } else {
-            setSingleResolved({ address: null, alias: trimmed, profilePic: null });
-          }
-        } catch (err) {
-          setSingleResolved({ address: null, alias: trimmed, profilePic: null });
-        } finally {
-          setSingleResolving(false);
-        }
-      } else {
-        setSingleResolved(null);
-        setSingleResolving(false);
+      try {
+        const query = isAddress ? `address=${trimmed}` : `alias=${encodeURIComponent(trimmed)}`;
+        const response = await fetch(`/api/merchant/alias?${query}`, { signal: controller.signal });
+        const data = await response.json();
+        if (cancelled) return;
+        /* hasAccount drives the recipient avatar: a wallet with no registered SubScript account
+           gets the wallet logo, an account gets its photo or its name's first letter. For an
+           address lookup, "has an account" means the lookup returned a name or photo; for a .sub
+           lookup, it means the name actually resolved to a wallet. */
+        setSingleResolved(isAddress
+          ? { address: trimmed, alias: data.success ? data.alias || null : null, profilePic: data.success ? data.profile_pic || null : null, hasAccount: Boolean(data.success && (data.alias || data.profile_pic)) }
+          : { address: data.success ? data.address || null : null, alias: data.alias || trimmed, profilePic: data.success ? data.profile_pic || null : null, hasAccount: Boolean(data.success && data.address) });
+      } catch {
+        if (!cancelled) setSingleResolved({ address: isAddress ? trimmed : null, alias: isAddress ? null : trimmed, profilePic: null, hasAccount: false });
+      } finally {
+        if (!cancelled) setSingleResolving(false);
       }
     }, 400);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(timer);
+    };
   }, [singleRecipient]);
 
   /* Idempotency keys for money-moving sends: minted per logical attempt, reused verbatim on a
@@ -2834,6 +3089,144 @@ export default function UserDashboard() {
      intentional identical follow-up send gets a fresh key. */
   const singleSendRequestKey = useRef<string | null>(null);
   const batchSendRequestKey = useRef<string | null>(null);
+  const singleSendNetworks = useRef(new Map<string, string>());
+
+  const getSingleSendQuote = useCallback(async ({ amount, networkId, recipientAddress }: SendQuoteRequest) => {
+    const isPositiveNumber = Boolean(amount && /^\d+(\.\d{1,6})?$/.test(amount.trim()) && Number(amount) > 0);
+    const probeAmount = networkId === "1" ? "10" : "1";
+    const effectiveAmount = isPositiveNumber ? amount.trim() : probeAmount;
+    const amountMicros = usdcToMicros(effectiveAmount);
+
+    if (networkId !== "arc") {
+      const fee = calculateBridgeFee(amountMicros, networkId, "outbound_withdrawal");
+      const route = listBridgeRoutes("outbound_withdrawal").find((item) => item.id === networkId);
+      if (!route?.available) throw new Error("Transfers to this network are coming soon.");
+
+      if (isEmbeddedWalletSession) {
+        return createSendQuote({
+          amountUsdc: effectiveAmount,
+          feeUsdc: microsToUsdc(fee.feeMicros),
+          feeTreatment: "deducted",
+          feeLabel: "Platform fee",
+          arrival: route.estimatedTime || "About 15 minutes",
+          estimated: true,
+          nativeGasUsdc: undefined,
+          gasPaidByWallet: false,
+        });
+      }
+
+      if (!recipientAddress) {
+        throw new Error("Select a recipient before estimating network fee.");
+      }
+
+      let simulationResults;
+      try {
+        simulationResults = await publicClient.simulateCalls({
+          account: accountAddress as `0x${string}`,
+          validation: false,
+          calls: [
+            {
+              to: USDC_NATIVE_GAS_ADDRESS,
+              data: encodeFunctionData({
+                abi: CCTP_ERC20_ABI,
+                functionName: "transfer",
+                args: [BRIDGE_FEE_TREASURY_ADDRESS, fee.feeMicros],
+              }),
+            },
+            {
+              to: USDC_NATIVE_GAS_ADDRESS,
+              data: encodeFunctionData({
+                abi: CCTP_ERC20_ABI,
+                functionName: "approve",
+                args: [ARC_TOKEN_MESSENGER_ADDRESS, fee.netMicros],
+              }),
+            },
+            {
+              to: ARC_TOKEN_MESSENGER_ADDRESS,
+              data: encodeFunctionData({
+                abi: CCTP_TOKEN_MESSENGER_V2_ABI,
+                functionName: "depositForBurn",
+                args: [
+                  fee.netMicros,
+                  fee.domain,
+                  (fee.domain === 5 || networkId === "solana" ? toBytes32Address(recipientAddress) : (`0x${recipientAddress.slice(2).padStart(64, "0")}`)) as `0x${string}`,
+                  USDC_NATIVE_GAS_ADDRESS,
+                  ANY_DESTINATION_CALLER,
+                  0n,
+                  CCTP_FINALITY_STANDARD,
+                ],
+              }),
+            },
+          ],
+        });
+      } catch {
+        throw new Error("We cannot estimate the wallet gas for this withdrawal right now. Try again shortly.");
+      }
+
+      if (!simulationResults?.results || simulationResults.results.some((r: any) => r.status !== "success")) {
+        throw new Error("The cross-chain transfer could not be simulated on Arc. Check your balance or try again.");
+      }
+
+      const totalGas = simulationResults.results.reduce((acc: bigint, r: any) => acc + BigInt(r.gasUsed || 0n), 0n);
+      const gasPrice = await publicClient.getGasPrice();
+      if (gasPrice <= 0n) throw new Error("Received invalid gas estimate from RPC.");
+      const nativeGasMicros = nativeGasToMicros(totalGas, gasPrice);
+
+      return createSendQuote({
+        amountUsdc: effectiveAmount,
+        feeUsdc: microsToUsdc(fee.feeMicros),
+        feeTreatment: "deducted",
+        feeLabel: "Platform fee",
+        arrival: route.estimatedTime || "About 15 minutes",
+        estimated: true,
+        nativeGasUsdc: microsToUsdc(nativeGasMicros),
+        gasPaidByWallet: true,
+      });
+    }
+
+    if (isEmbeddedWalletSession) {
+      const response = await fetch("/api/user/wallet/estimate-fee?recipients=1", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || typeof data.feeMicros !== "string" || !/^\d+$/.test(data.feeMicros)) {
+        throw new Error(data.error || "The network fee is unavailable. Try again shortly.");
+      }
+      return createSendQuote({
+        amountUsdc: effectiveAmount,
+        feeUsdc: microsToUsdc(BigInt(data.feeMicros)),
+        feeTreatment: "additional",
+        feeLabel: "Network fee",
+        arrival: "On Arc confirmation",
+        estimated: true,
+      });
+    }
+
+    if (!recipientAddress) {
+      throw new Error("Select a recipient before estimating network fee.");
+    }
+
+    const [gas, gasPrice] = await Promise.all([
+      publicClient.estimateContractGas({
+        account: accountAddress as `0x${string}`,
+        address: USDC_NATIVE_GAS_ADDRESS,
+        abi: CCTP_ERC20_ABI,
+        functionName: "transfer",
+        args: [recipientAddress as `0x${string}`, amountMicros],
+      }),
+      publicClient.getGasPrice(),
+    ]);
+    if (gas <= 0n || gasPrice <= 0n) {
+      throw new Error("Received invalid gas estimate from RPC.");
+    }
+    const feeMicros = nativeGasToMicros(gas, gasPrice);
+    return createSendQuote({
+      amountUsdc: effectiveAmount,
+      feeUsdc: microsToUsdc(feeMicros),
+      feeTreatment: "additional",
+      feeLabel: "Network fee",
+      arrival: "On Arc confirmation",
+      estimated: true,
+    });
+  }, [accountAddress, isEmbeddedWalletSession, publicClient]);
 
   /**
    * Cross-chain withdrawal for a browser wallet, which holds its own keys and so cannot be signed
@@ -2860,6 +3253,7 @@ export default function UserDashboard() {
       await switchChainAsync({ chainId: activeArcChain.id });
     }
 
+    let nativeGasWei = 0n;
     let feeTxHash: `0x${string}` | undefined;
     if (fee.feeMicros > 0n) {
       feeTxHash = await writeContractAsync({
@@ -2870,6 +3264,7 @@ export default function UserDashboard() {
       });
       const feeReceipt = await publicClient.waitForTransactionReceipt({ hash: feeTxHash, timeout: 120_000 });
       if (feeReceipt.status !== "success") throw new Error("The bridge fee payment failed. Nothing was sent.");
+      nativeGasWei += feeReceipt.gasUsed * feeReceipt.effectiveGasPrice;
     }
 
     /* Approve exactly the net. Approving the gross would leave the TokenMessenger able to pull the
@@ -2882,6 +3277,7 @@ export default function UserDashboard() {
     });
     const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash, timeout: 120_000 });
     if (approveReceipt.status !== "success") throw new Error("Approving the transfer failed. Nothing was sent.");
+    nativeGasWei += approveReceipt.gasUsed * approveReceipt.effectiveGasPrice;
 
     const isSolana =
       fee.domain === 5 ||
@@ -2914,6 +3310,7 @@ export default function UserDashboard() {
     if (burnReceipt.status !== "success") {
       throw new Error("The transfer didn't go through on Arc. The fee has been recorded and will be refunded.");
     }
+    nativeGasWei += burnReceipt.gasUsed * burnReceipt.effectiveGasPrice;
 
     /* Register last. The keeper needs the burn hash to fetch Circle's attestation, and until this
        lands the transfer is invisible to us, so it retries rather than being fire-and-forget. */
@@ -2943,14 +3340,18 @@ export default function UserDashboard() {
       );
     }
 
-    return { burnTxHash, feeTxHash };
+    return { burnTxHash, feeTxHash, fee, nativeGasMicros: nativeGasToMicros(1n, nativeGasWei) };
   };
 
-  const handleSingleSend = async (e: React.FormEvent, selectedNetwork: string = "arc") => {
+  const handleSingleSend = async (e: React.FormEvent, selectedNetwork: string = "arc"): Promise<SendResult | void> => {
     e.preventDefault();
     setSingleSendStatus(null);
     const recipientAddr = singleResolved?.address;
 
+    if (singleResolving) {
+      setSingleSendStatus("Wait for the recipient lookup to finish.");
+      return;
+    }
     if (!recipientAddr) {
       setSingleSendStatus("Please provide a valid recipient wallet address or registered SubScript DNS name.");
       return;
@@ -2960,8 +3361,8 @@ export default function UserDashboard() {
       return;
     }
     const trimmedSingleAmount = singleAmount.trim();
-    if (!trimmedSingleAmount || !/^[0-9]+(\.[0-9]+)?$/.test(trimmedSingleAmount) || Number(trimmedSingleAmount) <= 0) {
-      setSingleSendStatus("Please provide a valid numeric USDC amount to send (e.g. 10.00).");
+    if (!trimmedSingleAmount || !/^[0-9]+(\.[0-9]{1,6})?$/.test(trimmedSingleAmount) || Number(trimmedSingleAmount) <= 0) {
+      setSingleSendStatus("Please provide a valid USDC amount with at most six decimal places (e.g. 10.00).");
       return;
     }
 
@@ -2972,8 +3373,16 @@ export default function UserDashboard() {
          modal quoted. An in-app wallet has server-held keys and the route does all three steps; a
          browser wallet signs them itself in withdrawCrossChainFromBrowserWallet. */
       if (selectedNetwork !== "arc") {
+        if (!isEmbeddedWalletSession) {
+          const freshQuote = await getSingleSendQuote({ amount: singleAmount, networkId: selectedNetwork, recipientAddress: recipientAddr });
+          if (usdcBalance !== undefined && usdcToMicros(freshQuote.totalDebitUsdc) > usdcBalance) {
+            throw new Error("Your balance no longer covers this withdrawal and its wallet gas. Use Max to refresh the amount.");
+          }
+        }
         const amountMicros = parseUnits(limitDecimals(singleAmount, 6), 6);
         let burnTxHash: string | undefined;
+        let transferId: string | undefined;
+        let settledQuote;
 
         if (isEmbeddedWalletSession) {
           const res = await fetch("/api/user/cctp/withdraw", {
@@ -2988,6 +3397,16 @@ export default function UserDashboard() {
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || "We couldn't start that withdrawal.");
           burnTxHash = data.burnTxHash;
+          transferId = data.transferId;
+          if (!data.fee) throw new Error("The withdrawal receipt is missing its fee data.");
+          settledQuote = createSendQuote({
+            amountUsdc: data.fee.grossUsdc,
+            feeUsdc: data.fee.feeUsdc,
+            feeTreatment: "deducted",
+            feeLabel: "Platform fee",
+            arrival: listBridgeRoutes("outbound_withdrawal").find((route) => route.id === selectedNetwork)?.estimatedTime || "Awaiting destination confirmation",
+            estimated: false,
+          });
         } else {
           const result = await withdrawCrossChainFromBrowserWallet({
             destinationChainId: selectedNetwork === "solana" ? "solana" : Number(selectedNetwork),
@@ -2995,76 +3414,142 @@ export default function UserDashboard() {
             amountMicros,
           });
           burnTxHash = result?.burnTxHash;
+          settledQuote = createSendQuote({
+            amountUsdc: microsToUsdc(result.fee.grossMicros),
+            feeUsdc: microsToUsdc(result.fee.feeMicros),
+            feeTreatment: "deducted",
+            feeLabel: "Platform fee",
+            arrival: listBridgeRoutes("outbound_withdrawal").find((route) => route.id === selectedNetwork)?.estimatedTime || "Awaiting destination confirmation",
+            estimated: false,
+            nativeGasUsdc: microsToUsdc(result.nativeGasMicros),
+            gasPaidByWallet: true,
+          });
         }
 
+        if (!burnTxHash) throw new Error("The withdrawal receipt is missing its transaction hash.");
+
         if (burnTxHash) {
-          recordOptimisticTx({
+          singleSendNetworks.current.set(burnTxHash.toLowerCase(), selectedNetwork);
+          const cctpId = recordOptimisticTx({
             txHash: burnTxHash,
             recipientAddress: recipientAddr,
             recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
             amountUsdc: singleAmount,
+            revealed: false,
           });
+          if (typeof lastOptimisticSendId !== "undefined" && lastOptimisticSendId && cctpId) lastOptimisticSendId.current = cctpId;
           setOptimisticTxs(readOptimisticTxs());
         }
 
-        setSingleSendStatus("Sent. The receiving address will have the funds in about five minutes.");
+        setSingleSendStatus(`Sent on Arc. Delivery is awaiting destination confirmation (${settledQuote.arrival.toLowerCase()}).`);
         setSingleRecipient("");
         setSingleAmount("");
-        await Promise.all([
+        void Promise.all([
           refetchUsdc().catch(console.error),
           loadUserSettings().catch(console.error),
+          loadDepositsSilently(),
         ]);
-        return;
+        return { ...settledQuote, txHash: burnTxHash, recipientAddress: recipientAddr, networkId: selectedNetwork, transferId, status: "pending_attestation", explorerUrl: getExplorerTxUrl(burnTxHash) };
       }
 
       if (isEmbeddedWalletSession) {
         singleSendRequestKey.current ||= crypto.randomUUID();
-        const { transfers, networkFee } = await sendFromEmbeddedWallet({
-          receiverAddress: singleResolved!.address!,
-          amountUsdc: singleAmount,
-          requestKey: singleSendRequestKey.current,
-        });
-        singleSendRequestKey.current = null;
-        const txHash = transfers[0]?.txHash;
-        setSingleSendStatus(
-          networkFee?.charged
-            ? `$${singleAmount} was sent to ${formatAddress(recipientAddr)}. A separate $${networkFee.amountUsdc} Arc network fee was charged.`
-            : networkFee?.unrecovered
-              ? `$${singleAmount} was sent to ${formatAddress(recipientAddr)}. The Arc network fee could not be recovered and was not charged.`
-              : `$${singleAmount} was sent to ${formatAddress(recipientAddr)}.`,
-        );
-        /* Only recorded when the embedded wallet returned a hash. reconcileOptimisticTxs()
-           matches on hash alone, so a hashless row could never be retired and would sit next to
-           the confirmed DM entry reading "Sending" for the full five-minute TTL. */
-        if (txHash) {
-          recordOptimisticTx({
-            txHash,
+        /* Optimistic UI: immediately reserve the amount in the displayed available balance and show
+           a "Pending" history row while the on-chain Circle custody execution settles. */
+        let optimisticPendingId: string | null = null;
+        if (typeof recordOptimisticTx === "function") {
+          optimisticPendingId = recordOptimisticTx({
+            txHash: null,
             recipientAddress: recipientAddr,
             recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
             amountUsdc: singleAmount,
+            revealed: false,
           });
-          setOptimisticTxs(readOptimisticTxs());
+          if (typeof lastOptimisticSendId !== "undefined" && lastOptimisticSendId) lastOptimisticSendId.current = optimisticPendingId;
+          if (typeof readOptimisticTxs === "function" && typeof setOptimisticTxs === "function") {
+            setOptimisticTxs(readOptimisticTxs());
+          }
         }
-        setSingleRecipient("");
-        setSingleAmount("");
-        if (txHash) {
-          await fetch("/api/user/dms", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "log-transfer",
-              receiverAddress: recipientAddr,
-              amountUsdc: singleAmount,
-              txHash,
-              title: `${singleAmount} USDC Sent`,
-              description: `Sent ${singleAmount} USDC.`,
-            }),
-          }).catch((err) => console.error("Failed to log single send transfer:", err));
-          await loadDms().catch(() => {});
+        try {
+          const { transfers, networkFee, circleTxId, status: sendStatus } = await sendFromEmbeddedWallet({
+            receiverAddress: singleResolved!.address!,
+            amountUsdc: singleAmount,
+            requestKey: singleSendRequestKey.current,
+            earlySubmission: true,
+          });
+          singleSendRequestKey.current = null;
+          const txHash = transfers[0]?.txHash || "";
+          const amountSent = transfers[0]?.amountUsdc || singleAmount;
+          if (!amountSent || (!txHash && !circleTxId)) throw new Error("The transfer receipt is incomplete.");
+          const settledQuote = quoteEmbeddedArcReceipt(amountSent, networkFee);
+          /* One plain confirmation line. The Arc network fee is already itemised in the review
+             details, so the status no longer repeats it — the old "a separate $X network fee was
+             charged" phrasing read like a surprise second charge. */
+          setSingleSendStatus(`Sent $${singleAmount} to ${singleResolved?.alias || formatAddress(recipientAddr)}.`);
+          /* Only recorded when the embedded wallet returned a hash. reconcileOptimisticTxs()
+             matches on hash alone, so a hashless row could never be retired and would sit next to
+             the confirmed DM entry reading "Sending" for the full five-minute TTL. */
+          if (txHash) {
+            singleSendNetworks.current.set(txHash.toLowerCase(), "arc");
+            if (optimisticPendingId && typeof removeOptimisticTx !== "undefined") {
+              removeOptimisticTx(optimisticPendingId);
+              optimisticPendingId = null;
+            }
+            if (typeof recordOptimisticTx === "function") {
+              const updatedId = recordOptimisticTx({
+                id: optimisticPendingId || undefined,
+                txHash,
+                recipientAddress: recipientAddr,
+                recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
+                amountUsdc: singleAmount,
+                revealed: false,
+              });
+              if (typeof lastOptimisticSendId !== "undefined" && lastOptimisticSendId && updatedId) lastOptimisticSendId.current = updatedId;
+            }
+            if (typeof readOptimisticTxs === "function" && typeof setOptimisticTxs === "function") {
+              setOptimisticTxs(readOptimisticTxs());
+            }
+          }
+          setSingleRecipient("");
+          setSingleAmount("");
+          if (txHash) {
+            void fetch("/api/user/dms", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "log-transfer",
+                receiverAddress: recipientAddr,
+                amountUsdc: singleAmount,
+                txHash,
+                title: `${singleAmount} USDC Sent`,
+                description: `Sent ${singleAmount} USDC.`,
+              }),
+            })
+              .then(() => loadDms().catch(() => {}))
+              .catch((err) => console.error("Failed to log single send transfer in background:", err));
+          }
+          void refetchUsdc().catch(console.error);
+          void loadDepositsSilently();
+          return {
+            ...settledQuote,
+            txHash,
+            circleTxId,
+            recipientAddress: transfers[0].receiverAddress,
+            networkId: "arc",
+            status: (sendStatus === "pending" || (!txHash && Boolean(circleTxId))) ? "pending" : "confirmed",
+            arrival: "~15s",
+            explorerUrl: txHash ? getExplorerTxUrl(txHash) : "",
+            feeUnrecovered: networkFee?.unrecovered,
+          };
+        } catch (embeddedErr) {
+          if (optimisticPendingId && typeof removeOptimisticTx !== "undefined") {
+            removeOptimisticTx(optimisticPendingId);
+            if (typeof readOptimisticTxs === "function" && typeof setOptimisticTxs === "function") {
+              setOptimisticTxs(readOptimisticTxs());
+            }
+          }
+          throw embeddedErr;
         }
-        await refetchUsdc().catch(console.error);
-        void loadDepositsSilently();
-        return;
       }
 
       if (!accountAddress) {
@@ -3081,13 +3566,17 @@ export default function UserDashboard() {
             { name: "recipient", type: "address" },
             { name: "value", type: "uint256" },
           ],
-          outputs: [{ name: "success", type: "bool" }],
+          outputs: [{ name: "", type: "bool" }],
         },
       ] as const;
 
       /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
       if (chainId !== activeArcChain.id) {
         await switchChainAsync({ chainId: activeArcChain.id });
+      }
+      const freshQuote = await getSingleSendQuote({ amount: singleAmount, networkId: "arc", recipientAddress: recipientAddr });
+      if (usdcBalance !== undefined && usdcToMicros(freshQuote.totalDebitUsdc) > usdcBalance) {
+        throw new Error("Your balance no longer covers this amount and its network fee. Use Max to refresh the amount.");
       }
       const txHash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
@@ -3096,33 +3585,48 @@ export default function UserDashboard() {
         args: [recipientAddr as `0x${string}`, parseUnits(limitDecimals(singleAmount, 6), 6)],
       });
 
-      setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash}`);
-      recordOptimisticTx({
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000 });
+      if (receipt.status !== "success") throw new Error("The transfer reverted on Arc. No USDC was sent.");
+      const settledQuote = createSendQuote({
+        amountUsdc: singleAmount,
+        feeUsdc: microsToUsdc(nativeGasToMicros(receipt.gasUsed, receipt.effectiveGasPrice)),
+        feeTreatment: "additional",
+        feeLabel: "Network fee",
+        arrival: "Confirmed on Arc",
+        estimated: false,
+      });
+      setSingleSendStatus(`Transfer confirmed on Arc: ${txHash}`);
+      singleSendNetworks.current.set(txHash.toLowerCase(), "arc");
+      const browserTxId = recordOptimisticTx({
         txHash: txHash || null,
         recipientAddress: recipientAddr,
         recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
         amountUsdc: singleAmount,
+        revealed: false,
       });
+      if (typeof lastOptimisticSendId !== "undefined" && lastOptimisticSendId && browserTxId) lastOptimisticSendId.current = browserTxId;
       setOptimisticTxs(readOptimisticTxs());
       setSingleRecipient("");
       setSingleAmount("");
       if (txHash) {
-        await fetch("/api/user/dms", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "log-transfer",
-            receiverAddress: recipientAddr,
-            amountUsdc: singleAmount,
-            txHash,
-            title: `${singleAmount} USDC Sent`,
-            description: `Sent ${singleAmount} USDC.`,
-          }),
-        }).catch((err) => console.error("Failed to log single send transfer:", err));
-        await loadDms().catch(() => {});
+        await Promise.all([
+          fetch("/api/user/dms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "log-transfer",
+              receiverAddress: recipientAddr,
+              amountUsdc: singleAmount,
+              txHash,
+              title: `${singleAmount} USDC Sent`,
+              description: `Sent ${singleAmount} USDC.`,
+            }),
+          }).then(() => loadDms().catch(() => {})).catch((err) => console.error("Failed to log single send transfer:", err)),
+          refetchUsdc().catch(console.error),
+        ]);
+        void loadDepositsSilently();
       }
-      refetchUsdc().catch(console.error);
-      void loadDepositsSilently();
+      return { ...settledQuote, txHash, recipientAddress: recipientAddr, networkId: "arc", status: "confirmed", explorerUrl: getExplorerTxUrl(txHash) };
     } catch (err: any) {
       if (err.message?.includes("User rejected the request")) {
         setSingleSendStatus("Transaction signature was rejected by user.");
@@ -3246,8 +3750,8 @@ export default function UserDashboard() {
       setBatchSendStatus(`Sent ${resolvedRows.length} transfers`);
       setBatchRows([{ address: "", amount: "" }]);
       setBatchProgress(null);
-      await loadDms().catch(() => {});
-      refetchUsdc().catch(console.error);
+      void loadDms().catch(() => {});
+      void refetchUsdc().catch(console.error);
     } catch (err: any) {
       const settled = Array.isArray(err.settledTransfers) ? err.settledTransfers : [];
       if (err.partial && settled.length > 0) {
@@ -3529,69 +4033,73 @@ export default function UserDashboard() {
 
   if (loading) {
     return (
-      <div className="user-dashboard-loading relative overflow-x-hidden bg-[#FFFFF0] text-black font-sans md:h-[100dvh] md:overflow-hidden">
-
-        <div className="fixed inset-0 pointer-events-none z-0 hidden bg-[#353935] md:block" />
-
-        <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
-        {/* Desktop Sidebar Skeleton — mirrors UserDesktopSidebar: profile pill, 6 half-rounded
-            nav pills that bleed into the content panel, promo card, then two footer links. */}
-        <aside className="hidden md:flex h-full max-h-screen w-16 lg:w-52 shrink-0 flex-col justify-between overflow-y-auto bg-[#353935] p-2.5 lg:p-3.5">
-          <div className="space-y-4">
-            <div className="flex items-center justify-center lg:justify-start gap-2 rounded-full lg:px-2 lg:py-1">
-              <div className="h-5 w-5 shrink-0 subscript-skeleton rounded-full" />
-              <div className="hidden lg:block h-2 w-16 subscript-skeleton rounded-full" />
-            </div>
-
-            <nav className="space-y-1">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="w-full flex items-center justify-center lg:justify-start gap-2.5 px-3 py-2 lg:px-3.5 rounded-full lg:rounded-l-full lg:rounded-r-none">
-                  <div className="h-4 w-4 subscript-skeleton rounded-md shrink-0" />
-                  <div className="hidden lg:block h-2 w-20 subscript-skeleton rounded-full" />
-                </div>
-              ))}
-            </nav>
-          </div>
-          <div className="hidden lg:block space-y-4">
-            <div className="rounded-[20px] border border-white/5 bg-white/[0.02] p-4 space-y-2.5">
-              <div className="h-2.5 w-28 subscript-skeleton rounded-full" />
-              <div className="h-2 w-36 subscript-skeleton subscript-skeleton--faint rounded-full" />
-              <div className="h-7 w-24 subscript-skeleton rounded-full" />
-            </div>
-            <div className="space-y-3 px-2">
-              <div className="h-2.5 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
-              <div className="h-2.5 w-24 subscript-skeleton subscript-skeleton--faint rounded-full" />
-            </div>
-          </div>
-        </aside>
+      <div className={`user-dashboard-loading relative overflow-x-hidden bg-[#FFFFF0] dark:bg-[#060608] text-black dark:text-white font-sans ${
+        !isMobile ? "h-[100dvh] overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain"
+      }`}>
+        <div aria-hidden="true" className={`absolute inset-0 pointer-events-none z-0 bg-[#353935] ${!isMobile ? "block" : "hidden"}`} />
+        <div className={`relative z-10 ${!isMobile ? "flex h-[100dvh] min-h-0" : ""}`}>
+        {!isMobile && (
+          <DashboardSidebar
+            isLoading={true}
+            items={userDesktopTabs.map((tab) => ({
+              id: tab.id,
+              label: tab.label,
+              icon: tab.icon,
+            }))}
+            footerItems={[
+              { id: "dns", label: "Settings", icon: Settings },
+              { id: "support", label: "Help center", icon: HelpCircle },
+            ]}
+            activeId={activeTab}
+            onSelect={() => {}}
+            identity={{
+              label: "",
+              fallback: "",
+              onClick: () => {},
+            }}
+            accent="#FFFFF0"
+            panelColor="#353935"
+            ariaLabel="User dashboard loading"
+          />
+        )}
 
         {/* Content Pane Skeleton — mirrors the mobile & desktop Home layout */}
-        <div className="relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 overflow-hidden">
-          <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
-            <div className="flex w-full max-w-md items-center justify-between px-1 py-2 pointer-events-auto">
-              <div
-                aria-label="Loading profile"
-                className="h-12 w-12 subscript-skeleton rounded-full shrink-0 shadow-sm"
-              />
-              <div className="flex items-center gap-2" aria-label="Loading account controls">
-                <div className="h-9 w-9 subscript-skeleton rounded-full shrink-0" />
-                <div className="h-9 w-9 subscript-skeleton rounded-full shrink-0" />
+        <div className={`user-dashboard-content relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] dark:bg-[#060608] ${
+          !isMobile ? "mt-[14px] rounded-tl-[20px] border border-black/10 dark:border-white/10" : ""
+        } overflow-hidden ${
+          !isMobile ? "h-[calc(100dvh-14px)]" : "h-[100dvh]"
+        }`}>
+          {isMobile && (
+            <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+              <div className="flex w-full max-w-md items-center justify-between px-1 py-2 pointer-events-auto">
+                <div
+                  aria-label="Loading profile"
+                  className="h-12 w-12 subscript-skeleton rounded-full shrink-0 shadow-sm"
+                />
+                <div className="flex items-center gap-2" aria-label="Loading account controls">
+                  <div className="h-9 w-9 subscript-skeleton rounded-full shrink-0" />
+                  <div className="h-9 w-9 subscript-skeleton rounded-full shrink-0" />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          <main className="flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 pt-24 lg:pt-8 pb-28 lg:pb-12">
-            {/* Title Header on Desktop */}
-            <div className="hidden md:flex items-center justify-between gap-6 mb-8 pb-6 border-b border-black/10">
-              <div className="h-8 w-64 subscript-skeleton rounded-lg" />
-            </div>
+          <main className={`flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 ${!isMobile ? "pt-6 lg:pt-8 pb-12" : "pt-20 pb-28"}`}>
+            {/* Title Header on Desktop/Tablet */}
+            {!isMobile && (
+              <div className="flex items-center justify-between gap-6 mb-8 pb-6 border-b border-black/10 dark:border-white/10">
+                <div className="h-8 w-64 subscript-skeleton rounded-lg" />
+              </div>
+            )}
 
             <div className="flex flex-col gap-5">
               <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
                 {/* LEFT: Balance card + Actions */}
                 <div className="flex flex-col gap-4 min-w-0">
-                  <div className="flex flex-col items-center justify-center gap-4 px-3 py-3 text-center md:flex-row md:justify-between md:rounded-[20px] md:border md:border-black/35 md:bg-[#2775CA]/20 md:px-6 md:py-[22px] md:text-left">
-                    <div className="flex flex-col items-center gap-2 md:items-start">
+                  <div className={`flex flex-col items-center justify-center gap-4 px-3 py-3 text-center ${
+                    !isMobile ? "flex-row justify-between rounded-[20px] border border-black/35 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-4 sm:px-6 py-4 sm:py-[22px] text-left" : ""
+                  }`}>
+                    <div className={`flex flex-col items-center gap-2 ${!isMobile ? "items-start" : ""}`}>
                       <div className="flex items-center gap-2">
                         <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
                         <div className="h-3.5 w-3.5 subscript-skeleton rounded-full" />
@@ -3600,16 +4108,18 @@ export default function UserDashboard() {
                       <div className="h-10 w-48 subscript-skeleton rounded-2xl" />
                       <div className="h-3 w-24 subscript-skeleton subscript-skeleton--faint rounded-full" />
                     </div>
-                    <div className="wallet-actions flex w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col">
-                      <div className="h-11 min-w-[110px] flex-1 md:flex-none subscript-skeleton rounded-full" />
-                      <div className="flex flex-1 md:flex-none items-center gap-2">
-                        <div className="h-11 min-w-[110px] flex-1 subscript-skeleton rounded-full" />
-                        <div className="flex md:hidden h-11 w-11 shrink-0 subscript-skeleton rounded-full" />
+                    <div className={`wallet-actions flex w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col md:gap-2.5 ${!isMobile ? "w-auto flex-col gap-2.5" : ""}`}>
+                      <div className={`h-11 min-w-0 flex-1 md:w-[130px] md:min-w-[130px] md:flex-none subscript-skeleton rounded-full ${!isMobile ? "w-[130px] min-w-[130px] flex-none" : ""}`} />
+                      <div className={`flex items-center gap-2 ${!isMobile ? "w-[130px] flex-none" : "flex-1 md:flex-none md:w-[130px]"}`}>
+                        <div className={`h-11 min-w-0 flex-1 md:w-[130px] md:min-w-[130px] subscript-skeleton rounded-full ${!isMobile ? "w-[130px] min-w-[130px]" : ""}`} />
+                        {isMobile && (
+                          <div className="flex md:hidden h-11 w-11 shrink-0 subscript-skeleton rounded-full" />
+                        )}
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-[42fr_58fr] gap-3.5">
-                    <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px]">
+                  <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-[minmax(0,42fr)_minmax(0,58fr)] sm:gap-3.5">
+                    <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 dark:border-white/15 p-3 sm:p-[18px]">
                       <div className="space-y-2.5">
                         <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
                         <div className="h-3 w-8 subscript-skeleton subscript-skeleton--faint rounded-full" />
@@ -3617,7 +4127,7 @@ export default function UserDashboard() {
                       </div>
                       <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
                     </div>
-                    <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px]">
+                    <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 dark:border-white/15 p-3 sm:p-[18px]">
                       <div className="space-y-2.5">
                         <div className="h-2.5 w-20 subscript-skeleton rounded-full" />
                         <div className="flex gap-3">
@@ -3631,30 +4141,32 @@ export default function UserDashboard() {
                 </div>
 
                 {/* RIGHT: Active Subscriptions */}
-                <div className="hidden md:flex min-h-[260px] h-full flex-col rounded-3xl border border-black/15 bg-white/80 p-5 shadow-sm">
-                  <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-                    <div className="h-3 w-36 subscript-skeleton rounded-full" />
-                    <div className="h-5 w-16 subscript-skeleton rounded-full" />
-                  </div>
-                  <div className="flex-1 space-y-3 overflow-hidden">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="flex items-center justify-between py-2 border-b border-black/5">
-                        <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 subscript-skeleton rounded-full" />
-                          <div className="space-y-1.5">
-                            <div className="h-3 w-28 subscript-skeleton rounded-full" />
-                            <div className="h-2 w-16 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                {!isMobile && (
+                  <div className="hidden lg:flex min-h-[260px] h-full flex-col rounded-3xl border border-black/15 dark:border-white/15 bg-white/80 dark:bg-white/5 p-5 shadow-sm">
+                    <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
+                      <div className="h-3 w-36 subscript-skeleton rounded-full" />
+                      <div className="h-5 w-16 subscript-skeleton rounded-full" />
+                    </div>
+                    <div className="flex-1 space-y-3 overflow-hidden">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="flex items-center justify-between py-2 border-b border-black/5 dark:border-white/5">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 subscript-skeleton rounded-full" />
+                            <div className="space-y-1.5">
+                              <div className="h-3 w-28 subscript-skeleton rounded-full" />
+                              <div className="h-2 w-16 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                            </div>
                           </div>
+                          <div className="h-4 w-20 subscript-skeleton rounded-full" />
                         </div>
-                        <div className="h-4 w-20 subscript-skeleton rounded-full" />
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Recent Transactions */}
-              <div className="dashboard-blue-panel min-h-[390px] rounded-[20px] border border-black/35 p-5 text-black">
+              <div className="dashboard-blue-panel min-h-[390px] rounded-[20px] border border-black/35 dark:border-white/15 p-5 text-black dark:text-white">
                 <div className="flex items-center justify-between">
                   <div className="h-3 w-36 subscript-skeleton rounded-full" />
                   <div className="h-4 w-16 subscript-skeleton rounded-full" />
@@ -3671,7 +4183,7 @@ export default function UserDashboard() {
                     <div key={tab.label} className={`h-7 ${tab.width} shrink-0 subscript-skeleton rounded-full`} />
                   ))}
                 </div>
-                <div className="mt-4 divide-y divide-black/5">
+                <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">
                   {[1, 2, 3, 4, 5].map((i) => (
                     <div key={i} className="flex items-center gap-3 py-3">
                       <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
@@ -3693,14 +4205,16 @@ export default function UserDashboard() {
         </div>
 
         {/* Mobile Bottom Bar Skeleton */}
-        <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2 md:hidden">
-          <div className="flex h-[60.6375px] flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
-            ))}
+        {isMobile && (
+          <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2">
+            <div className="flex h-[60.6375px] flex-1 items-center justify-around rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-3 backdrop-blur-2xl">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
+              ))}
+            </div>
+            <div className="h-[60.6375px] w-[60.6375px] shrink-0 rounded-full subscript-skeleton" />
           </div>
-          <div className="h-[60.6375px] w-[60.6375px] shrink-0 rounded-full subscript-skeleton" />
-        </div>
+        )}
       </div>
     );
   }
@@ -3814,27 +4328,34 @@ export default function UserDashboard() {
      recover amounts by stripping non-digits out of the formatted `amountLabel`, which silently
      mis-parsed anything with a thousands separator and had no way to tell a credit from a debit. */
   const rawRecentTransactions = [
-    ...optimisticTxs.map((tx) => {
+    ...optimisticTxs.filter((tx) => tx.revealed !== false).map((tx) => {
       const isDns = Boolean(
         tx.recipientLabel &&
         !tx.recipientLabel.startsWith("0x") &&
         tx.recipientLabel !== "Recipient"
       );
       const dnsName = isDns ? tx.recipientLabel.replace(/^@/, "").trim() : null;
+      const indexedTransfer = deposits.find((entry) => entry.txHash?.toLowerCase() === tx.txHash?.toLowerCase());
       const usdVal = Number(tx.amountUsdcMicros) / 1_000_000;
       const localVal = usdVal * exchangeRate;
       const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
       return {
         id: tx.id,
         kind: "transfers" as const,
-        name: tx.recipientLabel || "Recipient",
+        name: sentToLabel(tx.recipientLabel, tx.recipientAddress),
         dnsName,
+        counterpartyAddress: tx.recipientAddress,
+        recipientChain: indexedTransfer
+          ? indexedTransfer.isCctp ? String(indexedTransfer.destinationChainId || "") || null : "arc"
+          : singleSendNetworks.current.get(tx.txHash?.toLowerCase() || "") || null,
         pic: null as string | null,
-        detail: "Sending • Awaiting confirmation",
+        detail: tx.txHash
+          ? "USDC Transfer • " + formatTransactionDateTime(new Date(tx.createdAt))
+          : "Sending • Awaiting confirmation",
         amountLabel: `-${formatUsdc(tx.amountUsdcMicros)}`,
         localAmountLabel: `-${localLabel}`,
         amountUsdc: usdVal,
-        status: "PENDING",
+        status: tx.txHash ? "CONFIRMED" : "PENDING",
         time: tx.createdAt,
         incoming: false,
         txHash: tx.txHash ?? undefined,
@@ -3905,8 +4426,12 @@ export default function UserDashboard() {
           kind,
           name: isWithdrawal
             ? "Sent from balance to wallet"
+            : isPeerTransfer && !incoming
+            ? sentToLabel(d.receiverName, d.receiverAddress)
             : (counterpartyIsSender ? d.senderName : d.receiverName) || "Payment",
           dnsName,
+          counterpartyAddress: (counterpartyIsSender ? d.senderAddress : d.receiverAddress) || null,
+          recipientChain: "arc",
           pic: counterpartyIsSender ? d.senderProfilePic : d.receiverProfilePic,
           detail: isWithdrawal
             ? "SubScript Balance Withdrawal • " + formatTransactionDateTime(d.createdAt)
@@ -3957,11 +4482,7 @@ export default function UserDashboard() {
               : d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000"
               ? `Deposit from ${formatAddress(d.fromAddress)}`
               : "Deposit on Arc")
-          : (d.receiverName
-              ? `Sent to @${d.receiverName}`
-              : d.toAddress && d.toAddress !== "0x0000000000000000000000000000000000000000"
-              ? `Sent to ${formatAddress(d.toAddress)}`
-              : "Sent USDC"));
+          : sentToLabel(d.receiverName, d.toAddress));
         let status = "CONFIRMED";
 
         if (isCctp) {
@@ -3992,6 +4513,8 @@ export default function UserDashboard() {
           kind,
           name,
           dnsName,
+          counterpartyAddress: (incoming ? d.fromAddress : d.toAddress) || null,
+          recipientChain: isCctp ? String(incoming ? d.originChainId || "" : d.destinationChainId || "") || null : "arc",
           pic: null as string | null,
           detail,
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
@@ -4026,6 +4549,8 @@ export default function UserDashboard() {
           kind: "one-time" as const,
           name: r.counterpartyName || formatAddress(incoming ? r.payerAddress : r.merchantAddress) || "SubScript Transaction",
           dnsName,
+          counterpartyAddress: (incoming ? r.payerAddress : r.merchantAddress) || null,
+          recipientChain: "arc",
           pic: null as string | null,
           detail: incoming ? "USDC Deposit " + formatTransactionDateTime(r.createdAt) : "USDC Transfer " + formatTransactionDateTime(r.createdAt),
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(r.amountUsdc)}`,
@@ -4039,14 +4564,7 @@ export default function UserDashboard() {
       }),
   ].sort((a, b) => b.time - a.time);
 
-  // Deduplicate recent transactions by ID and txHash to guarantee unique React keys
-  const seenTxIds = new Set<string>();
-  const recentTransactions = rawRecentTransactions.filter((t) => {
-    const key = t.id || `${t.kind}-${t.txHash || t.time}`;
-    if (seenTxIds.has(key)) return false;
-    seenTxIds.add(key);
-    return true;
-  });
+  const recentTransactions = deduplicateHistory(rawRecentTransactions).sort((a, b) => b.time - a.time);
 
   const filteredTransactions = recentTransactions.filter((t) => {
     if (txFilter === "all") return true;
@@ -4059,16 +4577,20 @@ export default function UserDashboard() {
     .reduce((sum, tx) => sum + tx.amountUsdc, 0);
 
   return (
-    <div className={`user-dashboard-redesign relative overflow-x-hidden bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black md:h-[100dvh] md:overflow-hidden ${
-      isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"
+    <div className={`user-dashboard-redesign relative overflow-x-hidden bg-[#FFFFF0] dark:bg-[#060608] text-black dark:text-white selection:bg-[#2775CA]/20 selection:text-black ${
+      !isMobile
+        ? "h-[100dvh] overflow-hidden"
+        : isActiveMobileDm
+        ? "h-[100dvh] overflow-hidden"
+        : "h-[100dvh] overflow-y-auto overscroll-y-contain"
     }`}>
-      {!isMobile && <div className="fixed inset-0 pointer-events-none z-0 bg-[#353935]" />}
-
-      <div className={`relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0 ${
+      <div aria-hidden="true" className={`absolute inset-0 pointer-events-none z-0 bg-[#353935] ${!isMobile ? "block" : "hidden"}`} />
+      <div className={`relative z-10 ${!isMobile ? "flex h-[100dvh] min-h-0" : ""} ${
         isActiveMobileDm ? "h-full overflow-hidden" : ""
       }`}>
         {!isMobile && (
           <DashboardSidebar
+            onCollapseChange={setSidebarCollapsed}
             items={[
               ...userDesktopTabs.map((tab) => ({
                 id: tab.id,
@@ -4100,14 +4622,15 @@ export default function UserDashboard() {
           />
         )}
 
-        {/* The wireframe's 14px top slit + 28px inner radius, with a refined translucent surface. */}
-        <div className={`user-dashboard-content relative z-10 min-w-0 flex-1 bg-[#FFFFF0] md:mt-[14px] md:rounded-tl-[20px] md:border md:border-black/10 flex flex-col ${
+        <div className={`user-dashboard-content relative z-10 min-w-0 flex-1 bg-[#FFFFF0] dark:bg-[#060608] ${
+          !isMobile ? "mt-[14px] rounded-tl-[20px] border border-black/10 dark:border-white/10" : ""
+        } flex flex-col ${
           activeTab === "inbox" || isActiveMobileDm
-            ? "h-[100dvh] md:h-[calc(100vh-14px)] min-h-0 overflow-hidden"
-            : "h-[100dvh] md:h-[calc(100vh-14px)] overflow-y-auto overscroll-y-contain md:overflow-y-auto"
+            ? (!isMobile ? "h-[calc(100dvh-14px)] min-h-0 overflow-hidden" : "h-[100dvh] min-h-0 overflow-hidden")
+            : (!isMobile ? "h-[calc(100dvh-14px)] overflow-y-auto overscroll-y-contain" : "h-[100dvh] overflow-y-auto overscroll-y-contain")
         }`}>
-          {!(activeTab === "inbox" && selectedDmPeer && (isMerchantThread || isOpenedDmLoading)) && (
-            <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-30 h-32 bg-[#FFFFF0]/90 backdrop-blur-3xl saturate-150 [mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)] md:hidden" />
+          {!(activeTab === "inbox" && selectedDmPeer && (isMerchantThread || isOpenedDmLoading)) && isMobile && (
+            <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-30 h-32 bg-[#FFFFF0]/90 backdrop-blur-3xl saturate-150 [mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)]" />
           )}
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
@@ -4149,16 +4672,16 @@ export default function UserDashboard() {
           )}
 
       {/* Main Grid View Container */}
-      <main className={`w-full flex flex-col ${
+      <main className={`w-full min-w-0 flex flex-col ${
         activeTab === "inbox"
           ? (isMobile ? "flex-1 h-full min-h-0 max-w-none px-3 overflow-hidden" : "flex-1 h-full min-h-0 max-w-none p-3 lg:p-6 overflow-hidden")
-          : "mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 " + (isActiveMobileDm ? "h-full overflow-hidden pb-0" : "pb-[calc(8rem+env(safe-area-inset-bottom))]")
+          : "mx-auto max-w-7xl px-4 sm:px-5 lg:px-8 " + (!isMobile ? "pt-6 lg:pt-8 pb-12 " : "pt-20 pb-[calc(8rem+env(safe-area-inset-bottom))] ") + (isActiveMobileDm ? "h-full overflow-hidden !pb-0" : "")
       }`}>
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
         {!isMobile && activeTab !== "inbox" && (
-          <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-black/10">
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-extrabold text-[#111827] uppercase tracking-tight">
+          <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-black/10 dark:border-white/10">
+            <div className="flex min-w-0 items-center gap-3">
+              <h1 className="min-w-0 text-2xl xl:text-3xl font-extrabold text-[#111827] dark:text-white uppercase tracking-tight">
                 User Dashboard
               </h1>
               {/* Beside the title, per the desktop placement. This header is already desktop-only,
@@ -4186,12 +4709,14 @@ export default function UserDashboard() {
               /* Wireframe layout: a 46fr/54fr two-column grid (left stack + tall panel) with a
                  full-width ledger beneath. Collapses to one column at <1024px, per the mock. */
               <div className="flex flex-col gap-5 md:gap-5">
-                <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
+                <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,46fr)_minmax(0,54fr)]">
                   {/* LEFT COLUMN */}
                   <div className="flex min-w-0 flex-col gap-4">
                     {/* ===== Wallet balance: figures left, stacked circle actions right ===== */}
-                    <section data-testid="wallet-summary" className="dashboard-wallet-summary relative flex flex-col items-center justify-center gap-4 overflow-hidden px-3 py-3 text-center text-black md:flex-row md:justify-between md:rounded-[20px] md:border md:border-black/35 md:bg-[#2775CA]/20 md:px-6 md:py-[22px] md:text-left">
-                      <div className="flex min-w-0 flex-col items-center md:items-start">
+                    <section data-testid="wallet-summary" className={`dashboard-wallet-summary relative flex flex-col items-center justify-center gap-4 overflow-hidden px-3 py-3 text-center text-black ${
+                      !isMobile ? "flex-row flex-wrap justify-between rounded-[20px] border border-black/35 bg-[#2775CA]/20 px-4 sm:px-6 py-4 sm:py-[22px] text-left" : "md:flex-row md:flex-wrap md:justify-between md:rounded-[20px] md:border md:border-black/35 md:bg-[#2775CA]/20 md:px-6 md:py-[22px] md:text-left"
+                    }`}>
+                      <div className={`@container/wallet-figure flex w-full min-w-0 max-w-full flex-col items-center ${!isMobile ? "flex-1 items-start" : "md:flex-1 md:items-start"}`}>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-[10px] font-black uppercase tracking-[0.08em] text-black/75">Wallet Balance</span>
                           <button
@@ -4212,30 +4737,41 @@ export default function UserDashboard() {
                             <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                           </button>
                         </div>
-                        <div className="mt-1.5 max-w-full text-[46px] font-extrabold leading-none text-black select-all sm:text-[38px]">
+                        <div className="mt-1.5 max-w-full font-extrabold leading-none text-black select-all" style={{ fontSize: `min(46px, ${150 / (formatHeadlineAmount(walletBalance).length + 1)}cqi)` }}>
                           {isRefreshingBalances
                             ? <span className="block h-[46px] w-[190px] rounded-2xl subscript-skeleton sm:h-[38px]" />
-                            : balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
+                            : balanceVisible ? (
+                              <span className="inline-flex items-baseline">
+                                <span>$</span>
+                                <RollingNumber value={formatHeadlineAmount(walletBalance)} paused={singleSendFiguresPaused} />
+                              </span>
+                            ) : "••••••"}
                         </div>
-                        <p className="mt-1.5 w-full text-center font-mono text-sm font-bold text-black/65 sm:text-xs md:text-left">
+                        <p className={`mt-1.5 w-full text-center font-mono font-bold text-black/65 ${!isMobile ? "text-left" : ""}`} style={{ fontSize: `min(14px, ${150 / (formatHeadlineAmount(localBalance).length + detectedCurrency.symbol.length)}cqi)` }}>
                           {isRefreshingBalances
-                            ? <span className="mx-auto block h-4 w-24 rounded-full subscript-skeleton md:mx-0" />
-                            : balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
+                            ? <span className={`block h-4 w-24 rounded-full subscript-skeleton ${!isMobile ? "mx-0" : "mx-auto"}`} />
+                            : balanceVisible ? (
+                              <span className="inline-flex items-baseline">
+                                <span>{detectedCurrency.symbol}</span>
+                                <RollingNumber value={formatHeadlineAmount(localBalance)} paused={singleSendFiguresPaused} />
+                              </span>
+                            ) : "••••"}
                         </p>
                       </div>
 
-                      <div data-testid="wallet-actions" className="wallet-actions flex w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col">
+                      <div data-testid="wallet-actions" className={`wallet-actions flex min-w-0 w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col md:gap-2.5 ${!isMobile ? "w-auto flex-col gap-2.5" : ""}`}>
                         <button
                           type="button"
                           onClick={() => setReceiveOpen(true)}
-                          className="flex h-11 min-w-[110px] items-center justify-center gap-2 rounded-full border border-[#353935] bg-[#353935] px-4 text-[#FFFFF0] transition hover:bg-black active:scale-95 shadow-sm"
+                          className={`flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-[#353935] bg-[#353935] text-[#FFFFF0] transition hover:bg-black active:scale-95 shadow-sm ${isMobile ? "flex-1 px-3 md:flex-none md:w-[130px] md:min-w-[130px] md:px-5" : "w-[130px] min-w-[130px] px-5"}`}
                           aria-label="Deposit"
                         >
                           <span className="text-xs font-bold">Deposit</span>
                         </button>
-                        <div className="flex items-center gap-2">
+                        <div className={`flex min-w-0 items-center gap-2 ${isMobile ? "flex-1 md:flex-none md:w-[130px]" : "w-[130px]"}`}>
                           <button
                             type="button"
+                            id="snd"
                             onClick={() => {
                               setSelectedDmPeer(null);
                               setSingleRecipient("");
@@ -4243,37 +4779,45 @@ export default function UserDashboard() {
                               setSingleSendStatus(null);
                               setSendSingleModalOpen(true);
                             }}
-                            className="flex h-11 flex-1 min-w-[110px] items-center justify-center gap-2 rounded-full border border-[#2775CA] bg-[#2775CA] px-4 text-white transition hover:bg-[#1f62ab] active:scale-95 shadow-sm"
-                            aria-label="Send"
+                            className={`flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-[#2775CA] bg-[#2775CA] text-white transition hover:bg-[#1f62ab] active:scale-95 shadow-sm ${isMobile ? "px-1.5 md:w-[130px] md:min-w-[130px] md:px-5" : "w-[130px] min-w-[130px] px-5"}`}
+                            aria-label={isMobile ? "Send" : "Send Out"}
                           >
-                            <span className="text-xs font-bold">Send</span>
+                            <span className="min-w-[2rem] shrink-0 whitespace-nowrap text-xs font-bold md:hidden">{isMobile ? "Send" : "Send Out"}</span>
+                            <span className="text-xs font-bold hidden md:inline">Send Out</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setQrTargetIndex(null);
-                              setQrScannerOpen(true);
-                            }}
-                            className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/15 bg-white text-[#111827] hover:bg-black/5 active:scale-95 transition shadow-sm"
-                            aria-label="Scan QR Code"
-                            title="Scan SubScript QR code or link"
-                          >
-                            <QrCode className="h-4.5 w-4.5 text-[#2775CA]" />
-                          </button>
+                          {isMobile && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQrTargetIndex(null);
+                                setQrScannerOpen(true);
+                              }}
+                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/15 bg-white text-[#111827] hover:bg-black/5 active:scale-95 transition shadow-sm"
+                              aria-label="Scan QR Code"
+                              title="Scan SubScript QR code or link"
+                            >
+                              <QrCode className="h-4.5 w-4.5 text-[#2775CA]" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </section>
 
                     {/* ===== Two equal square cards ===== */}
-                    <div data-testid="home-summary-cards" className="grid grid-cols-[42fr_58fr] gap-3.5">
-                      <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px] text-black">
+                    <div data-testid="home-summary-cards" className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-[minmax(0,42fr)_minmax(0,58fr)] sm:gap-3.5">
+                      <div className="@container/spending-figure dashboard-blue-panel flex min-w-0 min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-3 sm:p-[18px] text-black">
                         <div>
                           <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">30D spending</p>
                           <p className="mt-2 text-[11px] font-black text-white/40">30D</p>
-                          <p className="mt-0.5 text-xl font-extrabold tracking-tight text-white">
+                          <p className="mt-0.5 font-extrabold tracking-tight text-white" style={{ fontSize: `min(20px, ${150 / (formatHeadlineAmount(thirtyDaySpendUsdc).length + 1)}cqi)` }}>
                             {isRefreshingBalances
                               ? <span className="block h-6 w-20 rounded-lg subscript-skeleton" />
-                              : balanceVisible ? `$${formatHeadlineAmount(thirtyDaySpendUsdc)}` : "••••"}
+                              : balanceVisible ? (
+                                <span className="inline-flex items-baseline">
+                                  <span>$</span>
+                                  <RollingNumber value={formatHeadlineAmount(thirtyDaySpendUsdc)} paused={singleSendFiguresPaused} />
+                                </span>
+                              ) : "••••"}
                           </p>
                         </div>
                         <button
@@ -4284,12 +4828,12 @@ export default function UserDashboard() {
                           Manage Spending
                         </button>
                       </div>
-                      <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px] text-black">
+                      <div className="dashboard-blue-panel flex min-w-0 min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-3 sm:p-[18px] text-black">
                         <div>
                           <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Total Commit</p>
-                          <div className="mt-2 flex items-baseline gap-3">
+                          <div className="mt-2 flex flex-wrap items-baseline gap-2 sm:gap-3">
                             <div className="min-w-0">
-                              <p className="text-xl font-extrabold tracking-tight text-white">
+                              <p className="break-all text-lg sm:text-xl font-extrabold tracking-tight text-white">
                                 {isRefreshingBalances
                                   ? <span className="block h-6 w-16 rounded-lg subscript-skeleton" />
                                   : balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
@@ -4297,7 +4841,7 @@ export default function UserDashboard() {
                               <p className="mt-0.5 font-mono text-[9px] font-black uppercase tracking-[0.06em] text-white/40">Locked</p>
                             </div>
                             <div className="min-w-0 border-l border-white/10 pl-3">
-                              <p className="text-xl font-extrabold tracking-tight text-[#ccff00]">
+                              <p className="break-all text-lg sm:text-xl font-extrabold tracking-tight text-[#ccff00]">
                                 {isRefreshingBalances
                                   ? <span className="block h-6 w-16 rounded-lg subscript-skeleton" />
                                   : balanceVisible ? `$${formatHeadlineAmount(totalCommitUsedUsdc)}` : "••••"}
@@ -4318,41 +4862,43 @@ export default function UserDashboard() {
                   </div>
 
                   {/* RIGHT TALL PANEL - Active Subscriptions (hidden on mobile) */}
-                  <section className="dashboard-blue-panel hidden md:flex min-h-[260px] flex-col rounded-[20px] border border-black/15 bg-white/80 p-5 shadow-sm text-black">
-                    <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-black/70">Active Subscriptions</h2>
-                      <span className="w-fit rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-3 py-1 text-[10px] font-bold text-[#2775CA]">
-                        {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active
-                      </span>
-                    </div>
+                  {!isMobile && (
+                    <section className="dashboard-blue-panel hidden lg:flex min-w-0 min-h-[260px] flex-col rounded-[20px] border border-black/15 bg-white/80 p-5 shadow-sm text-black">
+                      <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
+                        <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-black/70">Active Subscriptions</h2>
+                        <span className="w-fit rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-3 py-1 text-[10px] font-bold text-[#2775CA]">
+                          {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active
+                        </span>
+                      </div>
 
-                    <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
-                      {sortedSubscriptions.length === 0 ? (
-                        <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-black/10 bg-black/[0.02] text-center">
-                          <CreditCard className="mb-3 h-8 w-8 text-black/25" />
-                          <p className="text-xs text-black/50">No active subscriptions</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {sortedSubscriptions.map((sub) => (
-                            <SubscriptionRow
-                              key={sub.subscriptionId}
-                              subscription={sub}
-                              balanceVisible={balanceVisible}
-                              onResume={handleResumeSubscription}
-                              resuming={resumingSubscriptionId === sub.subscriptionId}
-                              onOpenThread={openMerchantThread}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </section>
+                      <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
+                        {sortedSubscriptions.length === 0 ? (
+                          <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-black/10 bg-black/[0.02] text-center">
+                            <CreditCard className="mb-3 h-8 w-8 text-black/25" />
+                            <p className="text-xs text-black/50">No active subscriptions</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {sortedSubscriptions.map((sub) => (
+                              <SubscriptionRow
+                                key={sub.subscriptionId}
+                                subscription={sub}
+                                balanceVisible={balanceVisible}
+                                onResume={handleResumeSubscription}
+                                resuming={resumingSubscriptionId === sub.subscriptionId}
+                                onOpenThread={openMerchantThread}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  )}
                 </div>
 
                 {/* ===== Bottom full-width panel ===== */}
-                <section className="dashboard-blue-panel min-h-[390px] rounded-[20px] border border-black/35 p-5 text-black">
-                  <div className="flex items-center justify-between">
+                <section id="dashboard-tx-history" className="dashboard-blue-panel min-w-0 min-h-[390px] rounded-[20px] border border-black/35 p-4 sm:p-5 text-black">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Transaction History</h2>
                     <div className="flex items-center gap-3">
                       <button
@@ -4365,61 +4911,87 @@ export default function UserDashboard() {
                     </div>
                   </div>
 
-                  <div className="dashboard-filter-scroll mt-4 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="dashboard-filter-scroll mt-4 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Transaction history filters">
                     {([["all", "All"], ["recurring", "Subscriptions"], ["one-time", "One Time"], ["transfers", "Transfers"], ["withdrawals", "Withdrawals"], ["deposits", "Deposits"]] as const).map(([value, label]) => (
                       <button
                         key={value}
                         type="button"
+                        aria-pressed={txFilter === value}
                         onClick={() => setTxFilter(value)}
-                        className={`shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
+                        className={`relative isolate shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors ${
                           txFilter === value
-                            ? "bg-[#353935] text-[#FFFFF0]"
+                            ? "text-[#FFFFF0]"
                             : "bg-transparent text-black/70 hover:bg-black/5"
                         }`}
                       >
+                        {txFilter === value && (
+                          <motion.span
+                            layoutId="dashboard-history-filter-pill"
+                            initial={false}
+                            transition={{ duration: prefersReducedMotion ? 0 : 0.56, ease: [0.16, 1, 0.3, 1] }}
+                            className="absolute inset-0 -z-10 rounded-full bg-[#353935]"
+                            aria-hidden="true"
+                          />
+                        )}
                         {label}
                       </button>
                     ))}
                   </div>
 
-                  <div className="mt-4 divide-y divide-white/[0.06]">
+                  <TransactionHistoryList
+                    transactions={recentTransactions}
+                    revealId={animatingTxId}
+                    paused={sendSingleModalOpen}
+                    reducedMotion={Boolean(prefersReducedMotion)}
+                    onRevealComplete={(id) => setAnimatingTxId(current => current === id ? null : current)}
+                  >
                     {filteredTransactions.length === 0 ? (
                       <div className="flex h-24 items-center justify-center text-center text-xs text-white/40">
                         No {txFilter === "all" ? "" : txFilter === "recurring" ? "recurring " : "one-time "}transactions yet.
                       </div>
                     ) : (
-                      filteredTransactions.slice(0, 6).map((tx) => (
-                        <div key={tx.id} className="flex items-center gap-3 py-3">
-                          <TransactionAvatar
-                            direction={tx.incoming ? "incoming" : "outgoing"}
-                            displayName={tx.name}
-                            identityName={tx.dnsName}
-                            profilePic={tx.pic}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black text-white">{tx.name}</p>
-                            <p className="truncate text-[10px] font-bold text-white/40">
-                              {tx.detail}
-                            </p>
+                      filteredTransactions.slice(0, 6).map((tx) => {
+                        const isNew = tx.id === animatingTxId;
+                        return (
+                          <div
+                            key={tx.id}
+                            data-transaction-id={tx.id}
+                            ref={isNew ? animatingRowRef : undefined}
+                            className="overflow-hidden"
+                          >
+                            <div className="flex items-center gap-3 py-3">
+                              <TransactionAvatar
+                                direction={tx.incoming ? "incoming" : "outgoing"}
+                                displayName={tx.name}
+                                identityName={tx.dnsName}
+                                profilePic={tx.pic}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-black text-white">{tx.name}</p>
+                                <p className="truncate text-[10px] font-bold text-white/40">
+                                  {tx.detail}
+                                </p>
+                              </div>
+                              <div className="max-w-[50%] break-all text-right shrink-0">
+                                <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
+                                  {balanceVisible ? tx.amountLabel : "••••"}
+                                </span>
+                                <span className="block text-[9px] font-bold text-[#ccff00] mt-0.5">
+                                  {balanceVisible ? tx.localAmountLabel : "••••"}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
-                              {balanceVisible ? tx.amountLabel : "••••"}
-                            </span>
-                            <span className="block text-[9px] font-bold text-[#ccff00] mt-0.5">
-                              {balanceVisible ? tx.localAmountLabel : "••••"}
-                            </span>
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
-                  </div>
+                  </TransactionHistoryList>
                 </section>
               </div>
             )}
 
             {activeTab === "commit" && (
-              <section className="mx-auto max-w-3xl space-y-6">
+              <section className="mx-auto min-w-0 w-full max-w-3xl space-y-6">
                 <SectionTitle
                   title="Manage Commit"
                   subtitle="Fund prepaid balances for metered services"
@@ -4455,7 +5027,7 @@ export default function UserDashboard() {
                         </button>
                       </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
                       <div className="hidden sm:flex items-center gap-1.5 mr-1">
                         <button
                           type="button"
@@ -4596,32 +5168,34 @@ export default function UserDashboard() {
                       </div>
 
                       {/* Mobile Pagination Indicator Dots */}
-                      <div className="mt-3 flex items-center justify-center gap-1.5 md:hidden">
-                        {Array.from({ length: vaults.length + 1 }).map((_, idx) => {
-                          const isActive = activeVaultIndex === idx;
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              aria-label={`Go to vault card ${idx + 1}`}
-                              onClick={() => {
-                                if (vaultCarouselRef.current) {
-                                  vaultCarouselRef.current.scrollTo({
-                                    left: idx * vaultCarouselRef.current.clientWidth,
-                                    behavior: "smooth",
-                                  });
-                                }
-                                setActiveVaultIndex(idx);
-                              }}
-                              className={`transition-all duration-300 rounded-full ${
-                                isActive
-                                  ? "h-2 w-5 bg-[#111827]"
-                                  : "h-2 w-2 bg-black/20 hover:bg-black/40"
-                              }`}
-                            />
-                          );
-                        })}
-                      </div>
+                      {isMobile && (
+                        <div className="mt-3 flex items-center justify-center gap-1.5">
+                          {Array.from({ length: vaults.length + 1 }).map((_, idx) => {
+                            const isActive = activeVaultIndex === idx;
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                aria-label={`Go to vault card ${idx + 1}`}
+                                onClick={() => {
+                                  if (vaultCarouselRef.current) {
+                                    vaultCarouselRef.current.scrollTo({
+                                      left: idx * vaultCarouselRef.current.clientWidth,
+                                      behavior: "smooth",
+                                    });
+                                  }
+                                  setActiveVaultIndex(idx);
+                                }}
+                                className={`transition-all duration-300 rounded-full ${
+                                  isActive
+                                    ? "h-2 w-5 bg-[#111827]"
+                                    : "h-2 w-2 bg-black/20 hover:bg-black/40"
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
                     </>
                   )}
                 </section>
@@ -4630,9 +5204,9 @@ export default function UserDashboard() {
 
             {activeTab === "inbox" && (
               <section
-                className={`mx-auto flex w-full max-w-[430px] min-h-0 flex-1 flex-col gap-5 md:h-full md:max-w-none md:flex-row overflow-hidden ${
-                  isActiveMobileDm ? "h-full overflow-hidden" : ""
-                }`}
+                className={`mx-auto flex w-full min-h-0 flex-1 flex-col overflow-hidden ${
+                  isMobile ? "max-w-[430px]" : "max-w-none flex-row h-full gap-5"
+                } ${isActiveMobileDm ? "h-full overflow-hidden" : ""}`}
               >
                 {isMobile ? (
                   <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden w-full">
@@ -4679,6 +5253,7 @@ export default function UserDashboard() {
                           onBack={() => setSelectedDmPeer(null)}
                           onPay={(dm) => handleConfirmPaymentDm(dm)}
                           onDecline={(dm) => handleDeclineDm(dm)}
+                          isMobile={true}
                         />
                       </div>
                     ) : (
@@ -4787,10 +5362,16 @@ export default function UserDashboard() {
                     )}
                   </div>
                 ) : (
-                  /* Desktop Split Multi-Column DM Layout */
+                  /* Desktop / Tablet DM Layout */
                   <div className="flex flex-1 flex-row gap-5 h-full min-h-0 overflow-hidden items-stretch w-full">
                     {/* List of opened DMs (middle column in blueprint) */}
-                    <div className="w-[280px] lg:w-[340px] border-r border-black/5 dark:border-white/5 pr-4 lg:pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-3 shrink-0">
+                    <div className={`${
+                      isTablet && !sidebarCollapsed
+                        ? selectedDmPeer
+                          ? "hidden"
+                          : "w-full flex-1 pr-0 border-r-0"
+                        : "w-[250px] md:w-[280px] lg:w-[340px] border-r border-black/5 dark:border-white/5 pr-3 sm:pr-4 lg:pr-5 shrink-0"
+                    } flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-3`}>
                       <DmThreadSelect
                         threads={dmThreads}
                         onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
@@ -4805,7 +5386,11 @@ export default function UserDashboard() {
                     </div>
 
                     {/* Active thread message bubble display (right column in blueprint) */}
-                    <div className="flex-1 flex flex-col overflow-hidden border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-4 min-h-0 justify-between">
+                    <div className={`${
+                      isTablet && !sidebarCollapsed && !selectedDmPeer
+                        ? "hidden"
+                        : "flex-1 flex"
+                    } flex-col overflow-hidden border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-4 min-h-0 justify-between`}>
                       <AnimatePresence mode="wait" initial={false}>
                         {selectedDmPeer ? (
                           isOpenedDmLoading ? (
@@ -4820,6 +5405,7 @@ export default function UserDashboard() {
                               <OpenedDmSkeleton
                                 isMerchant={isMerchantThread}
                                 onBack={() => setSelectedDmPeer(null)}
+                                isTablet={isTablet}
                               />
                             </motion.div>
                           ) : isMerchantThread ? (
@@ -4850,6 +5436,7 @@ export default function UserDashboard() {
                                 onBack={() => setSelectedDmPeer(null)}
                                 onPay={(dm) => handleConfirmPaymentDm(dm)}
                                 onDecline={(dm) => handleDeclineDm(dm)}
+                                isTablet={isTablet}
                               />
                             </motion.div>
                           ) : (
@@ -4861,12 +5448,22 @@ export default function UserDashboard() {
                               transition={{ duration: 0.15, ease: "easeOut" }}
                               className="flex flex-col h-full justify-between overflow-hidden transform-gpu"
                             >
-                              {/* Desktop Chat Pane Header */}
+                              {/* Desktop / Tablet Chat Pane Header */}
                             <div
                               data-testid="desktop-dm-header"
                               className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl mb-2"
                             >
-                              <div className="flex items-center gap-3">
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
+                                {isTablet && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedDmPeer(null)}
+                                    className="flex h-9 w-9 aspect-square items-center justify-center text-white/60 hover:text-white bg-white/[0.02] hover:bg-white/10 active:bg-white/15 border border-white/5 rounded-full transition-all shrink-0 animate-fade-in"
+                                    aria-label="Back to activities"
+                                  >
+                                    <ArrowLeft className="h-4 w-4" />
+                                  </button>
+                                )}
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} name={activeThreadLabel} />
                                 <div>
                                   <div className="flex items-center gap-1.5">
@@ -4896,16 +5493,6 @@ export default function UserDashboard() {
                               </div>
                               
                               <div className="flex items-center gap-2">
-                                {/* Back to thread select on tablet only */}
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedDmPeer(null)}
-                                  className="md:hidden flex h-9 w-9 aspect-square items-center justify-center text-white/60 hover:text-white bg-white/[0.02] hover:bg-white/10 active:bg-white/15 border border-white/5 rounded-full transition-all shrink-0 animate-fade-in"
-                                  aria-label="Back to activities"
-                                >
-                                  <ArrowLeft className="h-4 w-4" />
-                                </button>
-                                
                                 {isCurrentPeerBlocked ? (
                                   <button
                                     type="button"
@@ -5063,7 +5650,7 @@ export default function UserDashboard() {
             )}
 
             {activeTab === "links" && (
-              <section className="space-y-5 max-w-lg pb-6 lg:pb-0">
+              <section className="min-w-0 w-full space-y-5 max-w-lg pb-6 lg:pb-0">
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
 
                 <form onSubmit={handleCreateShareableLink} className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm text-black">
@@ -5133,7 +5720,7 @@ export default function UserDashboard() {
                     </div>
                     {linkQrShown && (
                       <div className="flex flex-col items-center gap-3 pt-1">
-                        <div className="rounded-3xl bg-white p-4 border border-black/10 shadow-md">
+                        <div className="max-w-full rounded-3xl bg-white p-2 sm:p-4 border border-black/10 shadow-md [&_canvas]:!h-auto [&_canvas]:!max-w-full">
                           <QRCode
                             value={linkResultUrl}
                             size={isMobile ? 196 : 280}
@@ -5176,17 +5763,10 @@ export default function UserDashboard() {
             )}
 
             {activeTab === "batch" && (
-              <section className="space-y-5 max-w-lg pb-6 lg:pb-0">
+              <section ref={batchSectionRef} className="min-w-0 w-full space-y-5 max-w-lg pb-6 lg:pb-0">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <SectionTitle title="Batch payouts" subtitle="Pay many people in one run, or just one." />
 
-                  {/* Blue rather than the charcoal this used to be. #353935 sits within a couple of
-                      shades of the dark canvas (#17181a), so the button read as a label instead of a
-                      control. #2775CA with cream is the page's own primary-action pairing — the same
-                      one Copy Link uses — and neither token is rewritten by the light or the dark
-                      layer, so it holds its contrast in both themes without new CSS. Lime was the
-                      other candidate and is wrong here: the light layer repaints bg-[#ccff00]
-                      charcoal, which would have put dark text on a dark fill in light mode. */}
                   <button
                     type="button"
                     onClick={() => setSendSingleModalOpen(true)}
@@ -5195,7 +5775,7 @@ export default function UserDashboard() {
                     <Send className="h-3.5 w-3.5" /> Single Send
                   </button>
                 </div>
-                  <div ref={batchFormRef} className="border border-black/10 dark:border-white/15 bg-white/80 dark:bg-white/[0.04] rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black dark:text-white">
+                  <div className="border border-black/10 dark:border-white/15 bg-white/80 dark:bg-white/[0.04] rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black dark:text-white">
                     {/* Batch payouts are Arc-only. */}
                     <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 dark:bg-amber-950/40 dark:border-amber-400/40 p-3.5 flex items-start gap-2.5">
                       <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400 mt-0.5" />
@@ -5203,20 +5783,11 @@ export default function UserDashboard() {
                         <strong className="block text-amber-950 dark:text-amber-300 font-black uppercase tracking-wider text-[10px] mb-0.5">
                           BATCH SEND ONLY SUPPORTS THE ARC NETWORK!
                         </strong>
-                        Batch payouts are settled exclusively on Arc. To send USDC across chains (e.g. Base, Ethereum, Arbitrum, Polygon), use{" "}
-                        <button
+                        Batch payouts are settled exclusively on Arc. To send USDC across chains (e.g. Base, Ethereum, Arbitrum, Polygon), use <button
                           type="button"
-                          onClick={() => {
-                            setSelectedDmPeer(null);
-                            setSingleRecipient("");
-                            setSingleAmount("");
-                            setSingleSendStatus(null);
-                            setSendSingleModalOpen(true);
-                          }}
+                          onClick={() => setSendSingleModalOpen(true)}
                           className="inline font-bold text-amber-950 underline decoration-amber-700/50 underline-offset-2 transition hover:text-[#2775CA] dark:text-amber-100 dark:hover:text-[#8AB4DB] cursor-pointer"
-                        >
-                          Single Send.
-                        </button>
+                        >Single Send</button>.
                       </div>
                     </div>
                     {batchRows.map((row, index) => (
@@ -5234,19 +5805,21 @@ export default function UserDashboard() {
                         <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/60 dark:text-white/60">Recipient {index + 1}</p>
                         
                         <div className="space-y-2">
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="text-[9px] uppercase font-bold text-black/60 dark:text-white/60">Address or DNS name</span>
-                            <button
-                              type="button"
-                              disabled={batchSendLoading}
-                              onClick={() => {
-                                setQrTargetIndex(index);
-                                setQrScannerOpen(true);
-                              }}
-                              className="flex md:hidden items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#2775CA] dark:text-[#589bf0] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              <QrCode className="h-3.5 w-3.5 text-[#2775CA] dark:text-[#589bf0]" /> Scan QR
-                            </button>
+                            {isMobile && (
+                              <button
+                                type="button"
+                                disabled={batchSendLoading}
+                                onClick={() => {
+                                  setQrTargetIndex(index);
+                                  setQrScannerOpen(true);
+                                }}
+                                className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#2775CA] dark:text-[#589bf0] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <QrCode className="h-3.5 w-3.5 text-[#2775CA] dark:text-[#589bf0]" /> Scan QR
+                              </button>
+                            )}
                           </div>
                           <div className="relative flex items-center gap-2">
                             <input
@@ -5254,20 +5827,22 @@ export default function UserDashboard() {
                               disabled={batchSendLoading}
                               onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
                               placeholder="alice.sub or 0x..."
-                              className="subscript-input bg-white dark:bg-white/[0.06] border border-black/15 dark:border-white/15 text-[#111827] dark:text-white disabled:bg-black/5 dark:disabled:bg-white/[0.02] disabled:cursor-not-allowed disabled:text-black/50 dark:disabled:text-white/40"
+                              className="subscript-input min-w-0 flex-1 bg-white dark:bg-white/[0.06] border border-black/15 dark:border-white/15 text-[#111827] dark:text-white disabled:bg-black/5 dark:disabled:bg-white/[0.02] disabled:cursor-not-allowed disabled:text-black/50 dark:disabled:text-white/40"
                             />
-                            <button
-                              type="button"
-                              disabled={batchSendLoading}
-                              onClick={() => {
-                                setQrTargetIndex(index);
-                                setQrScannerOpen(true);
-                              }}
-                              title={`Scan QR Code for Recipient #${index + 1}`}
-                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/20 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              <QrCode className="h-4 w-4 text-black dark:text-white" />
-                            </button>
+                            {isMobile && (
+                              <button
+                                type="button"
+                                disabled={batchSendLoading}
+                                onClick={() => {
+                                  setQrTargetIndex(index);
+                                  setQrScannerOpen(true);
+                                }}
+                                title={`Scan QR Code for Recipient #${index + 1}`}
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/20 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <QrCode className="h-4 w-4 text-black dark:text-white" />
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -6081,14 +6656,14 @@ export default function UserDashboard() {
                       ) : (
                         <>
                           {/* Hero: Total Spending & Distribution */}
-                          <div data-spend-card className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-sm">
+                          <div data-spend-card className="@container/spend-total border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-sm">
                             <div className="flex items-center justify-between">
                               <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">Total Outflow</p>
                               <div className="p-2 rounded-xl bg-black/5">
                                 <BarChart3 className="h-4 w-4 text-[#2775CA]" />
                               </div>
                             </div>
-                            <p className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight text-black">
+                            <p className="mt-3 font-extrabold tracking-tight text-black" style={{ fontSize: `min(48px, ${150 / money(totalSpending).length}cqi)` }}>
                               {balanceVisible ? money(totalSpending) : "••••"}
                             </p>
                             <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -6137,7 +6712,7 @@ export default function UserDashboard() {
                           </div>
 
                           {/* Category Breakdown Cards */}
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,210px),1fr))] gap-3">
                             {allCategoryEntries.map(([key, cat]) => {
                               const CategoryIcon = cat.Icon;
                               const pct = totalSpending > 0 ? ((cat.total / totalSpending) * 100).toFixed(0) : "0";
@@ -6145,9 +6720,9 @@ export default function UserDashboard() {
                                 <div
                                   key={key}
                                   data-spend-category
-                                  className="rounded-2xl p-4 border border-black/10 bg-black/[0.02] transition-all hover:scale-[1.01] shadow-sm"
+                                  className="@container/spend-category min-w-0 rounded-2xl p-4 border border-black/10 bg-black/[0.02] transition-all hover:scale-[1.01] shadow-sm"
                                 >
-                                  <div className="flex items-center justify-between gap-2 mb-2">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                                     <div className="flex items-center gap-1.5">
                                       <CategoryIcon className="h-4 w-4" style={{ color: cat.color }} />
                                       <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: cat.color }}>
@@ -6158,7 +6733,7 @@ export default function UserDashboard() {
                                       {cat.count} {cat.count === 1 ? "item" : "items"}
                                     </span>
                                   </div>
-                                  <p className="text-xl font-extrabold tracking-tight text-black spend-category-value">
+                                  <p className="font-extrabold tracking-tight text-black spend-category-value" style={{ fontSize: `min(20px, ${150 / money(cat.total).length}cqi)` }}>
                                     {balanceVisible ? money(cat.total) : "••••"}
                                   </p>
                                   <div className="mt-2 flex items-center justify-between text-[9px] font-bold text-black/50">
@@ -6185,7 +6760,8 @@ export default function UserDashboard() {
                             </div>
 
                             {/* ── Mobile: vertical bar chart ─────────────────────────── */}
-                            <div className="md:hidden pt-4 pb-2">
+                            {isMobile && (
+                              <div className="pt-4 pb-2">
                               <div className="flex items-end justify-between gap-2 h-40 pt-6 px-2">
                                 {monthData.map((m) => {
                                   const heightPct = Math.max(8, Math.round((m.amount / maxMonthSpend) * 100));
@@ -6219,9 +6795,10 @@ export default function UserDashboard() {
                                 })}
                               </div>
                             </div>
+                            )}
 
                             {/* ── Desktop: SVG area + line graph ─────────────────────── */}
-                            {(() => {
+                            {!isMobile && (() => {
                               /* Build scales for the SVG graph */
                               const SVG_H = 180;
                               const PAD_L = 52;  /* wide enough for "$1,200" labels */
@@ -6267,7 +6844,7 @@ export default function UserDashboard() {
                               const gradId = "spend-area-grad";
 
                               return (
-                                <div className="hidden md:block">
+                                <div className="block">
                                   <svg
                                     viewBox={`0 0 600 ${SVG_H}`}
                                     className="w-full overflow-visible"
@@ -6455,22 +7032,22 @@ export default function UserDashboard() {
                               </span>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div data-spend-inflow className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,170px),1fr))] gap-3">
+                              <div data-spend-inflow className="@container/cash-flow min-w-0 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                                 <span className="block text-[9px] font-black uppercase tracking-wider text-emerald-800/70">Total Inflow (Credits)</span>
-                                <p className="mt-1 text-lg font-extrabold text-emerald-700">
+                                <p className="mt-1 font-extrabold text-emerald-700" style={{ fontSize: `min(18px, ${150 / money(totalInflow).length}cqi)` }}>
                                   {balanceVisible ? money(totalInflow) : "••••"}
                                 </p>
                               </div>
-                              <div data-spend-outflow className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
+                              <div data-spend-outflow className="@container/cash-flow min-w-0 rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
                                 <span className="block text-[9px] font-black uppercase tracking-wider text-red-800/70">Total Outflow (Debits)</span>
-                                <p className="mt-1 text-lg font-extrabold text-red-700">
+                                <p className="mt-1 font-extrabold text-red-700" style={{ fontSize: `min(18px, ${150 / money(totalOutflow).length}cqi)` }}>
                                   {balanceVisible ? money(totalOutflow) : "••••"}
                                 </p>
                               </div>
-                              <div data-spend-net className="rounded-2xl border border-black/10 bg-black/[0.02] p-4">
+                              <div data-spend-net className="@container/cash-flow min-w-0 rounded-2xl border border-black/10 bg-black/[0.02] p-4">
                                 <span className="block text-[9px] font-black uppercase tracking-wider text-black/50">Net Movement</span>
-                                <p className={`mt-1 text-lg font-extrabold ${netCashFlow >= 0 ? "text-emerald-700" : "text-black"}`}>
+                                <p className={`mt-1 font-extrabold ${netCashFlow >= 0 ? "text-emerald-700" : "text-black"}`} style={{ fontSize: `min(18px, ${150 / (money(netCashFlow).length + 1)}cqi)` }}>
                                   {balanceVisible ? `${netCashFlow >= 0 ? "+" : ""}${money(netCashFlow)}` : "••••"}
                                 </p>
                               </div>
@@ -6805,7 +7382,8 @@ export default function UserDashboard() {
                         </div>
 
                         {/* Desktop Table View */}
-                        <div className="overflow-x-auto hidden md:block">
+                        {!isMobile && (
+                          <div className="overflow-x-auto">
                           <table className="w-full text-left font-sans text-xs">
                             <thead>
                               <tr className="border-b border-black/10 text-black/50 uppercase text-[9px] tracking-wider">
@@ -6885,9 +7463,11 @@ export default function UserDashboard() {
                             </tbody>
                           </table>
                         </div>
+                        )}
 
                         {/* Mobile Card-Stack View */}
-                        <div className="block md:hidden space-y-3">
+                        {isMobile && (
+                          <div className="space-y-3">
                           {filteredSettingsTx.length === 0 ? (
                             <div className="text-center py-6 text-black/40 text-xs font-sans">
                               No payments match your active filters.
@@ -6933,6 +7513,7 @@ export default function UserDashboard() {
                             })
                           )}
                         </div>
+                        )}
 
                         {/* Next-page loader, shared by the table and the card stack. */}
                         {settingsTxLoadingMore && (
@@ -7325,7 +7906,7 @@ export default function UserDashboard() {
             )}
 
             {activeTab === "referrals" && (
-              <section className="space-y-6 pb-20 max-w-2xl">
+              <section className="min-w-0 w-full space-y-6 pb-20 max-w-2xl">
                 <SectionTitle title="Referrals Program" subtitle="Invite friends to join SubScript and view your referred signups." />
 
                 {referralsLoading || !referralsLoaded ? (
@@ -7342,7 +7923,7 @@ export default function UserDashboard() {
                   </p>
 
                   <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1 rounded-2xl border border-black/15 bg-[#f8fafc] px-4 py-3 font-mono text-xs text-black font-semibold overflow-x-auto whitespace-nowrap select-all flex items-center">
+                    <div className="min-w-0 flex-1 rounded-2xl border border-black/15 bg-[#f8fafc] px-4 py-3 font-mono text-xs text-black font-semibold overflow-x-auto whitespace-nowrap select-all flex items-center">
                       {referralLink}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -7473,6 +8054,7 @@ export default function UserDashboard() {
             setActiveTab(tabId);
           }}
           pendingDmCount={pendingDmCount}
+          isLocked={sendSingleModalOpen || receiveOpen}
         />
       )}
 
@@ -7574,6 +8156,7 @@ export default function UserDashboard() {
         isEmbeddedWallet={isEmbeddedWalletSession}
         isTier1={Boolean(userEmail) || isEmbeddedWalletSession}
         depositAddress={userWallet || ""}
+        isMobile={isMobile}
         onSuccess={() => {
           refetchUsdc().catch(console.error);
           refetchOriginBalances().catch(console.error);
@@ -8020,11 +8603,12 @@ export default function UserDashboard() {
           notice is passed down rather than re-derived so Arc/CCTP rules live in one place. */}
       <SendSingleModal
         open={sendSingleModalOpen}
-        onClose={() => setSendSingleModalOpen(false)}
+        onClose={handleSendModalClose}
         onGoToBatch={handleGoToBatch}
         onSubmit={handleSingleSend}
+        getQuote={getSingleSendQuote}
         recipient={singleRecipient}
-        onRecipientChange={setSingleRecipient}
+        onRecipientChange={(value) => { setSingleResolved(null); setSingleResolving(Boolean(value.trim())); setSingleRecipient(value); }}
         amount={singleAmount}
         onAmountChange={setSingleAmount}
         resolving={singleResolving}
@@ -8048,6 +8632,19 @@ export default function UserDashboard() {
             elsewhereUsdc={elsewhereUsdc}
           />
         }
+        senderInfo={{
+          wallet: userWallet || "",
+          alias: registeredDomain || null,
+          email: userEmail || null,
+          profilePic: profilePic || null,
+          isEmbedded: isEmbeddedWalletSession,
+          isGoogle: isEmbeddedWalletSession,
+        }}
+        onPresentationPause={setSingleSendFiguresPaused}
+        onSendSuccess={handleSendConfirmed}
+        onSendFailure={handleSendFailed}
+        isMobile={isMobile}
+        recentTransactions={recentTransactions}
       />
 
       <QrScannerModal
@@ -8194,8 +8791,8 @@ export default function UserDashboard() {
                 </button>
               </div>
 
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-[#f8fafc] dark:bg-white/[0.03] p-4 sm:p-5 shadow-inner">
-                <div id="referral-qr-canvas-wrap" className="rounded-2xl bg-white p-3 shadow-md border border-black/10 flex items-center justify-center mx-auto w-fit">
+              <div className="flex min-w-0 flex-col items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-[#f8fafc] dark:bg-white/[0.03] p-2 sm:p-5 shadow-inner">
+                <div id="referral-qr-canvas-wrap" className="max-w-full rounded-2xl bg-white p-2 sm:p-3 shadow-md border border-black/10 flex items-center justify-center mx-auto w-fit [&_canvas]:!h-auto [&_canvas]:!max-w-full">
                   <QRCode
                     value={referralLink}
                     size={200}
@@ -8262,6 +8859,14 @@ export default function UserDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* High-fidelity toast notification feedback */}
+      <Toast
+        visible={showToast}
+        message={toastMessage}
+        type={toastType}
+        onClose={() => setShowToast(false)}
+      />
     </div>
   );
 }
@@ -8348,6 +8953,7 @@ function HomeHeader({
   const handleProfileClick = () => {
     if (!profileExpanded) {
       setProfileExpanded(true);
+      setTierExpanded(false);
       return;
     }
     onDns();
@@ -8357,6 +8963,7 @@ function HomeHeader({
   const handleTierClick = () => {
     if (!tierExpanded) {
       setTierExpanded(true);
+      setProfileExpanded(false);
       return;
     }
     onTierDetails();
@@ -8433,7 +9040,7 @@ function ChatHeader({
         className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10"
       >
         <div className="flex items-center justify-between w-full gap-2">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex flex-1 items-center gap-2 min-w-0">
             {/* Back button */}
             <button
               type="button"
@@ -8445,7 +9052,7 @@ function ChatHeader({
             </button>
             
             {/* Peer Info Capsule */}
-            <div className="flex items-center gap-2 px-2.5 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
+            <div className="flex flex-1 items-center gap-1.5 px-2 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
               <Avatar profilePic={peerProfilePic} name={peerName} size="xs" />
               <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[100px]">
                 {peerName}
@@ -8488,7 +9095,7 @@ function ChatHeader({
                   <button
                     type="button"
                     onClick={onSendFunds}
-                    className="px-3.5 py-1.5 bg-[#2775CA] hover:bg-[#2063ab] text-white border border-[#2775CA]/30 font-black uppercase tracking-wider text-[10px] rounded-full transition shadow-xs active:scale-95 shrink-0"
+                    className="px-2.5 sm:px-3.5 py-1.5 bg-[#2775CA] hover:bg-[#2063ab] text-white border border-[#2775CA]/30 font-black uppercase tracking-wider text-[10px] rounded-full transition shadow-xs active:scale-95 shrink-0"
                   >
                     Send Funds
                   </button>
@@ -8572,9 +9179,9 @@ function SubscriptionRow({
 }) {
   const intervalDays = Math.max(1, Math.round(Number(subscription.billingIntervalSeconds) / 86400));
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30">
           {subscription.merchantProfilePic ? <img src={subscription.merchantProfilePic} alt={subscription.merchantName} className="h-full w-full object-cover" /> : <Shield className="h-5 w-5 text-[#ccff00]/70" />}
         </div>
         <div className="min-w-0">
@@ -8618,7 +9225,7 @@ function SubscriptionRow({
           )}
         </div>
       </div>
-      <div className="text-right">
+      <div className="max-w-full break-words text-right">
         <p className="text-xs font-black text-[#ccff00]">
           {balanceVisible ? `${formatUsdc(subscription.amountCapUsdc)} USDC` : "•••• USDC"}
         </p>
@@ -8634,62 +9241,64 @@ function OpenedDmSkeleton({
   isMerchant,
   onBack,
   isMobile,
+  isTablet,
 }: {
   isMerchant?: boolean;
   onBack?: () => void;
   isMobile?: boolean;
+  isTablet?: boolean;
 }) {
   if (isMerchant) {
     return (
-      <div className="flex flex-col h-full min-h-0 overflow-hidden bg-[#FFFFF0] sm:bg-transparent animate-pulse" data-testid="opened-dm-skeleton">
+      <div className="flex flex-col h-full min-h-0 overflow-hidden bg-[#FFFFF0] dark:bg-[#060608] sm:bg-transparent" data-testid="opened-dm-skeleton">
         {/* 1. Header Bar Skeleton */}
-        <div className="shrink-0 z-20 flex items-center justify-between gap-3 border-b border-black/10 bg-white/95 px-4 py-3 sm:py-3.5 shadow-xs backdrop-blur-md text-black sm:rounded-2xl sm:border sm:m-1">
+        <div className="shrink-0 z-20 flex items-center justify-between gap-3 border-b border-black/10 dark:border-white/10 bg-white/95 dark:bg-[#131522]/95 px-4 py-3 sm:py-3.5 shadow-xs backdrop-blur-md text-black dark:text-white sm:rounded-2xl sm:border sm:m-1">
           <div className="flex items-center gap-3 min-w-0">
             {onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="md:hidden flex h-9 w-9 aspect-square items-center justify-center text-black/70 bg-black/5 rounded-full transition-all shrink-0"
+                className={`${isTablet || isMobile ? "flex" : "hidden"} h-9 w-9 aspect-square items-center justify-center text-black/70 dark:text-white/70 bg-black/5 dark:bg-white/10 rounded-full transition-all shrink-0`}
                 aria-label="Back to contacts"
               >
                 <ArrowLeft className="h-4 w-4" />
               </button>
             )}
-            <div className="h-10 w-10 aspect-square rounded-full bg-black/10 shrink-0" />
+            <div className="h-10 w-10 aspect-square rounded-full subscript-skeleton shrink-0" />
             <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-1.5">
-                <div className="h-3.5 w-28 rounded-md bg-black/20" />
-                <div className="h-3 w-3 rounded-full bg-black/10" />
+                <div className="h-3.5 w-28 rounded-md subscript-skeleton" />
+                <div className="h-3 w-3 rounded-full subscript-skeleton subscript-skeleton--faint" />
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-slate-300" />
-                <div className="h-2.5 w-20 rounded bg-black/15" />
+                <span className="h-2 w-2 rounded-full subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-2.5 w-20 rounded subscript-skeleton subscript-skeleton--faint" />
               </div>
             </div>
           </div>
-          <div className="h-6 w-16 rounded-full bg-black/5" />
+          <div className="h-6 w-16 rounded-full subscript-skeleton subscript-skeleton--faint" />
         </div>
 
         {/* 2. Scrollable Body Skeleton */}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-4 p-3 sm:p-4 custom-scrollbar">
           {/* Plan Summary Card Skeleton */}
-          <div className="rounded-2xl border border-black/10 bg-white p-4 sm:p-5 shadow-xs space-y-4">
-            <div className="flex items-start justify-between gap-3 border-b border-black/5 pb-3">
+          <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#131522] p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-black/5 dark:border-white/5 pb-3">
               <div className="space-y-1.5">
-                <div className="h-2 w-24 rounded bg-[#2775CA]/30" />
-                <div className="h-4.5 w-36 rounded-md bg-black/20" />
+                <div className="h-2 w-24 rounded bg-[#2775CA]/30 dark:bg-[#2775CA]/20" />
+                <div className="h-4.5 w-36 rounded-md subscript-skeleton" />
               </div>
-              <div className="h-5 w-20 rounded-full bg-slate-100 border border-slate-200" />
+              <div className="h-5 w-20 rounded-full subscript-skeleton subscript-skeleton--faint border border-slate-200 dark:border-white/10" />
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-1">
               <div className="space-y-1.5">
-                <div className="h-2 w-16 rounded bg-black/10" />
-                <div className="h-4 w-28 rounded bg-black/20" />
+                <div className="h-2 w-16 rounded subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-4 w-28 rounded subscript-skeleton" />
               </div>
               <div className="space-y-1.5">
-                <div className="h-2 w-16 rounded bg-black/10" />
-                <div className="h-4 w-24 rounded bg-black/20" />
+                <div className="h-2 w-16 rounded subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-4 w-24 rounded subscript-skeleton" />
               </div>
             </div>
           </div>
@@ -8697,24 +9306,24 @@ function OpenedDmSkeleton({
           {/* Receipts / History Timeline Skeleton */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
-              <div className="h-3 w-32 rounded bg-black/20" />
-              <div className="h-2 w-12 rounded bg-black/10" />
+              <div className="h-3 w-32 rounded subscript-skeleton" />
+              <div className="h-2 w-12 rounded subscript-skeleton subscript-skeleton--faint" />
             </div>
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="rounded-2xl border border-black/5 bg-white/70 p-3.5 flex items-center justify-between gap-3 shadow-xs"
+                className="rounded-2xl border border-black/5 dark:border-white/5 bg-white/70 dark:bg-white/[0.04] p-3.5 flex items-center justify-between gap-3 shadow-xs"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-8 w-8 rounded-xl bg-black/10 shrink-0" />
+                  <div className="h-8 w-8 rounded-xl subscript-skeleton shrink-0" />
                   <div className="space-y-1.5 min-w-0">
-                    <div className="h-3 w-28 rounded bg-black/20" />
-                    <div className="h-2 w-20 rounded bg-black/10" />
+                    <div className="h-3 w-28 rounded subscript-skeleton" />
+                    <div className="h-2 w-20 rounded subscript-skeleton subscript-skeleton--faint" />
                   </div>
                 </div>
                 <div className="text-right space-y-1.5 shrink-0">
-                  <div className="h-3.5 w-16 rounded bg-black/20 ml-auto" />
-                  <div className="h-2 w-12 rounded bg-slate-200 ml-auto" />
+                  <div className="h-3.5 w-16 rounded subscript-skeleton ml-auto" />
+                  <div className="h-2 w-12 rounded subscript-skeleton subscript-skeleton--faint ml-auto" />
                 </div>
               </div>
             ))}
@@ -8722,13 +9331,13 @@ function OpenedDmSkeleton({
         </div>
 
         {/* 3. Docked Bottom Action Bar Skeleton */}
-        <div className="shrink-0 z-30 border-t border-black/10 bg-white/95 backdrop-blur-xl px-3 sm:px-4 py-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] sm:rounded-b-2xl sm:m-1">
+        <div className="shrink-0 z-30 border-t border-black/10 dark:border-white/10 bg-white/95 dark:bg-[#131522]/95 backdrop-blur-xl px-3 sm:px-4 py-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] sm:rounded-b-2xl sm:m-1">
           <div className="flex items-center justify-between gap-3 p-1">
             <div className="space-y-1 min-w-0 flex-1">
-              <div className="h-2 w-24 rounded bg-[#2775CA]/30" />
-              <div className="h-3.5 w-36 rounded bg-black/20" />
+              <div className="h-2 w-24 rounded bg-[#2775CA]/30 dark:bg-[#2775CA]/20" />
+              <div className="h-3.5 w-36 rounded subscript-skeleton" />
             </div>
-            <div className="h-8 w-24 rounded-full bg-black/10 shrink-0" />
+            <div className="h-8 w-24 rounded-full subscript-skeleton shrink-0" />
           </div>
         </div>
       </div>
@@ -8738,10 +9347,20 @@ function OpenedDmSkeleton({
   // Regular Peer DM Skeleton
   return (
     <div className={`flex flex-col h-full justify-between overflow-hidden animate-pulse ${isMobile ? "pt-20" : ""}`} data-testid="opened-dm-skeleton">
-      {/* Desktop Chat Header Skeleton */}
+      {/* Desktop / Tablet Chat Header Skeleton */}
       {!isMobile && (
         <div className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl mb-2">
           <div className="flex items-center gap-3">
+            {isTablet && onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex h-9 w-9 aspect-square items-center justify-center text-white/60 bg-white/[0.04] border border-white/5 rounded-full shrink-0"
+                aria-label="Back to contacts"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
             <div className="h-9 w-9 aspect-square rounded-full bg-white/10 shrink-0" />
             <div className="space-y-1.5">
               <div className="h-3 w-28 rounded bg-white/20" />
@@ -8842,6 +9461,8 @@ function SubscriptionDetailView({
   onBack,
   onPay,
   onDecline,
+  isTablet,
+  isMobile,
 }: {
   peerAddress: string;
   peerName?: string | null;
@@ -8861,6 +9482,8 @@ function SubscriptionDetailView({
   onBack?: () => void;
   onPay?: (dm: DmMessage) => void;
   onDecline?: (dm: DmMessage) => void;
+  isTablet?: boolean;
+  isMobile?: boolean;
 }) {
   const merchantLabel = formatPeerDisplayName(peerName, peerAddress);
   const activePlan = activeSubscription
@@ -8887,7 +9510,7 @@ function SubscriptionDetailView({
             <button
               type="button"
               onClick={onBack}
-              className="md:hidden flex h-9 w-9 aspect-square items-center justify-center text-black/70 hover:text-black bg-black/5 active:bg-black/10 rounded-full transition-all shrink-0"
+              className={`${isTablet || isMobile ? "flex" : "hidden"} h-9 w-9 aspect-square items-center justify-center text-black/70 hover:text-black bg-black/5 active:bg-black/10 rounded-full transition-all shrink-0`}
               aria-label="Back to activities"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -9236,14 +9859,14 @@ function DmThreadSelect({
           <button
             type="button"
             onClick={() => onPaymentsSubViewChange("subscriptions")}
-            className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 px-3 text-xs font-bold transition-all ${
+            className={`flex flex-wrap items-center justify-center gap-1 rounded-lg py-1.5 px-1.5 text-[11px] font-bold transition-all ${
               paymentsSubView === "subscriptions"
                 ? "bg-white text-[#2775CA] shadow-xs"
                 : "text-[#64748b] hover:text-[#0f172a]"
             }`}
           >
-            <Building2 className="h-3.5 w-3.5" />
-            <span>Subscriptions</span>
+            <Building2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="shrink-0">Subscriptions</span>
             {subscriptionsPendingCount > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[8px] font-black text-white">
                 {subscriptionsPendingCount}
@@ -9253,14 +9876,14 @@ function DmThreadSelect({
           <button
             type="button"
             onClick={() => onPaymentsSubViewChange("people")}
-            className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 px-3 text-xs font-bold transition-all ${
+            className={`flex flex-wrap items-center justify-center gap-1 rounded-lg py-1.5 px-1.5 text-[11px] font-bold transition-all ${
               paymentsSubView === "people"
                 ? "bg-white text-[#2775CA] shadow-xs"
                 : "text-[#64748b] hover:text-[#0f172a]"
             }`}
           >
-            <Users className="h-3.5 w-3.5" />
-            <span>People</span>
+            <Users className="h-3.5 w-3.5 shrink-0" />
+            <span className="shrink-0">People</span>
             {peoplePendingCount > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[8px] font-black text-white">
                 {peoplePendingCount}
@@ -10559,7 +11182,7 @@ function SendFundsModal({
                   className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-mono text-[#111827] focus:border-[#2775CA] focus:outline-none"
                 />
                 {onScanQr && (
-                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex md:hidden items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan QR">
+                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan QR">
                     <QrCode className="h-3.5 w-3.5" /> Scan QR
                   </button>
                 )}
@@ -10713,33 +11336,33 @@ function BalanceRoutingNotice({
 
 function VaultCardSkeleton() {
   return (
-    <div className="flex min-h-[360px] w-full shrink-0 snap-center flex-col gap-4 rounded-3xl border border-black/20 bg-[#2775CA]/20 p-4 text-black sm:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-h-[360px] w-full min-w-full shrink-0 snap-center flex-col gap-4 rounded-3xl border border-black/20 dark:border-white/10 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 p-4 text-black dark:text-white sm:p-5">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex min-w-0 max-w-full flex-1 items-center gap-3">
           <div className="h-11 w-11 rounded-2xl subscript-skeleton shrink-0" />
-          <div className="space-y-2">
-            <div className="h-4 w-36 rounded-lg subscript-skeleton" />
-            <div className="h-3 w-16 rounded-full subscript-skeleton" />
+          <div className="min-w-0 space-y-2">
+            <div className="h-4 w-36 max-w-full rounded-lg subscript-skeleton" />
+            <div className="h-3 w-16 rounded-full subscript-skeleton subscript-skeleton--faint" />
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex max-w-full flex-wrap items-center gap-2 shrink-0">
           <div className="h-10 w-24 rounded-2xl subscript-skeleton" />
           <div className="h-10 w-24 rounded-2xl subscript-skeleton" />
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="flex min-h-[96px] flex-col justify-between rounded-2xl border border-black/15 bg-[#FFFFF0]/55 p-4 subscript-skeleton">
-          <div className="h-3 w-20 rounded-md bg-black/10" />
-          <div className="mt-2 h-6 w-32 rounded-lg bg-black/10" />
+        <div className="flex min-h-[96px] flex-col justify-between rounded-2xl border border-black/15 dark:border-white/10 bg-[#FFFFF0]/55 dark:bg-white/[0.04] p-4">
+          <div className="h-3 w-20 rounded-md subscript-skeleton subscript-skeleton--faint" />
+          <div className="mt-2 h-6 w-32 rounded-lg subscript-skeleton" />
         </div>
-        <div className="flex min-h-[96px] flex-col justify-between rounded-2xl border border-black/15 bg-[#FFFFF0]/55 p-4 subscript-skeleton">
-          <div className="h-3 w-20 rounded-md bg-black/10" />
-          <div className="mt-2 h-6 w-40 rounded-lg bg-black/10" />
+        <div className="flex min-h-[96px] flex-col justify-between rounded-2xl border border-black/15 dark:border-white/10 bg-[#FFFFF0]/55 dark:bg-white/[0.04] p-4">
+          <div className="h-3 w-20 rounded-md subscript-skeleton subscript-skeleton--faint" />
+          <div className="mt-2 h-6 w-40 rounded-lg subscript-skeleton" />
         </div>
       </div>
 
-      <div className="h-16 rounded-2xl border border-black/10 bg-[#FFFFF0]/45 subscript-skeleton" />
+      <div className="h-16 rounded-2xl border border-black/10 dark:border-white/10 bg-[#FFFFF0]/45 dark:bg-white/[0.03] subscript-skeleton" />
 
       <div className="flex items-center gap-3 pt-2">
         <div className="h-[92px] w-[90px] rounded-2xl subscript-skeleton shrink-0" />
@@ -10754,7 +11377,7 @@ function VaultCardSkeleton() {
 function ReferralsSkeleton() {
   return (
     <>
-      <div className="border border-black/15 bg-white rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
+      <div className="border border-black/15 dark:border-white/10 bg-white dark:bg-[#131522]/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
         <div className="h-3.5 w-40 rounded-md subscript-skeleton" />
         <div className="space-y-2">
           <div className="h-2.5 w-full rounded-md subscript-skeleton subscript-skeleton--faint" />
@@ -10771,7 +11394,7 @@ function ReferralsSkeleton() {
         {[0, 1].map((i) => (
           <div
             key={i}
-            className="border border-black/15 bg-white rounded-3xl p-5 shadow-sm flex flex-col justify-between min-h-[104px]"
+            className="border border-black/15 dark:border-white/10 bg-white dark:bg-[#131522]/80 rounded-3xl p-5 shadow-sm flex flex-col justify-between min-h-[104px]"
           >
             <div className="h-2.5 w-24 rounded-md subscript-skeleton subscript-skeleton--faint" />
             <div className="mt-2 h-8 w-20 rounded-lg subscript-skeleton" />
@@ -10779,7 +11402,7 @@ function ReferralsSkeleton() {
         ))}
       </div>
 
-      <div className="border border-black/15 bg-white rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
+      <div className="border border-black/15 dark:border-white/10 bg-white dark:bg-[#131522]/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
         <div className="h-3.5 w-44 rounded-md subscript-skeleton" />
 
         <div className="space-y-4">
@@ -10882,8 +11505,8 @@ function MeteredVaultRow({
   return (
     <div className="flex min-h-[360px] flex-col gap-4 rounded-3xl border border-black/20 bg-[#2775CA]/15 p-4 text-black transition sm:p-5">
       {/* Top Header: Vault Icon + Merchant Name (Left) | Manage Commit, Top up (+) & Pause (||) / Play (▶) buttons (Right) */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex min-w-0 max-w-full flex-1 items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-black/15 bg-[#2775CA]/20 shrink-0">
             {vault.merchantPic ? (
               <img src={vault.merchantPic} alt={vault.merchantName} className="h-full w-full object-cover" />
@@ -10902,7 +11525,7 @@ function MeteredVaultRow({
         </div>
 
         {/* Top Right Action Icons & Desktop Labels */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex max-w-full flex-wrap items-center gap-2 shrink-0">
           {/* Top Up (+) Button */}
           <button
             type="button"
@@ -10968,11 +11591,11 @@ function MeteredVaultRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <div className="rounded-2xl border border-black/15 bg-white/80 p-4 shadow-sm flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance (Available)</span>
-            <p className="mt-1 text-2xl sm:text-3xl font-black tracking-tight text-black">
+            <p className="mt-1 break-words text-2xl sm:text-3xl font-black tracking-tight text-black">
               {balanceVisible ? formatUsdc(remainingBalanceUsdc) + " USDC" : "•••• USDC"}
             </p>
             {/* The headline is committed minus used, so the two figures it came from sit directly
@@ -11485,47 +12108,47 @@ function SubscribeReviewModal({
 
 function SpendAnalysisSkeleton() {
   return (
-    <div className="space-y-6 animate-pulse" data-testid="spend-analysis-skeleton">
+    <div className="space-y-6" data-testid="spend-analysis-skeleton">
       {/* Header controls skeleton */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-black/10">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-black/10 dark:border-white/10">
         <div className="space-y-2">
-          <div className="h-6 w-48 rounded-xl bg-black/10" />
-          <div className="h-3 w-64 rounded-lg bg-black/5" />
+          <div className="h-6 w-48 rounded-xl subscript-skeleton" />
+          <div className="h-3 w-64 rounded-lg subscript-skeleton subscript-skeleton--faint" />
         </div>
         <div className="flex items-center gap-2">
-          <div className="h-9 w-24 rounded-full bg-black/10" />
-          <div className="h-9 w-24 rounded-full bg-black/10" />
+          <div className="h-9 w-24 rounded-full subscript-skeleton" />
+          <div className="h-9 w-24 rounded-full subscript-skeleton" />
         </div>
       </div>
 
       {/* 4 Stat Cards Skeleton */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="rounded-3xl border border-black/10 bg-white/80 p-5 space-y-3 shadow-sm">
+          <div key={i} className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-5 space-y-3 shadow-sm">
             <div className="flex items-center justify-between">
-              <div className="h-3 w-24 rounded bg-black/10" />
-              <div className="h-8 w-8 rounded-2xl bg-black/10" />
+              <div className="h-3 w-24 rounded subscript-skeleton subscript-skeleton--faint" />
+              <div className="h-8 w-8 rounded-2xl subscript-skeleton" />
             </div>
-            <div className="h-8 w-32 rounded-xl bg-black/15" />
-            <div className="h-3 w-20 rounded bg-black/5" />
+            <div className="h-8 w-32 rounded-xl subscript-skeleton" />
+            <div className="h-3 w-20 rounded subscript-skeleton subscript-skeleton--faint" />
           </div>
         ))}
       </div>
 
       {/* Chart Card Skeleton */}
-      <div className="rounded-3xl border border-black/10 bg-white/80 p-6 space-y-4 shadow-sm">
+      <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-6 space-y-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="space-y-1.5">
-            <div className="h-4 w-40 rounded-lg bg-black/10" />
-            <div className="h-3 w-56 rounded bg-black/5" />
+            <div className="h-4 w-40 rounded-lg subscript-skeleton" />
+            <div className="h-3 w-56 rounded subscript-skeleton subscript-skeleton--faint" />
           </div>
-          <div className="h-6 w-28 rounded-full bg-black/10" />
+          <div className="h-6 w-28 rounded-full subscript-skeleton" />
         </div>
-        <div className="h-44 w-full rounded-2xl bg-black/5 flex items-end justify-between p-4 gap-3">
+        <div className="h-44 w-full rounded-2xl bg-black/5 dark:bg-white/[0.03] flex items-end justify-between p-4 gap-3">
           {[40, 65, 30, 85, 50, 70].map((h, idx) => (
             <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
-              <div className="w-full rounded-t-xl bg-black/15" style={{ height: `${h}%` }} />
-              <div className="h-3 w-8 rounded bg-black/10" />
+              <div className="w-full rounded-t-xl subscript-skeleton" style={{ height: `${h}%` }} />
+              <div className="h-3 w-8 rounded subscript-skeleton subscript-skeleton--faint" />
             </div>
           ))}
         </div>
@@ -11533,30 +12156,30 @@ function SpendAnalysisSkeleton() {
 
       {/* Insights & Categories Skeleton */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="rounded-3xl border border-black/10 bg-white/80 p-6 space-y-4 shadow-sm">
-          <div className="h-4 w-36 rounded-lg bg-black/10" />
+        <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-6 space-y-4 shadow-sm">
+          <div className="h-4 w-36 rounded-lg subscript-skeleton" />
           <div className="space-y-3 pt-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-black/5">
+              <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/[0.03]">
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-xl bg-black/10" />
-                  <div className="h-3 w-28 rounded bg-black/10" />
+                  <div className="h-8 w-8 rounded-xl subscript-skeleton" />
+                  <div className="h-3 w-28 rounded subscript-skeleton" />
                 </div>
-                <div className="h-4 w-16 rounded bg-black/15" />
+                <div className="h-4 w-16 rounded subscript-skeleton subscript-skeleton--faint" />
               </div>
             ))}
           </div>
         </div>
-        <div className="rounded-3xl border border-black/10 bg-white/80 p-6 space-y-4 shadow-sm">
-          <div className="h-4 w-36 rounded-lg bg-black/10" />
+        <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-6 space-y-4 shadow-sm">
+          <div className="h-4 w-36 rounded-lg subscript-skeleton" />
           <div className="space-y-3 pt-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-black/5">
+              <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/[0.03]">
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-full bg-black/10" />
-                  <div className="h-3 w-32 rounded bg-black/10" />
+                  <div className="h-8 w-8 rounded-full subscript-skeleton" />
+                  <div className="h-3 w-32 rounded subscript-skeleton" />
                 </div>
-                <div className="h-4 w-20 rounded bg-black/15" />
+                <div className="h-4 w-20 rounded subscript-skeleton subscript-skeleton--faint" />
               </div>
             ))}
           </div>
@@ -11568,37 +12191,37 @@ function SpendAnalysisSkeleton() {
 
 function SettingsTransactionsSkeleton() {
   return (
-    <div className="space-y-6 animate-pulse" data-testid="transactions-skeleton">
+    <div className="space-y-6" data-testid="transactions-skeleton">
       {/* Header controls & filter bar skeleton */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-black/10">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-black/10 dark:border-white/10">
         <div className="space-y-2">
-          <div className="h-6 w-48 rounded-xl bg-black/10" />
-          <div className="h-3 w-64 rounded-lg bg-black/5" />
+          <div className="h-6 w-48 rounded-xl subscript-skeleton" />
+          <div className="h-3 w-64 rounded-lg subscript-skeleton subscript-skeleton--faint" />
         </div>
-        <div className="h-10 w-full sm:w-64 rounded-2xl bg-black/10" />
+        <div className="h-10 w-full sm:w-64 rounded-2xl subscript-skeleton" />
       </div>
 
       {/* Filter pills skeleton */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2">
         {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-8 w-24 rounded-full bg-black/10 shrink-0" />
+          <div key={i} className="h-8 w-24 rounded-full subscript-skeleton shrink-0" />
         ))}
       </div>
 
       {/* Transactions list skeleton */}
-      <div className="rounded-3xl border border-black/10 bg-white/80 p-4 sm:p-6 space-y-3 shadow-sm">
+      <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-4 sm:p-6 space-y-3 shadow-sm">
         {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-black/5 bg-black/[0.02]">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-black/10 shrink-0" />
-              <div className="space-y-2">
-                <div className="h-4 w-36 sm:w-48 rounded bg-black/15" />
-                <div className="h-3 w-24 sm:w-32 rounded bg-black/5" />
+          <div key={i} className="flex min-w-0 items-center justify-between gap-3 p-4 rounded-2xl border border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="h-10 w-10 rounded-full subscript-skeleton shrink-0" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-4 w-36 sm:w-48 max-w-full rounded subscript-skeleton" />
+                <div className="h-3 w-24 sm:w-32 max-w-full rounded subscript-skeleton subscript-skeleton--faint" />
               </div>
             </div>
-            <div className="text-right space-y-1.5">
-              <div className="h-4 w-20 rounded bg-black/15 ml-auto" />
-              <div className="h-3 w-14 rounded bg-black/5 ml-auto" />
+            <div className="shrink-0 text-right space-y-1.5">
+              <div className="h-4 w-20 rounded subscript-skeleton ml-auto" />
+              <div className="h-3 w-14 rounded subscript-skeleton subscript-skeleton--faint ml-auto" />
             </div>
           </div>
         ))}

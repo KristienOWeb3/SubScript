@@ -13,6 +13,7 @@ export type OptimisticTx = {
        same formatter. Callers pass a human decimal string and this module converts. */
     amountUsdcMicros: string;
     createdAt: number;
+    revealed?: boolean;
 };
 
 const STORAGE_KEY = "subscript_optimistic_txs";
@@ -84,30 +85,74 @@ export function recordOptimisticTx({
     recipientAddress,
     recipientLabel,
     amountUsdc,
+    id,
+    revealed = true,
 }: {
     txHash: string | null;
     recipientAddress: string;
     recipientLabel: string;
     /* Human decimal, e.g. "5.25". */
     amountUsdc: string;
-}): void {
+    id?: string;
+    revealed?: boolean;
+}): string | null {
     const now = Date.now();
     const micros = Math.round(Number(amountUsdc) * 1_000_000);
     /* Skip the row rather than storing "0": the transactions page would render it as
        "-$0.00 · Sending", reporting a real transfer as worthless. No optimistic row is the
        better failure — the DM log still supplies the authoritative one a moment later. */
-    if (!Number.isFinite(micros) || micros <= 0) return;
+    if (!Number.isFinite(micros) || micros <= 0) return null;
+    const entryId = id || `${OPTIMISTIC_ID_PREFIX}${txHash || now}`;
     const entry: OptimisticTx = {
-        id: `${OPTIMISTIC_ID_PREFIX}${txHash || now}`,
+        id: entryId,
         txHash,
         recipientAddress,
         recipientLabel,
         amountUsdcMicros: String(micros),
         createdAt: now,
+        revealed,
     };
-    /* Re-submitting the same hash replaces rather than duplicates. */
-    const existing = read().filter((row) => isFresh(row, now) && row.id !== entry.id);
+    /* Re-submitting the same id or hash replaces rather than duplicates. */
+    const existing = read().filter(
+        (row) => isFresh(row, now) && row.id !== entry.id && !(txHash && row.txHash && row.txHash.toLowerCase() === txHash.toLowerCase())
+    );
     write([entry, ...existing]);
+    return entryId;
+}
+
+/* Mark an optimistic transaction as revealed (visible in transaction history) and optionally update its txHash. */
+export function revealOptimisticTx(idOrHash: string, finalTxHash?: string | null): OptimisticTx[] {
+    return updateOptimisticTx(idOrHash, finalTxHash, true);
+}
+
+/* Settlement releases a hashless reservation independently of the history reveal animation. */
+export function updateOptimisticTx(idOrHash: string, finalTxHash?: string | null, revealed?: boolean): OptimisticTx[] {
+    const target = idOrHash.toLowerCase();
+    const now = Date.now();
+    const updated = read().map((tx) => {
+        if (!isFresh(tx, now)) return tx;
+        if (tx.id.toLowerCase() === target || (tx.txHash && tx.txHash.toLowerCase() === target)) {
+            return {
+                ...tx,
+                txHash: finalTxHash !== undefined ? finalTxHash : tx.txHash,
+                revealed: revealed !== undefined ? revealed : tx.revealed,
+            };
+        }
+        return tx;
+    });
+    write(updated);
+    return updated;
+}
+
+/* Remove a specific optimistic entry by ID or transaction hash (e.g. when a preflight or submission fails). */
+export function removeOptimisticTx(idOrHash: string): OptimisticTx[] {
+    const target = idOrHash.toLowerCase();
+    const now = Date.now();
+    const remaining = read().filter(
+        (tx) => isFresh(tx, now) && tx.id.toLowerCase() !== target && tx.txHash?.toLowerCase() !== target
+    );
+    write(remaining);
+    return remaining;
 }
 
 /* Drop rows the server has since confirmed. Matching is by hash where we have one; a transfer

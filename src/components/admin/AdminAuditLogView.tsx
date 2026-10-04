@@ -253,8 +253,8 @@ export function AdminAuditLogView({ viewerWallet }: AdminAuditLogViewProps) {
 
             {/* Filters */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <label className="flex flex-col gap-1.5">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-3">
+                    <label className="min-w-0 flex flex-col gap-1.5">
                         <span className={FIELD_LABEL}>Actor</span>
                         <input
                             type="text"
@@ -265,7 +265,7 @@ export function AdminAuditLogView({ viewerWallet }: AdminAuditLogViewProps) {
                         />
                     </label>
 
-                    <label className="flex flex-col gap-1.5">
+                    <label className="min-w-0 flex flex-col gap-1.5">
                         <span className={FIELD_LABEL}>Action</span>
                         <select
                             value={action}
@@ -281,7 +281,7 @@ export function AdminAuditLogView({ viewerWallet }: AdminAuditLogViewProps) {
                         </select>
                     </label>
 
-                    <label className="flex flex-col gap-1.5">
+                    <label className="min-w-0 flex flex-col gap-1.5">
                         <span className={FIELD_LABEL}>Target</span>
                         <input
                             type="text"
@@ -292,7 +292,7 @@ export function AdminAuditLogView({ viewerWallet }: AdminAuditLogViewProps) {
                         />
                     </label>
 
-                    <label className="flex flex-col gap-1.5">
+                    <label className="min-w-0 flex flex-col gap-1.5">
                         <span className={FIELD_LABEL}>From</span>
                         <input
                             type="date"
@@ -302,7 +302,7 @@ export function AdminAuditLogView({ viewerWallet }: AdminAuditLogViewProps) {
                         />
                     </label>
 
-                    <label className="flex flex-col gap-1.5">
+                    <label className="min-w-0 flex flex-col gap-1.5">
                         <span className={FIELD_LABEL}>To</span>
                         <input
                             type="date"

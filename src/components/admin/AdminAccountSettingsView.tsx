@@ -354,7 +354,7 @@ export function AdminAccountSettingsView({ viewerWallet }: { viewerWallet: strin
                                     </span>
                                 </div>
 
-                                <p className="font-mono text-[11px] text-slate-600">{matchedHold.address}</p>
+                                <p className="font-mono text-[11px] text-slate-600 [overflow-wrap:anywhere]">{matchedHold.address}</p>
 
                                 <dl className="space-y-1 text-[11px] text-slate-600">
                                     <div>
@@ -484,7 +484,7 @@ export function AdminAccountSettingsView({ viewerWallet }: { viewerWallet: strin
                             value={expiresAt}
                             min={minExpiry}
                             onChange={(e) => setExpiresAt(e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-[#0f172a] transition focus:border-[#2775ca] focus:outline-none sm:w-64"
+                            className="min-w-0 max-w-full w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-[#0f172a] transition focus:border-[#2775ca] focus:outline-none sm:w-64"
                         />
                     </div>
 

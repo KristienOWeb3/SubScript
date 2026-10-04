@@ -115,7 +115,7 @@ export function AdminOverviewDashboard({
   return (
     <div className="space-y-6">
       {/* KPI Stat Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-4">
         <StatCardWithSparkline
           label="Total Settled GMV"
           value={`$${totalVolumeStr}`}
@@ -173,7 +173,7 @@ export function AdminOverviewDashboard({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {kycPending > 0 && (
               <button
                 type="button"
@@ -233,8 +233,8 @@ export function AdminOverviewDashboard({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] px-3.5 py-2">
-          <code className="font-mono text-xs text-[#0f172a] truncate max-w-[220px] sm:max-w-xs">
+        <div className="flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] px-3.5 py-2">
+          <code className="min-w-0 font-mono text-xs text-[#0f172a] truncate max-w-[220px] sm:max-w-xs">
             {sponsor?.address || "Not configured (SPONSOR_PRIVATE_KEY)"}
           </code>
           {sponsor?.address && (
@@ -266,8 +266,8 @@ export function AdminOverviewDashboard({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative w-full sm:w-52">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="relative min-w-0 flex-1 basis-40 sm:w-52 sm:flex-none">
               <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-[#94a3b8]" />
               <input
                 type="text"

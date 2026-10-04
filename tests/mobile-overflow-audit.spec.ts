@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
-const baseURL = process.env.MOBILE_OVERFLOW_BASE_URL || "http://127.0.0.1:3000";
+const baseURL = process.env.MOBILE_OVERFLOW_BASE_URL || "http://localhost:3000";
 const merchantAddress = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
 const userAddress = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 const receiptId = "rcpt-11111111111111111111111111111111";
@@ -604,9 +604,9 @@ test.describe("mobile overflow audit", () => {
 
     await expect(mobilePage.getByRole("button", { name: "One Time", exact: true })).toHaveCSS("white-space", "nowrap");
 
-    /* The wireframe collapses the 46fr/54fr grid to a single column below lg, so the panel is
-       stacked underneath rather than removed. Funding the vault still lives behind the Commit
-       tab, so its call to action must not leak onto Home. */
+    /* The layout collapses the 46fr/54fr grid to a single column below lg and hides
+       the Active Subscriptions panel on tablet and mobile viewports. Funding the vault
+       still lives behind the Commit tab, so its call to action must not leak onto Home. */
     await expect(mobileLedgerTitle).toBeVisible();
     /* The wallet section's parent is the whole left column (wallet card + the two square cards),
        which is the edge the collapsed layout has to clear. */
@@ -661,6 +661,18 @@ test.describe("mobile overflow audit", () => {
     expect(overflowResult.horizontalProtrusions).toEqual([]);
     expect(overflowResult.fixedVerticalProtrusions).toEqual([]);
     await mobileContext.close();
+
+    const tabletContext = await newAuditContext(
+      browser,
+      { name: "tablet", width: 768, height: 1024 },
+      "user"
+    );
+    const tabletPage = await tabletContext.newPage();
+    await tabletPage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
+    await tabletPage.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+    const tabletSubscriptionsTitle = tabletPage.getByText("Active Subscriptions", { exact: true });
+    await expect(tabletSubscriptionsTitle).toBeHidden();
+    await tabletContext.close();
   });
 
   test("keeps both mobile DM bars visible while message history scrolls", async ({ browser }, testInfo) => {

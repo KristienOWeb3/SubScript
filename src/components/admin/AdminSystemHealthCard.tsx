@@ -214,7 +214,7 @@ export function AdminSystemHealthCard() {
   return (
     <div className="space-y-6">
       {/* Diagnostics and Node Telemetry Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-4">
         {/* Arc RPC Node Card */}
         <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between">
@@ -322,7 +322,7 @@ export function AdminSystemHealthCard() {
           </h4>
           <ul className="space-y-1 text-xs text-amber-800 list-disc list-inside">
             {data.diagnostics.configWarnings.map((w, idx) => (
-              <li key={idx} className="font-mono text-[11px]">{w}</li>
+              <li key={idx} className="font-mono text-[11px] [overflow-wrap:anywhere]">{w}</li>
             ))}
           </ul>
         </div>
@@ -370,7 +370,7 @@ export function AdminSystemHealthCard() {
                   : entry.offLabel;
 
             return (
-              <div key={entry.field} className="flex items-center justify-between gap-4 py-3">
+              <div key={entry.field} className="flex flex-wrap items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
                   <p id={`${entry.field}-label`} className="font-bold text-gray-900">{entry.title}</p>
                   <p id={`${entry.field}-description`} className="text-gray-500 text-[11px]">
@@ -423,7 +423,7 @@ export function AdminSystemHealthCard() {
         </div>
 
         {settingsData?.settings.updatedAt && (
-          <p className="text-[11px] text-gray-500">
+          <p className="break-all text-[11px] text-gray-500">
             Last changed {new Date(settingsData.settings.updatedAt).toLocaleString()}
             {settingsData.settings.updatedBy ? ` by ${settingsData.settings.updatedBy}` : ""}.
           </p>

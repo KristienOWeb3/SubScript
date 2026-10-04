@@ -327,10 +327,10 @@ const TABS: Array<{ id: TabId; label: string; rootOnly?: boolean }> = [
 const MERCHANT_INVITE_ONLY_CONFIRMATION = "invite only";
 
 const CARD =
-  "rounded-xl border border-[#e2e8f0] bg-white p-4 sm:p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]";
+  "min-w-0 rounded-xl border border-[#e2e8f0] bg-white p-4 sm:p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] [overflow-wrap:anywhere]";
 const LABEL = "text-[10px] font-black uppercase tracking-wider text-[#64748b]";
 const INPUT =
-  "w-full rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-2 text-xs text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#2775ca] focus:outline-none focus:ring-2 focus:ring-[#2775ca]/15";
+  "min-w-0 max-w-full w-full rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-2 text-xs text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#2775ca] focus:outline-none focus:ring-2 focus:ring-[#2775ca]/15";
 
 const SUPPORT_EMAIL = "support@subscriptonarc.com";
 export default function AdminDashboardPage() {
@@ -1293,7 +1293,7 @@ export default function AdminDashboardPage() {
     <div className="relative overflow-x-hidden bg-[#f8fafc] md:bg-[#353935] text-white font-sans min-h-[100vh] md:min-h-0 md:h-[100dvh] md:overflow-hidden">
       <div className="relative z-10 md:flex md:h-[100dvh] md:min-h-0">
         <DashboardSidebar
-          className="topo-admin-header"
+          className="hidden md:flex topo-admin-header"
           items={adminSidebarItems}
           footerItems={adminSidebarFooterItems}
           activeId={tab}
@@ -1317,10 +1317,10 @@ export default function AdminDashboardPage() {
             into its own scroll container — so an unconstrained child with overflow-y-auto
             just grows instead of scrolling, and touch drags went nowhere. The user
             dashboard already owns its mobile scroller this way; this matches it. */}
-        <div className="relative z-10 min-w-0 flex-1 h-[100dvh] md:mt-[14px] md:h-[calc(100vh-14px)] bg-white shadow-[-8px_0_24px_rgba(0,0,0,0.12)] md:rounded-tl-[32px] border-t border-l border-white/10 overflow-y-auto overscroll-y-contain admin-topography text-[#0f172a]">
+        <div className="relative z-10 min-w-0 flex-1 h-[100dvh] md:mt-[14px] md:h-[calc(100dvh-14px)] bg-white shadow-[-8px_0_24px_rgba(0,0,0,0.12)] md:rounded-tl-[32px] border-t border-l border-white/10 overflow-y-auto overscroll-y-contain admin-topography text-[#0f172a]">
           {/* Slim sticky top bar replacing the tall blue hero banner */}
-          <header className="sticky top-0 z-30 flex h-12 sm:h-14 items-center justify-between border-b border-[#e2e8f0] bg-white/95 px-4 sm:px-8 backdrop-blur-md text-[#0f172a] shadow-xs">
-            <div className="flex items-center gap-2.5 min-w-0">
+          <header className="sticky top-0 z-30 flex h-12 sm:h-14 items-center justify-between gap-3 border-b border-[#e2e8f0] bg-white/95 px-4 sm:px-8 backdrop-blur-md text-[#0f172a] shadow-xs">
+            <div className="flex flex-1 items-center gap-2.5 min-w-0">
               <button
                 type="button"
                 onClick={() => setMobileNavOpen(true)}
@@ -1333,16 +1333,16 @@ export default function AdminDashboardPage() {
                 <span className="md:hidden text-sm font-black text-[#0f172a] truncate max-w-[190px]">
                   {activeTabLabel}
                 </span>
-                <div className="hidden md:flex items-baseline gap-2.5">
-                  <h2 className="text-base font-black text-[#0f172a]">{activeTabLabel}</h2>
-                  <span className="hidden lg:inline text-xs text-[#64748b]">
+                <div className="hidden min-w-0 md:flex items-baseline gap-2.5">
+                  <h2 className="truncate text-base font-black text-[#0f172a]">{activeTabLabel}</h2>
+                  <span className="hidden 2xl:inline shrink-0 text-xs text-[#64748b]">
                     — Live administrative controls and auditable protocol operations.
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 onClick={() => setInspectorOpen(true)}
@@ -1385,7 +1385,7 @@ export default function AdminDashboardPage() {
               on a tab with almost no content. Invisible, being white on white, but it is the same
               vh-inside-dvh mistake as the black bar above. */}
           <main className="min-h-full pt-3 sm:pt-6 pb-16">
-            <div className="admin-workspace mx-auto max-w-6xl space-y-4 sm:space-y-6 px-4 py-2 sm:px-8">
+            <div className="admin-workspace mx-auto min-w-0 max-w-6xl space-y-4 sm:space-y-6 px-4 py-2 sm:px-8">
               {/* Mobile Navigation Sidebar Drawer (Matches desktop: #353935, topo-admin-header, #FFFFF0 active items) */}
               <AnimatePresence>
                 {mobileNavOpen && (
@@ -1444,7 +1444,7 @@ export default function AdminDashboardPage() {
                       </div>
 
                       {/* Scrollable Navigation Groups */}
-                      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         {adminNavGroups.map((group) => (
                           <div key={group.id} className="space-y-1">
                             <div className="flex items-center gap-1.5 px-2 pt-1 text-[10px] font-black uppercase tracking-wider text-white/80">
@@ -1731,7 +1731,7 @@ export default function AdminDashboardPage() {
                     status.
                   </p>
                 </div>
-                <div className="flex w-full gap-2 sm:w-auto">
+                <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto xl:flex-row">
                   <div className="relative flex-1 sm:w-56">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                     <input
@@ -1745,7 +1745,7 @@ export default function AdminDashboardPage() {
                   <select
                     value={kycStatusFilter}
                     onChange={(e) => setKycStatusFilter(e.target.value)}
-                    className={`${INPUT} w-auto`}
+                    className={`${INPUT} sm:w-auto`}
                   >
                     {[
                       "all",
@@ -1869,7 +1869,7 @@ export default function AdminDashboardPage() {
                                       [record.id]: e.target.value,
                                     }))
                                   }
-                                  className={`${INPUT} w-auto`}
+                                  className={`${INPUT} sm:w-auto`}
                                 >
                                   <option
                                     value=""
@@ -2116,7 +2116,7 @@ export default function AdminDashboardPage() {
                       className={`${INPUT} mt-1.5`}
                     />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="submit"
                       disabled={
@@ -2171,7 +2171,7 @@ export default function AdminDashboardPage() {
               </p>
 
               <form onSubmit={handleBan} className="mt-4 space-y-3 max-w-lg">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setBanType("ACCOUNT")}
@@ -2777,7 +2777,7 @@ export default function AdminDashboardPage() {
                   e.preventDefault();
                   grantMerchantAccess(maGrantEmail, { note: maGrantNote, displayName: maGrantDisplayName });
                 }}
-                className="flex flex-col gap-3 sm:flex-row sm:items-center"
+                className="grid grid-cols-1 gap-3 xl:grid-cols-2"
               >
                 <input
                   type="email"
@@ -2791,14 +2791,14 @@ export default function AdminDashboardPage() {
                   value={maGrantDisplayName}
                   onChange={(e) => setMaGrantDisplayName(e.target.value)}
                   placeholder="Merchant display name (shown on checkout)"
-                  className={`${INPUT} sm:w-64`}
+                  className={INPUT}
                 />
                 <input
                   type="text"
                   value={maGrantNote}
                   onChange={(e) => setMaGrantNote(e.target.value)}
                   placeholder="Note (optional)"
-                  className={`${INPUT} sm:w-56`}
+                  className={INPUT}
                 />
                 <button
                   type="submit"
@@ -3317,7 +3317,7 @@ export default function AdminDashboardPage() {
                   {admins.map((a) => (
                     <div
                       key={a.wallet}
-                      className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs"
+                      className="flex flex-col items-stretch gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         <Shield
@@ -3344,7 +3344,7 @@ export default function AdminDashboardPage() {
                                 e.preventDefault();
                                 handleUpdateAdminAlias(a.wallet);
                               }}
-                              className="mt-1.5 flex items-center gap-2"
+                              className="mt-1.5 flex flex-wrap items-center gap-2"
                             >
                               <input
                                 type="text"
@@ -3463,7 +3463,7 @@ export default function AdminDashboardPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
                         {a.tier === "delegated" && a.legacyFullScope && (
                           <span
                             className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-800"
