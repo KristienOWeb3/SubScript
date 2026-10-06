@@ -739,11 +739,13 @@ body {
   html {
     scroll-behavior: auto;
   }
-  .subscript-skeleton {
-    animation: pulse 2s ease-in-out infinite;
+  .subscript-skeleton,
+  .liquid-glass-skeleton {
+    animation: none;
   }
   .subscript-skeleton::after,
-  .liquid-glass-skeleton::after {
+  .liquid-glass-skeleton::after,
+  .admin-skeleton-shimmer::after {
     animation: none;
     display: none;
   }
@@ -782,12 +784,11 @@ body {
     transition-duration: 0.01ms !important;
   }
 
-  /* Re-asserted after the blanket rule, which would otherwise override the deliberate choice
-     above. A skeleton frozen mid-animation reads as a broken empty box rather than as loading.
-     This is an opacity fade with no travel, so it does not cause the vestibular discomfort the
-     blanket rule exists to prevent. */
-  .subscript-skeleton {
-    animation: pulse 2s ease-in-out infinite !important;
+  /* Loading status text remains available while placeholders stay still. */
+  .subscript-skeleton,
+  .liquid-glass-skeleton,
+  .admin-skeleton-shimmer {
+    animation: none !important;
   }
 
   /* The blanket rule ends the dot animation after one 0.01ms pass, which drops each dot back to

@@ -12,9 +12,10 @@ export default function SpendAnalysisRedirectPage() {
 
   return (
     <div
-      aria-label="Opening Spend Analysis"
+      role="status"
       className="min-h-screen bg-[#FFFFF0] px-4 pb-24 pt-20 text-black"
     >
+      <span className="sr-only">Opening spend analysis…</span>
       <div className="mx-auto w-full max-w-5xl space-y-5">
         <div className="h-8 w-52 rounded-lg subscript-skeleton" />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

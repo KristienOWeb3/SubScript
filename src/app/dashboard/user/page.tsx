@@ -41,6 +41,7 @@ import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 
 import NotificationBell from "@/components/dashboard/NotificationBell";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import UserDashboardLoading from "@/components/dashboard/UserDashboardLoading";
 import { useTheme } from "@/hooks/useTheme";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -4032,191 +4033,7 @@ export default function UserDashboard() {
   }, [selectedDmPeer, activeTab]);
 
   if (loading) {
-    return (
-      <div className={`user-dashboard-loading relative overflow-x-hidden bg-[#FFFFF0] dark:bg-[#060608] text-black dark:text-white font-sans ${
-        !isMobile ? "h-[100dvh] overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain"
-      }`}>
-        <div aria-hidden="true" className={`absolute inset-0 pointer-events-none z-0 bg-[#353935] ${!isMobile ? "block" : "hidden"}`} />
-        <div className={`relative z-10 ${!isMobile ? "flex h-[100dvh] min-h-0" : ""}`}>
-        {!isMobile && (
-          <DashboardSidebar
-            isLoading={true}
-            items={userDesktopTabs.map((tab) => ({
-              id: tab.id,
-              label: tab.label,
-              icon: tab.icon,
-            }))}
-            footerItems={[
-              { id: "dns", label: "Settings", icon: Settings },
-              { id: "support", label: "Help center", icon: HelpCircle },
-            ]}
-            activeId={activeTab}
-            onSelect={() => {}}
-            identity={{
-              label: "",
-              fallback: "",
-              onClick: () => {},
-            }}
-            accent="#FFFFF0"
-            panelColor="#353935"
-            ariaLabel="User dashboard loading"
-          />
-        )}
-
-        {/* Content Pane Skeleton — mirrors the mobile & desktop Home layout */}
-        <div className={`user-dashboard-content relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] dark:bg-[#060608] ${
-          !isMobile ? "mt-[14px] rounded-tl-[20px] border border-black/10 dark:border-white/10" : ""
-        } overflow-hidden ${
-          !isMobile ? "h-[calc(100dvh-14px)]" : "h-[100dvh]"
-        }`}>
-          {isMobile && (
-            <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
-              <div className="flex w-full max-w-md items-center justify-between px-1 py-2 pointer-events-auto">
-                <div
-                  aria-label="Loading profile"
-                  className="h-12 w-12 subscript-skeleton rounded-full shrink-0 shadow-sm"
-                />
-                <div className="flex items-center gap-2" aria-label="Loading account controls">
-                  <div className="h-9 w-9 subscript-skeleton rounded-full shrink-0" />
-                  <div className="h-9 w-9 subscript-skeleton rounded-full shrink-0" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <main className={`flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 ${!isMobile ? "pt-6 lg:pt-8 pb-12" : "pt-20 pb-28"}`}>
-            {/* Title Header on Desktop/Tablet */}
-            {!isMobile && (
-              <div className="flex items-center justify-between gap-6 mb-8 pb-6 border-b border-black/10 dark:border-white/10">
-                <div className="h-8 w-64 subscript-skeleton rounded-lg" />
-              </div>
-            )}
-
-            <div className="flex flex-col gap-5">
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
-                {/* LEFT: Balance card + Actions */}
-                <div className="flex flex-col gap-4 min-w-0">
-                  <div className={`flex flex-col items-center justify-center gap-4 px-3 py-3 text-center ${
-                    !isMobile ? "flex-row justify-between rounded-[20px] border border-black/35 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-4 sm:px-6 py-4 sm:py-[22px] text-left" : ""
-                  }`}>
-                    <div className={`flex flex-col items-center gap-2 ${!isMobile ? "items-start" : ""}`}>
-                      <div className="flex items-center gap-2">
-                        <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
-                        <div className="h-3.5 w-3.5 subscript-skeleton rounded-full" />
-                        <div className="h-3.5 w-3.5 subscript-skeleton rounded-full" />
-                      </div>
-                      <div className="h-10 w-48 subscript-skeleton rounded-2xl" />
-                      <div className="h-3 w-24 subscript-skeleton subscript-skeleton--faint rounded-full" />
-                    </div>
-                    <div className={`wallet-actions flex w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col md:gap-2.5 ${!isMobile ? "w-auto flex-col gap-2.5" : ""}`}>
-                      <div className={`h-11 min-w-0 flex-1 md:w-[130px] md:min-w-[130px] md:flex-none subscript-skeleton rounded-full ${!isMobile ? "w-[130px] min-w-[130px] flex-none" : ""}`} />
-                      <div className={`flex items-center gap-2 ${!isMobile ? "w-[130px] flex-none" : "flex-1 md:flex-none md:w-[130px]"}`}>
-                        <div className={`h-11 min-w-0 flex-1 md:w-[130px] md:min-w-[130px] subscript-skeleton rounded-full ${!isMobile ? "w-[130px] min-w-[130px]" : ""}`} />
-                        {isMobile && (
-                          <div className="flex md:hidden h-11 w-11 shrink-0 subscript-skeleton rounded-full" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-[minmax(0,42fr)_minmax(0,58fr)] sm:gap-3.5">
-                    <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 dark:border-white/15 p-3 sm:p-[18px]">
-                      <div className="space-y-2.5">
-                        <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
-                        <div className="h-3 w-8 subscript-skeleton subscript-skeleton--faint rounded-full" />
-                        <div className="h-6 w-24 subscript-skeleton rounded-lg" />
-                      </div>
-                      <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
-                    </div>
-                    <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 dark:border-white/15 p-3 sm:p-[18px]">
-                      <div className="space-y-2.5">
-                        <div className="h-2.5 w-20 subscript-skeleton rounded-full" />
-                        <div className="flex gap-3">
-                          <div className="h-6 w-16 subscript-skeleton rounded-lg" />
-                          <div className="h-6 w-16 subscript-skeleton rounded-lg" />
-                        </div>
-                      </div>
-                      <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* RIGHT: Active Subscriptions */}
-                {!isMobile && (
-                  <div className="hidden lg:flex min-h-[260px] h-full flex-col rounded-3xl border border-black/15 dark:border-white/15 bg-white/80 dark:bg-white/5 p-5 shadow-sm">
-                    <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-                      <div className="h-3 w-36 subscript-skeleton rounded-full" />
-                      <div className="h-5 w-16 subscript-skeleton rounded-full" />
-                    </div>
-                    <div className="flex-1 space-y-3 overflow-hidden">
-                      {[1, 2, 3].map((i) => (
-                        <div key={i} className="flex items-center justify-between py-2 border-b border-black/5 dark:border-white/5">
-                          <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 subscript-skeleton rounded-full" />
-                            <div className="space-y-1.5">
-                              <div className="h-3 w-28 subscript-skeleton rounded-full" />
-                              <div className="h-2 w-16 subscript-skeleton subscript-skeleton--faint rounded-full" />
-                            </div>
-                          </div>
-                          <div className="h-4 w-20 subscript-skeleton rounded-full" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Recent Transactions */}
-              <div className="dashboard-blue-panel min-h-[390px] rounded-[20px] border border-black/35 dark:border-white/15 p-5 text-black dark:text-white">
-                <div className="flex items-center justify-between">
-                  <div className="h-3 w-36 subscript-skeleton rounded-full" />
-                  <div className="h-4 w-16 subscript-skeleton rounded-full" />
-                </div>
-                <div className="dashboard-filter-scroll mt-4 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {[
-                    { label: "All", width: "w-14" },
-                    { label: "Subscriptions", width: "w-28" },
-                    { label: "One Time", width: "w-20" },
-                    { label: "Transfers", width: "w-20" },
-                    { label: "Withdrawals", width: "w-24" },
-                    { label: "Deposits", width: "w-20" },
-                  ].map((tab) => (
-                    <div key={tab.label} className={`h-7 ${tab.width} shrink-0 subscript-skeleton rounded-full`} />
-                  ))}
-                </div>
-                <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <div key={i} className="flex items-center gap-3 py-3">
-                      <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="h-3 w-32 subscript-skeleton rounded-full" />
-                        <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
-                      </div>
-                      <div className="shrink-0 space-y-1.5 text-right">
-                        <div className="h-3.5 w-16 subscript-skeleton rounded-full ml-auto" />
-                        <div className="h-2 w-12 subscript-skeleton subscript-skeleton--faint rounded-full ml-auto" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </main>
-        </div>
-        </div>
-
-        {/* Mobile Bottom Bar Skeleton */}
-        {isMobile && (
-          <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2">
-            <div className="flex h-[60.6375px] flex-1 items-center justify-around rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-3 backdrop-blur-2xl">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
-              ))}
-            </div>
-            <div className="h-[60.6375px] w-[60.6375px] shrink-0 rounded-full subscript-skeleton" />
-          </div>
-        )}
-      </div>
-    );
+    return <UserDashboardLoading items={userDesktopTabs} activeTab={activeTab} />;
   }
 
   if (redirectMessage) {
@@ -6634,7 +6451,8 @@ export default function UserDashboard() {
 
                       {/* Skeleton State */}
                       {isRefreshingBalances ? (
-                        <div className="space-y-6 animate-pulse">
+                        <div role="status" className="space-y-6 animate-pulse motion-reduce:animate-none">
+                          <span className="sr-only">Loading balances…</span>
                           <div className="h-44 rounded-3xl bg-black/5 border border-black/10 p-6 space-y-4">
                             <div className="h-4 w-28 rounded bg-black/10" />
                             <div className="h-10 w-44 rounded-lg bg-black/10" />
@@ -7517,7 +7335,8 @@ export default function UserDashboard() {
 
                         {/* Next-page loader, shared by the table and the card stack. */}
                         {settingsTxLoadingMore && (
-                          <div className="space-y-3" aria-hidden="true">
+                          <div role="status" className="space-y-3">
+                            <span className="sr-only">Loading more transactions…</span>
                             {Array.from({ length: 4 }).map((_, index) => (
                               <div
                                 key={index}
@@ -9250,7 +9069,8 @@ function OpenedDmSkeleton({
 }) {
   if (isMerchant) {
     return (
-      <div className="flex flex-col h-full min-h-0 overflow-hidden bg-[#FFFFF0] dark:bg-[#060608] sm:bg-transparent" data-testid="opened-dm-skeleton">
+      <div className="flex flex-col h-full min-h-0 overflow-hidden bg-[#FFFFF0] dark:bg-[#060608] sm:bg-transparent" data-testid="opened-dm-skeleton" role="status">
+      <span className="sr-only">Loading conversation…</span>
         {/* 1. Header Bar Skeleton */}
         <div className="shrink-0 z-20 flex items-center justify-between gap-3 border-b border-black/10 dark:border-white/10 bg-white/95 dark:bg-[#131522]/95 px-4 py-3 sm:py-3.5 shadow-xs backdrop-blur-md text-black dark:text-white sm:rounded-2xl sm:border sm:m-1">
           <div className="flex items-center gap-3 min-w-0">
@@ -9264,19 +9084,19 @@ function OpenedDmSkeleton({
                 <ArrowLeft className="h-4 w-4" />
               </button>
             )}
-            <div className="h-10 w-10 aspect-square rounded-full subscript-skeleton shrink-0" />
+            <div className="h-10 w-10 aspect-square rounded-full max-w-full subscript-skeleton shrink-0" />
             <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-1.5">
-                <div className="h-3.5 w-28 rounded-md subscript-skeleton" />
-                <div className="h-3 w-3 rounded-full subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-3.5 w-28 rounded-md max-w-full subscript-skeleton" />
+                <div className="h-3 w-3 rounded-full max-w-full subscript-skeleton subscript-skeleton--faint" />
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full subscript-skeleton subscript-skeleton--faint" />
-                <div className="h-2.5 w-20 rounded subscript-skeleton subscript-skeleton--faint" />
+                <span className="h-2 w-2 rounded-full max-w-full subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-2.5 w-20 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
               </div>
             </div>
           </div>
-          <div className="h-6 w-16 rounded-full subscript-skeleton subscript-skeleton--faint" />
+          <div className="h-6 w-16 rounded-full max-w-full subscript-skeleton subscript-skeleton--faint" />
         </div>
 
         {/* 2. Scrollable Body Skeleton */}
@@ -9284,21 +9104,21 @@ function OpenedDmSkeleton({
           {/* Plan Summary Card Skeleton */}
           <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#131522] p-4 sm:p-5 shadow-xs space-y-4">
             <div className="flex items-start justify-between gap-3 border-b border-black/5 dark:border-white/5 pb-3">
-              <div className="space-y-1.5">
+              <div className="min-w-0 space-y-1.5">
                 <div className="h-2 w-24 rounded bg-[#2775CA]/30 dark:bg-[#2775CA]/20" />
-                <div className="h-4.5 w-36 rounded-md subscript-skeleton" />
+                <div className="h-4.5 w-36 rounded-md max-w-full subscript-skeleton" />
               </div>
-              <div className="h-5 w-20 rounded-full subscript-skeleton subscript-skeleton--faint border border-slate-200 dark:border-white/10" />
+              <div className="h-5 w-20 rounded-full max-w-full subscript-skeleton subscript-skeleton--faint border border-slate-200 dark:border-white/10" />
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-1">
-              <div className="space-y-1.5">
-                <div className="h-2 w-16 rounded subscript-skeleton subscript-skeleton--faint" />
-                <div className="h-4 w-28 rounded subscript-skeleton" />
+              <div className="min-w-0 space-y-1.5">
+                <div className="h-2 w-16 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-4 w-28 rounded max-w-full subscript-skeleton" />
               </div>
-              <div className="space-y-1.5">
-                <div className="h-2 w-16 rounded subscript-skeleton subscript-skeleton--faint" />
-                <div className="h-4 w-24 rounded subscript-skeleton" />
+              <div className="min-w-0 space-y-1.5">
+                <div className="h-2 w-16 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-4 w-24 rounded max-w-full subscript-skeleton" />
               </div>
             </div>
           </div>
@@ -9306,8 +9126,8 @@ function OpenedDmSkeleton({
           {/* Receipts / History Timeline Skeleton */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
-              <div className="h-3 w-32 rounded subscript-skeleton" />
-              <div className="h-2 w-12 rounded subscript-skeleton subscript-skeleton--faint" />
+              <div className="h-3 w-32 rounded max-w-full subscript-skeleton" />
+              <div className="h-2 w-12 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
             </div>
             {[1, 2, 3].map((i) => (
               <div
@@ -9315,15 +9135,15 @@ function OpenedDmSkeleton({
                 className="rounded-2xl border border-black/5 dark:border-white/5 bg-white/70 dark:bg-white/[0.04] p-3.5 flex items-center justify-between gap-3 shadow-xs"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-8 w-8 rounded-xl subscript-skeleton shrink-0" />
+                  <div className="h-8 w-8 rounded-xl max-w-full subscript-skeleton shrink-0" />
                   <div className="space-y-1.5 min-w-0">
-                    <div className="h-3 w-28 rounded subscript-skeleton" />
-                    <div className="h-2 w-20 rounded subscript-skeleton subscript-skeleton--faint" />
+                    <div className="h-3 w-28 rounded max-w-full subscript-skeleton" />
+                    <div className="h-2 w-20 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
                   </div>
                 </div>
                 <div className="text-right space-y-1.5 shrink-0">
-                  <div className="h-3.5 w-16 rounded subscript-skeleton ml-auto" />
-                  <div className="h-2 w-12 rounded subscript-skeleton subscript-skeleton--faint ml-auto" />
+                  <div className="h-3.5 w-16 rounded max-w-full subscript-skeleton ml-auto" />
+                  <div className="h-2 w-12 rounded max-w-full subscript-skeleton subscript-skeleton--faint ml-auto" />
                 </div>
               </div>
             ))}
@@ -9335,9 +9155,9 @@ function OpenedDmSkeleton({
           <div className="flex items-center justify-between gap-3 p-1">
             <div className="space-y-1 min-w-0 flex-1">
               <div className="h-2 w-24 rounded bg-[#2775CA]/30 dark:bg-[#2775CA]/20" />
-              <div className="h-3.5 w-36 rounded subscript-skeleton" />
+              <div className="h-3.5 w-36 rounded max-w-full subscript-skeleton" />
             </div>
-            <div className="h-8 w-24 rounded-full subscript-skeleton shrink-0" />
+            <div className="h-8 w-24 rounded-full max-w-full subscript-skeleton shrink-0" />
           </div>
         </div>
       </div>
@@ -9346,7 +9166,8 @@ function OpenedDmSkeleton({
 
   // Regular Peer DM Skeleton
   return (
-    <div className={`flex flex-col h-full justify-between overflow-hidden animate-pulse ${isMobile ? "pt-20" : ""}`} data-testid="opened-dm-skeleton">
+    <div className={`flex flex-col h-full justify-between overflow-hidden animate-pulse motion-reduce:animate-none ${isMobile ? "pt-20" : ""}`} data-testid="opened-dm-skeleton" role="status">
+      <span className="sr-only">Loading conversation…</span>
       {/* Desktop / Tablet Chat Header Skeleton */}
       {!isMobile && (
         <div className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl mb-2">
@@ -9362,7 +9183,7 @@ function OpenedDmSkeleton({
               </button>
             )}
             <div className="h-9 w-9 aspect-square rounded-full bg-white/10 shrink-0" />
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
               <div className="h-3 w-28 rounded bg-white/20" />
               <div className="h-2 w-16 rounded bg-white/10" />
             </div>
@@ -9405,7 +9226,7 @@ function OpenedDmSkeleton({
         {/* Incoming payment bubble */}
         <div className="flex items-start gap-2.5 max-w-[80%] mr-auto">
           <div className="h-7 w-7 aspect-square rounded-full bg-white/10 shrink-0 mt-1" />
-          <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/10 p-4 space-y-2 w-60">
+          <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/10 p-4 min-w-0 max-w-full space-y-2 w-60">
             <div className="h-2.5 w-20 rounded bg-white/20" />
             <div className="h-4 w-32 rounded bg-white/30" />
             <div className="h-2 w-16 rounded bg-white/15" />
@@ -9414,7 +9235,7 @@ function OpenedDmSkeleton({
 
         {/* Outgoing payment bubble */}
         <div className="flex items-end justify-end max-w-[80%] ml-auto">
-          <div className="rounded-2xl rounded-tr-sm border border-[#2775CA]/30 bg-[#2775CA]/20 p-4 space-y-2 w-60 text-right">
+          <div className="rounded-2xl rounded-tr-sm border border-[#2775CA]/30 bg-[#2775CA]/20 p-4 min-w-0 max-w-full space-y-2 w-60 text-right">
             <div className="h-2.5 w-16 rounded bg-[#2775CA]/40 ml-auto" />
             <div className="h-4 w-32 rounded bg-white/30 ml-auto" />
             <div className="h-2 w-12 rounded bg-[#2775CA]/30 ml-auto" />
@@ -9424,7 +9245,7 @@ function OpenedDmSkeleton({
         {/* Incoming note bubble */}
         <div className="flex items-start gap-2.5 max-w-[80%] mr-auto">
           <div className="h-7 w-7 aspect-square rounded-full bg-white/10 shrink-0 mt-1" />
-          <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/10 p-3 space-y-1.5 w-48">
+          <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/10 p-3 min-w-0 max-w-full space-y-1.5 w-48">
             <div className="h-3 w-32 rounded bg-white/20" />
             <div className="h-2 w-20 rounded bg-white/15" />
           </div>
@@ -11336,7 +11157,8 @@ function BalanceRoutingNotice({
 
 function VaultCardSkeleton() {
   return (
-    <div className="flex min-h-[360px] w-full min-w-full shrink-0 snap-center flex-col gap-4 rounded-3xl border border-black/20 dark:border-white/10 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 p-4 text-black dark:text-white sm:p-5">
+    <div role="status" className="flex min-h-[360px] w-full min-w-full shrink-0 snap-center flex-col gap-4 rounded-3xl border border-black/20 dark:border-white/10 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 p-4 text-black dark:text-white sm:p-5">
+      <span className="sr-only">Loading vault…</span>
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex min-w-0 max-w-full flex-1 items-center gap-3">
           <div className="h-11 w-11 rounded-2xl subscript-skeleton shrink-0" />
@@ -11376,7 +11198,8 @@ function VaultCardSkeleton() {
    swap to real content doesn't shift layout. */
 function ReferralsSkeleton() {
   return (
-    <>
+    <div role="status" className="space-y-6">
+      <span className="sr-only">Loading referrals…</span>
       <div className="border border-black/15 dark:border-white/10 bg-white dark:bg-[#131522]/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
         <div className="h-3.5 w-40 rounded-md subscript-skeleton" />
         <div className="space-y-2">
@@ -11422,7 +11245,7 @@ function ReferralsSkeleton() {
           ))}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -12108,16 +11931,17 @@ function SubscribeReviewModal({
 
 function SpendAnalysisSkeleton() {
   return (
-    <div className="space-y-6" data-testid="spend-analysis-skeleton">
+    <div role="status" className="space-y-6" data-testid="spend-analysis-skeleton">
+      <span className="sr-only">Loading spending analysis…</span>
       {/* Header controls skeleton */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-black/10 dark:border-white/10">
-        <div className="space-y-2">
-          <div className="h-6 w-48 rounded-xl subscript-skeleton" />
-          <div className="h-3 w-64 rounded-lg subscript-skeleton subscript-skeleton--faint" />
+        <div className="min-w-0 max-w-full space-y-2">
+          <div className="h-6 w-48 rounded-xl max-w-full subscript-skeleton" />
+          <div className="h-3 w-64 rounded-lg max-w-full subscript-skeleton subscript-skeleton--faint" />
         </div>
         <div className="flex items-center gap-2">
-          <div className="h-9 w-24 rounded-full subscript-skeleton" />
-          <div className="h-9 w-24 rounded-full subscript-skeleton" />
+          <div className="h-9 w-24 rounded-full max-w-full subscript-skeleton" />
+          <div className="h-9 w-24 rounded-full max-w-full subscript-skeleton" />
         </div>
       </div>
 
@@ -12126,11 +11950,11 @@ function SpendAnalysisSkeleton() {
         {[1, 2, 3, 4].map((i) => (
           <div key={i} className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-5 space-y-3 shadow-sm">
             <div className="flex items-center justify-between">
-              <div className="h-3 w-24 rounded subscript-skeleton subscript-skeleton--faint" />
-              <div className="h-8 w-8 rounded-2xl subscript-skeleton" />
+              <div className="h-3 w-24 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
+              <div className="h-8 w-8 rounded-2xl max-w-full subscript-skeleton" />
             </div>
-            <div className="h-8 w-32 rounded-xl subscript-skeleton" />
-            <div className="h-3 w-20 rounded subscript-skeleton subscript-skeleton--faint" />
+            <div className="h-8 w-32 rounded-xl max-w-full subscript-skeleton" />
+            <div className="h-3 w-20 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
           </div>
         ))}
       </div>
@@ -12139,15 +11963,15 @@ function SpendAnalysisSkeleton() {
       <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-6 space-y-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="space-y-1.5">
-            <div className="h-4 w-40 rounded-lg subscript-skeleton" />
-            <div className="h-3 w-56 rounded subscript-skeleton subscript-skeleton--faint" />
+            <div className="h-4 w-40 rounded-lg max-w-full subscript-skeleton" />
+            <div className="h-3 w-56 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
           </div>
-          <div className="h-6 w-28 rounded-full subscript-skeleton" />
+          <div className="h-6 w-28 rounded-full max-w-full subscript-skeleton" />
         </div>
         <div className="h-44 w-full rounded-2xl bg-black/5 dark:bg-white/[0.03] flex items-end justify-between p-4 gap-3">
           {[40, 65, 30, 85, 50, 70].map((h, idx) => (
             <div key={idx} className="min-w-0 flex-1 flex flex-col items-center gap-2 h-full justify-end">
-              <div className="w-full rounded-t-xl subscript-skeleton" style={{ height: `${h}%` }} />
+              <div className="w-full rounded-t-xl max-w-full subscript-skeleton" style={{ height: `${h}%` }} />
               <div className="h-3 w-8 max-w-full rounded subscript-skeleton subscript-skeleton--faint" />
             </div>
           ))}
@@ -12157,29 +11981,29 @@ function SpendAnalysisSkeleton() {
       {/* Insights & Categories Skeleton */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-6 space-y-4 shadow-sm">
-          <div className="h-4 w-36 rounded-lg subscript-skeleton" />
+          <div className="h-4 w-36 rounded-lg max-w-full subscript-skeleton" />
           <div className="space-y-3 pt-2">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/[0.03]">
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-xl subscript-skeleton" />
-                  <div className="h-3 w-28 rounded subscript-skeleton" />
+                  <div className="h-8 w-8 rounded-xl max-w-full subscript-skeleton" />
+                  <div className="h-3 w-28 rounded max-w-full subscript-skeleton" />
                 </div>
-                <div className="h-4 w-16 rounded subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-4 w-16 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
               </div>
             ))}
           </div>
         </div>
         <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-[#131522]/80 p-6 space-y-4 shadow-sm">
-          <div className="h-4 w-36 rounded-lg subscript-skeleton" />
+          <div className="h-4 w-36 rounded-lg max-w-full subscript-skeleton" />
           <div className="space-y-3 pt-2">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/[0.03]">
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-full subscript-skeleton" />
-                  <div className="h-3 w-32 rounded subscript-skeleton" />
+                  <div className="h-8 w-8 rounded-full max-w-full subscript-skeleton" />
+                  <div className="h-3 w-32 rounded max-w-full subscript-skeleton" />
                 </div>
-                <div className="h-4 w-20 rounded subscript-skeleton subscript-skeleton--faint" />
+                <div className="h-4 w-20 rounded max-w-full subscript-skeleton subscript-skeleton--faint" />
               </div>
             ))}
           </div>
@@ -12191,20 +12015,21 @@ function SpendAnalysisSkeleton() {
 
 function SettingsTransactionsSkeleton() {
   return (
-    <div className="space-y-6" data-testid="transactions-skeleton">
+    <div role="status" className="space-y-6" data-testid="transactions-skeleton">
+      <span className="sr-only">Loading transactions…</span>
       {/* Header controls & filter bar skeleton */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-black/10 dark:border-white/10">
-        <div className="space-y-2">
-          <div className="h-6 w-48 rounded-xl subscript-skeleton" />
-          <div className="h-3 w-64 rounded-lg subscript-skeleton subscript-skeleton--faint" />
+        <div className="min-w-0 max-w-full space-y-2">
+          <div className="h-6 w-48 rounded-xl max-w-full subscript-skeleton" />
+          <div className="h-3 w-64 rounded-lg max-w-full subscript-skeleton subscript-skeleton--faint" />
         </div>
-        <div className="h-10 w-full sm:w-64 rounded-2xl subscript-skeleton" />
+        <div className="h-10 w-full sm:w-64 rounded-2xl max-w-full subscript-skeleton" />
       </div>
 
       {/* Filter pills skeleton */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2">
         {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-8 w-24 rounded-full subscript-skeleton shrink-0" />
+          <div key={i} className="h-8 w-24 rounded-full max-w-full subscript-skeleton shrink-0" />
         ))}
       </div>
 
@@ -12213,15 +12038,15 @@ function SettingsTransactionsSkeleton() {
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <div key={i} className="flex min-w-0 items-center justify-between gap-3 p-4 rounded-2xl border border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="h-10 w-10 rounded-full subscript-skeleton shrink-0" />
+              <div className="h-10 w-10 rounded-full max-w-full subscript-skeleton shrink-0" />
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="h-4 w-36 sm:w-48 max-w-full rounded subscript-skeleton" />
                 <div className="h-3 w-24 sm:w-32 max-w-full rounded subscript-skeleton subscript-skeleton--faint" />
               </div>
             </div>
             <div className="shrink-0 text-right space-y-1.5">
-              <div className="h-4 w-20 rounded subscript-skeleton ml-auto" />
-              <div className="h-3 w-14 rounded subscript-skeleton subscript-skeleton--faint ml-auto" />
+              <div className="h-4 w-20 rounded max-w-full subscript-skeleton ml-auto" />
+              <div className="h-3 w-14 rounded max-w-full subscript-skeleton subscript-skeleton--faint ml-auto" />
             </div>
           </div>
         ))}

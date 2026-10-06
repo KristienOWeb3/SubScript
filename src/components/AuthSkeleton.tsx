@@ -1,6 +1,7 @@
 export default function AuthSkeleton({ title = "portal", subtitle = "Loading..." }: { title?: string; subtitle?: string }) {
   return (
-    <div className="subscript-checkout min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black flex items-center justify-center p-4 sm:p-6 relative font-sans">
+    <div className="subscript-checkout min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black flex items-center justify-center p-4 sm:p-6 relative font-sans" role="status">
+      <span className="sr-only">{title}: {subtitle}</span>
       <div className="relative z-10 w-full max-w-md">
         {/* Header skeleton */}
         <div className="text-center mb-8 space-y-2 flex flex-col items-center">
@@ -15,8 +16,8 @@ export default function AuthSkeleton({ title = "portal", subtitle = "Loading..."
         <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-6 relative overflow-hidden">
           {/* Card title & subtitle skeleton */}
           <div className="space-y-2 text-center flex flex-col items-center">
-            <div className="h-5 w-48 rounded-xl subscript-skeleton" />
-            <div className="h-3 w-64 rounded-md subscript-skeleton" />
+            <div className="h-5 w-48 max-w-full rounded-xl subscript-skeleton" />
+            <div className="h-3 w-64 max-w-full rounded-md subscript-skeleton" />
           </div>
 
           {/* Input field skeleton */}

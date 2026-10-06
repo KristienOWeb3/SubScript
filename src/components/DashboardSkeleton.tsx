@@ -6,28 +6,14 @@ import Skeleton from "./ui/Skeleton";
 interface DashboardSkeletonProps {
     activeTab: "overview" | "advanced" | "apikeys" | "checkout" | "webhooks" | "payment-links" | "plans" | "settings" | "payroll" | "offramp" | "commit" | "vaults" | "one-time" | string;
     isConnected?: boolean;
-    isMobile?: boolean;
 }
 
-export default function DashboardSkeleton({ activeTab, isMobile: isMobileProp }: DashboardSkeletonProps) {
-    const [isMobileScreen, setIsMobileScreen] = React.useState(() => {
-        if (typeof window === "undefined") return false;
-        return window.innerWidth < 768;
-    });
-
-    React.useEffect(() => {
-        if (typeof window === "undefined") return;
-        const handleResize = () => setIsMobileScreen(window.innerWidth < 768);
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
-    }, []);
-
-    const isMobile = isMobileProp !== undefined ? isMobileProp : isMobileScreen;
+export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
     const renderContentSkeleton = () => {
         switch (activeTab) {
             case "overview":
                 return (
-                    <div className={`@container/overview min-w-0 max-w-[1340px] mx-auto space-y-4 sm:space-y-5 ${!isMobile ? "pb-6" : "pb-20"} text-black text-sm font-sans`}>
+                    <div className="@container/overview min-w-0 max-w-[1340px] mx-auto space-y-4 sm:space-y-5 pb-20 md:pb-6 text-black text-sm font-sans">
                         {/* Top 4 Stat Cards */}
                         <div className="grid grid-cols-1 gap-4 @[560px]/overview:grid-cols-2 @[1120px]/overview:grid-cols-4 sm:gap-5">
                             {/* Card 1: Spendable */}
@@ -548,13 +534,13 @@ export default function DashboardSkeleton({ activeTab, isMobile: isMobileProp }:
             case "home":
             case "user":
                 return (
-                    <div className={`max-w-7xl mx-auto space-y-5 ${!isMobile ? "pb-6" : "pb-20"} text-black dark:text-white text-sm font-sans`}>
+                    <div className="max-w-7xl mx-auto space-y-5 pb-20 md:pb-6 text-black dark:text-white text-sm font-sans">
                         <div className="flex flex-col gap-5">
                             <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
                                 {/* LEFT: Balance card + Actions */}
                                 <div className="flex flex-col gap-4 min-w-0">
-                                    <div className={`flex flex-col items-center justify-center gap-4 px-3 py-3 text-center ${!isMobile ? "flex-row justify-between rounded-[20px] border border-black/35 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-4 sm:px-6 py-4 sm:py-[22px] text-left" : ""}`}>
-                                        <div className={`flex flex-col items-center gap-2 ${!isMobile ? "items-start" : ""}`}>
+                                    <div className="flex min-w-0 flex-col items-center justify-center gap-4 px-3 py-3 text-center md:flex-wrap md:flex-row md:justify-between md:rounded-[20px] md:border md:border-black/35 dark:md:border-white/15 md:bg-[#2775CA]/20 dark:md:bg-[#2775CA]/10 md:px-6 md:py-[22px] md:text-left">
+                                        <div className="flex flex-col items-center gap-2 md:items-start">
                                             <div className="flex items-center gap-2">
                                                 <Skeleton className="h-3 w-24 rounded-full" />
                                                 <Skeleton circle className="h-3.5 w-3.5" />
@@ -563,11 +549,11 @@ export default function DashboardSkeleton({ activeTab, isMobile: isMobileProp }:
                                             <Skeleton className="h-10 w-48 rounded-2xl" />
                                             <Skeleton className="h-3 w-24 rounded-full" />
                                         </div>
-                                        <div className={`wallet-actions flex w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col md:gap-2.5 ${!isMobile ? "w-auto flex-col gap-2.5" : ""}`}>
-                                            <Skeleton className={`h-11 min-w-0 flex-1 md:w-[130px] md:min-w-[130px] md:flex-none rounded-full ${!isMobile ? "w-[130px] min-w-[130px] flex-none" : ""}`} />
-                                            <div className={`flex items-center gap-2 ${!isMobile ? "w-[130px] flex-none" : "flex-1 md:flex-none md:w-[130px]"}`}>
-                                                <Skeleton className={`h-11 min-w-0 flex-1 md:w-[130px] md:min-w-[130px] rounded-full ${!isMobile ? "w-[130px] min-w-[130px]" : ""}`} />
-                                                {isMobile && (<Skeleton className="flex md:hidden h-11 w-11 shrink-0 rounded-full" />)}
+                                        <div className="wallet-actions flex w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col md:gap-2.5">
+                                            <Skeleton className="h-11 min-w-0 flex-1 md:w-[130px] md:min-w-[130px] md:flex-none rounded-full" />
+                                            <div className="flex items-center gap-2 flex-1 md:flex-none md:w-[130px]">
+                                                <Skeleton className="h-11 min-w-0 flex-1 md:w-[130px] md:min-w-[130px] rounded-full" />
+                                                <Skeleton className="flex md:hidden h-11 w-11 shrink-0 rounded-full" />
                                             </div>
                                         </div>
                                     </div>
@@ -594,7 +580,6 @@ export default function DashboardSkeleton({ activeTab, isMobile: isMobileProp }:
                                 </div>
 
                                 {/* RIGHT: Active Subscriptions */}
-                                {!isMobile && (
                                 <div className="hidden lg:flex min-h-[260px] h-full flex-col rounded-3xl border border-black/15 dark:border-white/15 bg-white/80 dark:bg-white/5 p-5 shadow-sm">
                                     <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
                                         <Skeleton className="h-3.5 w-36 rounded-full" />
@@ -615,7 +600,6 @@ export default function DashboardSkeleton({ activeTab, isMobile: isMobileProp }:
                                         ))}
                                     </div>
                                 </div>
-                                )}
                             </div>
 
                             {/* Recent Transactions */}
@@ -667,7 +651,8 @@ export default function DashboardSkeleton({ activeTab, isMobile: isMobileProp }:
     };
 
     return (
-        <div className="w-full">
+        <div role="status" className="min-w-0 w-full">
+            <span className="sr-only">Loading dashboard…</span>
             {renderContentSkeleton()}
         </div>
     );

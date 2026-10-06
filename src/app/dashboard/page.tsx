@@ -2602,12 +2602,13 @@ Please complete the following implementation tasks:
                             </div>
                         )}
                         {isLinksLoading && paymentLinks.length === 0 ? (
-                            <div className="space-y-3 py-3 animate-pulse">
+                            <div role="status" aria-label="Loading payment links" className="space-y-3 py-3 animate-pulse motion-reduce:animate-none">
+                                <span className="sr-only">Loading payment links…</span>
                                 {Array.from({ length: 3 }).map((_, i) => (
-                                    <div key={i} className="flex justify-between items-center bg-black/5 border border-black/5 rounded-2xl p-4">
-                                        <div className="space-y-1.5">
-                                            <div className="h-4 w-32 rounded bg-black/15" />
-                                            <div className="h-3 w-20 rounded bg-black/10" />
+                                    <div key={i} className="flex justify-between items-center gap-3 bg-black/5 border border-black/5 rounded-2xl p-4">
+                                        <div className="min-w-0 space-y-1.5">
+                                            <div className="h-4 w-32 max-w-full rounded bg-black/15" />
+                                            <div className="h-3 w-20 max-w-full rounded bg-black/10" />
                                         </div>
                                         <div className="h-4 w-16 rounded bg-black/15" />
                                         <div className="h-6 w-20 rounded-xl bg-black/10" />
@@ -3065,22 +3066,23 @@ Please complete the following implementation tasks:
     const renderSettingsTab = () => {
         if (!userSettings) {
             return (
-                <div className="w-full max-w-5xl space-y-8 font-sans text-black">
+                <div role="status" aria-label="Loading merchant settings" className="w-full min-w-0 max-w-5xl space-y-8 font-sans text-black">
+                    <span className="sr-only">Loading merchant settings…</span>
                     <div className="space-y-2">
-                        <Skeleton className="h-7 sm:h-8 w-60 rounded-xl" />
+                        <Skeleton className="h-7 sm:h-8 w-60 max-w-full rounded-xl" />
                         <Skeleton className="h-4 w-80 max-w-full rounded-full" />
                     </div>
                     <div className="border border-black/10 bg-[#FFFFF0] rounded-[34px] p-4 space-y-2 shadow-sm">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                            <div key={i} className="p-4 rounded-2xl flex items-center justify-between subscript-skeleton">
-                                <div className="flex items-center gap-3.5">
-                                    <div className="w-11 h-11 rounded-2xl bg-[#082824]/10" />
-                                    <div className="space-y-1.5">
-                                        <div className="h-4 w-36 rounded-full bg-[#082824]/20" />
-                                        <div className="h-3 w-56 rounded-full bg-black/10" />
+                            <div key={i} className="p-4 rounded-2xl flex items-center justify-between gap-3 subscript-skeleton">
+                                <div className="flex min-w-0 flex-1 items-center gap-3.5">
+                                    <div className="w-11 h-11 shrink-0 rounded-2xl bg-[#082824]/10" />
+                                    <div className="min-w-0 space-y-1.5">
+                                        <div className="h-4 w-36 max-w-full rounded-full bg-[#082824]/20" />
+                                        <div className="h-3 w-56 max-w-full rounded-full bg-black/10" />
                                     </div>
                                 </div>
-                                <div className="w-5 h-5 rounded-full bg-black/10" />
+                                <div className="w-5 h-5 shrink-0 rounded-full bg-black/10" />
                             </div>
                         ))}
                     </div>
@@ -4132,7 +4134,8 @@ Please complete the following implementation tasks:
                         </div>
 
                         {isVaultsLoading ? (
-                            <div className="space-y-3 animate-pulse">
+                            <div role="status" aria-label="Loading customer escrows" className="space-y-3 animate-pulse motion-reduce:animate-none">
+                                <span className="sr-only">Loading customer escrows…</span>
                                 {Array.from({ length: 2 }).map((_, i) => (
                                     <div key={i} className="rounded-2xl border border-black/10 bg-black/5 p-5 space-y-3">
                                         <div className="flex justify-between items-center">

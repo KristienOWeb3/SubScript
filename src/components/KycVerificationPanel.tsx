@@ -221,12 +221,13 @@ export default function KycVerificationPanel({
             </div>
 
             {loading ? (
-                <div className="mt-6 space-y-4 animate-pulse">
+                <div role="status" aria-label="Loading verification status" className="mt-6 space-y-4 animate-pulse motion-reduce:animate-none">
+                    <span className="sr-only">Loading verification status…</span>
                     <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                         <div className="h-4 w-4 rounded-full bg-white/15 shrink-0" />
-                        <div className="space-y-2 flex-1">
-                            <div className="h-4 w-40 rounded bg-white/15" />
-                            <div className="h-3 w-64 rounded bg-white/10" />
+                        <div className="min-w-0 space-y-2 flex-1">
+                            <div className="h-4 w-40 max-w-full rounded bg-white/15" />
+                            <div className="h-3 w-64 max-w-full rounded bg-white/10" />
                         </div>
                     </div>
                 </div>

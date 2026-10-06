@@ -269,6 +269,7 @@ export default function MerchantOverview({
 
     return (
         <div className="@container/overview min-w-0 max-w-[1340px] mx-auto space-y-4 sm:space-y-5 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6 text-black text-sm">
+            {isInitialLoading && <span className="sr-only" role="status">Loading merchant overview…</span>}
             {/* Top 4 Stat Cards Row */}
             <div className="grid grid-cols-1 gap-4 @[560px]/overview:grid-cols-2 @[1120px]/overview:grid-cols-4 sm:gap-5">
                 {/* 1. Spendable Card */}

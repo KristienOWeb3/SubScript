@@ -58,7 +58,7 @@ for (const role of ["USER", "ENTERPRISE"] as const) {
       await route.fallback();
     });
     await renderDashboard(page, role === "USER" ? "/dashboard/user" : "/dashboard");
-    await expect(page.locator(".subscript-skeleton").first()).toBeVisible();
+    await expect(page.locator(".subscript-skeleton:visible").first()).toBeVisible();
     for (const [width, height] of [[320, 568], [768, 1024], [667, 375]]) {
       await page.setViewportSize({ width, height });
       await check(page, info, `loading-${width}x${height}`);

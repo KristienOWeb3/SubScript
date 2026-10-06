@@ -16,7 +16,6 @@ export default function SubscribeSkeleton() {
             className="rounded-3xl border border-black/15 bg-white p-6 shadow-sm space-y-6 sm:p-8"
             role="status"
             aria-live="polite"
-            aria-busy="true"
         >
             <span className="sr-only">Loading plan details…</span>
 

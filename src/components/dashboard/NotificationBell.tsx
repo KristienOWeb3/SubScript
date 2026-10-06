@@ -290,11 +290,12 @@ export default function NotificationBell({
     }, [open, audience, items]);
 
     const skeletonContent = (
-        <div className="p-4 space-y-3">
+        <div role="status" aria-label="Loading notifications" className="p-4 space-y-3">
+            <span className="sr-only">Loading notifications…</span>
             {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="notification-panel-skeleton flex items-start gap-3 p-3 rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] border border-black/5 dark:border-white/5">
                     <div className="w-8 h-8 rounded-xl subscript-skeleton shrink-0" />
-                    <div className="flex-1 space-y-2">
+                    <div className="min-w-0 flex-1 space-y-2">
                         <div className="h-4 subscript-skeleton rounded w-3/4" />
                         <div className="h-3.5 subscript-skeleton subscript-skeleton--faint rounded w-5/6" />
                         <div className="h-3 subscript-skeleton subscript-skeleton--faint rounded w-1/3" />

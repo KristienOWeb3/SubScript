@@ -204,17 +204,18 @@ export default function DmRequestsModal({
                 {/* Body Content */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-3 min-h-[260px]">
                     {loading ? (
-                        <div className="space-y-3">
+                        <div role="status" aria-label="Loading connection requests" className="min-w-0 space-y-3">
+                            <span className="sr-only">Loading connection requests…</span>
                             {[1, 2, 3].map((i) => (
-                                <div key={i} className="flex items-center justify-between rounded-2xl border border-black/5 bg-white/70 p-4 animate-pulse">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-10 w-10 rounded-full bg-black/10" />
-                                        <div className="space-y-2">
-                                            <div className="h-3.5 w-28 bg-black/10 rounded" />
-                                            <div className="h-2.5 w-20 bg-black/5 rounded" />
+                                <div key={i} className="flex items-center justify-between gap-3 rounded-2xl border border-black/5 bg-white/70 p-4 animate-pulse motion-reduce:animate-none">
+                                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                                        <div className="h-10 w-10 shrink-0 rounded-full bg-black/10" />
+                                        <div className="min-w-0 space-y-2">
+                                            <div className="h-3.5 w-28 max-w-full bg-black/10 rounded" />
+                                            <div className="h-2.5 w-20 max-w-full bg-black/5 rounded" />
                                         </div>
                                     </div>
-                                    <div className="h-8 w-20 bg-black/10 rounded-xl" />
+                                    <div className="h-8 w-20 shrink-0 bg-black/10 rounded-xl" />
                                 </div>
                             ))}
                         </div>

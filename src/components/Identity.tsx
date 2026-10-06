@@ -63,7 +63,7 @@ export function Identity({
 
     if (isLoading) {
         return (
-            <span className={`inline-block h-3.5 w-24 rounded ${placeholderClassName} animate-pulse align-middle ${className || ""}`} />
+            <span role="status" aria-label="Loading identity" className={`inline-block h-3.5 w-24 max-w-full rounded ${placeholderClassName} animate-pulse align-middle ${className || ""}`} />
         );
     }
 

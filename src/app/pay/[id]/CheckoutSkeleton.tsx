@@ -19,7 +19,6 @@ export default function CheckoutSkeleton() {
             className="lg:flex lg:flex-row lg:items-stretch lg:gap-6"
             role="status"
             aria-live="polite"
-            aria-busy="true"
         >
             <span className="sr-only">Loading payment details…</span>
 
@@ -44,7 +43,7 @@ export default function CheckoutSkeleton() {
                 </div>
 
                 {/* Amount due */}
-                <div className="rounded-2xl border border-black/10 bg-[#f8fafc] p-5 flex items-center justify-between">
+                <div className="rounded-2xl border border-black/10 bg-[#f8fafc] p-5 flex flex-wrap gap-3 items-center justify-between">
                     <SkeletonLine width={90} height={10} />
                     <div className="flex flex-col items-end gap-2">
                         <SkeletonLine width={130} height={20} />
