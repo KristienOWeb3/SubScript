@@ -20,12 +20,8 @@ import Skeleton from "./Skeleton";
  * positioned but still a DOM child, so a `divide-y` or `grid` on the wrapper would count it and
  * mis-space the first real row.
  *
- * Radius: the primitive hardcodes `rounded-2xl`, and Tailwind emits `rounded-full` after it, so
- * `rounded-full` overrides while `rounded-lg`/`rounded-xl` would silently lose. Bars therefore go
- * full-pill and chunkier blocks keep the 2xl default — never pass an intermediate radius here.
- *
- * The shimmer lives in globals.css (.subscript-skeleton / .liquid-glass-skeleton), which already
- * degrades to a plain pulse under prefers-reduced-motion.
+ * The primitive supplies a default radius only when a caller has not supplied one.
+ * Shimmer and pulse stop under prefers-reduced-motion; status text still announces loading.
  */
 
 type Busy = { label?: string; className?: string };
@@ -36,7 +32,7 @@ function Region({
     children,
 }: Busy & { children: React.ReactNode }) {
     return (
-        <div role="status" aria-live="polite" aria-busy="true" className={className}>
+        <div role="status" aria-live="polite" className={className}>
             <span className="sr-only">{label}</span>
             {children}
         </div>

@@ -861,7 +861,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
     if (!isMounted) {
         return (
-            <div className="min-h-[100dvh] bg-[#FFFFF0] dark:bg-[#17181a] text-[#082824] dark:text-white relative z-10 p-4 sm:p-6 md:p-10 space-y-6 animate-pulse max-w-6xl mx-auto">
+            <div role="status" aria-label="Loading payroll" className="min-h-[100dvh] bg-[#FFFFF0] dark:bg-[#17181a] text-[#082824] dark:text-white relative z-10 p-4 sm:p-6 md:p-10 space-y-6 max-w-6xl mx-auto">
+                <span className="sr-only">Loading payroll…</span>
                 <div className="flex flex-wrap gap-3 justify-between items-center">
                     <div className="h-8 w-48 rounded-xl subscript-skeleton" />
                     <div className="h-10 w-32 rounded-xl subscript-skeleton" />

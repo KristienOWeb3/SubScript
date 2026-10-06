@@ -144,8 +144,9 @@ export default function AccountHoldModal({ isOpen, onClose, onHoldChange }: Acco
                 </div>
 
                 {loading ? (
-                    <div className="space-y-4 py-8">
-                        <div className="h-4 w-48 animate-pulse rounded bg-black/10 dark:bg-white/10" />
+                    <div className="space-y-4 py-8" role="status">
+                        <span className="sr-only">Loading account hold settings…</span>
+                        <div className="h-4 w-48 max-w-full animate-pulse rounded bg-black/10 dark:bg-white/10" />
                         <div className="h-16 w-full animate-pulse rounded-2xl bg-black/5 dark:bg-white/5" />
                     </div>
                 ) : (

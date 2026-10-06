@@ -79,7 +79,7 @@ export default function VaultShareManager({
 }: VaultShareManagerProps) {
     const [mounted, setMounted] = useState(false);
     const [data, setData] = useState<SharesResponse | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     // Modal state
@@ -361,8 +361,12 @@ export default function VaultShareManager({
                         <code className="truncate font-mono text-xs font-bold text-[#2775CA]">
                             {secretId(data.rootCommitId)}
                         </code>
+                    ) : loading ? (
+                        <div role="status" aria-label="Loading primary commit ID" className="h-4 w-28 max-w-full rounded bg-black/10 dark:bg-white/10 animate-pulse motion-reduce:animate-none">
+                            <span className="sr-only">Loading primary commit ID…</span>
+                        </div>
                     ) : (
-                        <div className="h-4 w-28 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
+                        <span className="text-xs text-black/50 dark:text-white/50">Unavailable</span>
                     )}
                     {data?.rootCommitId && (
                         <button
@@ -382,14 +386,24 @@ export default function VaultShareManager({
                 </div>
             </div>
 
+            {error && (
+                <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-red-600 dark:text-red-400">
+                    <span>{error}</span>
+                    <button type="button" onClick={() => void load()} disabled={loading} className="font-bold underline disabled:opacity-50">
+                        Try again
+                    </button>
+                </div>
+            )}
+
             {/* Horizontal Members / Users Avatar Row with Prominent (+) Button */}
             <div className="pt-1">
                 <div className="flex items-center gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {loading && !data ? (
-                        <>
-                            <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/60 animate-pulse" />
-                            <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/60 animate-pulse" />
-                        </>
+                        <div role="status" aria-label="Loading vault members" className="flex gap-3">
+                            <span className="sr-only">Loading vault members…</span>
+                            <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/60 animate-pulse motion-reduce:animate-none" />
+                            <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/60 animate-pulse motion-reduce:animate-none" />
+                        </div>
                     ) : (
                         liveSharesList.map((share) => {
                             const initial = share.displayName ? share.displayName[0].toUpperCase() : "U";

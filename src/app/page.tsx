@@ -43,9 +43,11 @@ const CodePanel = dynamic(
         ssr: false,
         loading: () => (
             <div
-                aria-label="Loading code sample..."
-                className="w-full h-96 rounded-3xl animate-pulse border border-[#0b1220]/10 bg-[#0b1220]/[0.03]"
-            />
+                role="status"
+                    className="w-full h-96 rounded-3xl animate-pulse border border-[#0b1220]/10 bg-[#0b1220]/[0.03]"
+            >
+                <span className="sr-only">Loading code sample…</span>
+            </div>
         ),
     }
 );

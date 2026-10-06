@@ -684,17 +684,18 @@ export default function AnalyticsDashboard({
 
                                     <div className="space-y-3 my-4 overflow-y-auto max-h-[280px]">
                                         {isInactiveLoading ? (
-                                            <div className="space-y-2.5 animate-pulse">
+                                            <div role="status" aria-label="Loading inactive subscriptions" className="space-y-2.5 animate-pulse motion-reduce:animate-none">
+                                                <span className="sr-only">Loading inactive subscriptions…</span>
                                                 {Array.from({ length: 3 }).map((_, i) => (
-                                                    <div key={i} className="flex justify-between items-center bg-black/[0.02] border border-black/10 rounded-2xl p-3">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-7 h-7 rounded-full bg-black/10" />
-                                                            <div className="space-y-1.5">
-                                                                <div className="h-3 w-28 rounded bg-black/10" />
-                                                                <div className="h-2 w-16 rounded bg-black/[0.06]" />
+                                                    <div key={i} className="flex justify-between items-center gap-3 bg-black/[0.02] border border-black/10 rounded-2xl p-3">
+                                                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                                                            <div className="w-7 h-7 shrink-0 rounded-full bg-black/10" />
+                                                            <div className="min-w-0 space-y-1.5">
+                                                                <div className="h-3 w-28 max-w-full rounded bg-black/10" />
+                                                                <div className="h-2 w-16 max-w-full rounded bg-black/[0.06]" />
                                                             </div>
                                                         </div>
-                                                        <div className="h-4 w-12 rounded bg-black/[0.06]" />
+                                                        <div className="h-4 w-12 shrink-0 rounded bg-black/[0.06]" />
                                                     </div>
                                                 ))}
                                             </div>
@@ -767,29 +768,30 @@ export default function AnalyticsDashboard({
                         /* Automations Tab Content */
                         <div className="bg-white border border-black/10 rounded-3xl p-8 shadow-sm min-h-[480px] flex flex-col justify-between relative overflow-hidden">
                             {isLoadingTemplate ? (
-                                <div className="space-y-6 animate-pulse">
-                                    <div className="flex items-center justify-between border-b border-black/10 pb-4">
-                                        <div className="space-y-2">
-                                            <div className="h-5 w-72 rounded-lg bg-black/10" />
+                                <div role="status" aria-label="Loading automation settings" className="space-y-6 animate-pulse motion-reduce:animate-none">
+                                    <span className="sr-only">Loading automation settings…</span>
+                                    <div className="flex items-center justify-between gap-3 border-b border-black/10 pb-4">
+                                        <div className="min-w-0 space-y-2">
+                                            <div className="h-5 w-72 max-w-full rounded-lg bg-black/10" />
                                             <div className="h-3 w-96 max-w-full rounded bg-black/[0.06]" />
                                         </div>
-                                        <div className="h-6 w-11 rounded-full bg-black/10" />
+                                        <div className="h-6 w-11 shrink-0 rounded-full bg-black/10" />
                                     </div>
                                     <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-center">
+                                        <div className="min-w-0 space-y-2">
+                                            <div className="flex flex-wrap justify-between items-center gap-3">
                                                 <div className="h-3 w-20 rounded bg-black/[0.06]" />
-                                                <div className="flex gap-2">
+                                                <div className="flex min-w-0 max-w-full gap-2">
                                                     <div className="h-4 w-20 rounded bg-black/[0.06]" />
                                                     <div className="h-4 w-24 rounded bg-black/[0.06]" />
                                                 </div>
                                             </div>
                                             <div className="h-11 w-full rounded-xl bg-black/[0.04]" />
                                         </div>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-center">
+                                        <div className="min-w-0 space-y-2">
+                                            <div className="flex flex-wrap justify-between items-center gap-3">
                                                 <div className="h-3 w-36 rounded bg-black/[0.06]" />
-                                                <div className="flex gap-2">
+                                                <div className="flex min-w-0 max-w-full gap-2">
                                                     <div className="h-4 w-20 rounded bg-black/[0.06]" />
                                                     <div className="h-4 w-24 rounded bg-black/[0.06]" />
                                                 </div>
@@ -797,7 +799,7 @@ export default function AnalyticsDashboard({
                                             <div className="h-40 w-full rounded-xl bg-black/[0.04]" />
                                         </div>
                                     </div>
-                                    <div className="flex justify-between items-center pt-4 border-t border-black/10">
+                                    <div className="flex flex-wrap justify-between items-center gap-3 pt-4 border-t border-black/10">
                                         <div className="h-3 w-28 rounded bg-black/[0.06]" />
                                         <div className="h-9 w-44 rounded-xl bg-black/10" />
                                     </div>
@@ -1118,7 +1120,8 @@ export default function AnalyticsDashboard({
                                     )}
 
                                     {isVaultsLoading ? (
-                                        <div className="space-y-3 animate-pulse">
+                                        <div role="status" aria-label="Loading customer vaults" className="space-y-3 animate-pulse motion-reduce:animate-none">
+                                            <span className="sr-only">Loading customer vaults…</span>
                                             {Array.from({ length: 2 }).map((_, i) => (
                                                 <div key={i} className="rounded-2xl border border-black/10 bg-black/[0.02] p-4 space-y-3">
                                                     <div className="flex justify-between items-center">

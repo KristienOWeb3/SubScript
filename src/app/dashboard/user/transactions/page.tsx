@@ -753,7 +753,7 @@ export default function UserTransactionsPage() {
               <TrendingUp className="h-4 w-4 text-[#2775CA]" />
             </div>
             {loading ? (
-              <div className="h-7 w-28 rounded-lg bg-black/10 dark:bg-white/10 animate-pulse" />
+              <div aria-hidden="true" className="h-7 w-28 max-w-full rounded-lg bg-black/10 dark:bg-white/10 animate-pulse motion-reduce:animate-none" />
             ) : (
               <div>
                 <p className="break-words text-2xl font-extrabold text-slate-900 dark:text-white">
@@ -773,7 +773,7 @@ export default function UserTransactionsPage() {
               <CreditCard className="h-4 w-4 text-[#2775CA]" />
             </div>
             {loading ? (
-              <div className="h-7 w-28 rounded-lg bg-black/10 dark:bg-white/10 animate-pulse" />
+              <div aria-hidden="true" className="h-7 w-28 max-w-full rounded-lg bg-black/10 dark:bg-white/10 animate-pulse motion-reduce:animate-none" />
             ) : (
               <div>
                 <p className="break-words text-2xl font-extrabold text-slate-900 dark:text-white">
@@ -793,7 +793,7 @@ export default function UserTransactionsPage() {
               <Activity className="h-4 w-4 text-[#2775CA]" />
             </div>
             {loading ? (
-              <div className="h-7 w-28 rounded-lg bg-black/10 dark:bg-white/10 animate-pulse" />
+              <div aria-hidden="true" className="h-7 w-28 max-w-full rounded-lg bg-black/10 dark:bg-white/10 animate-pulse motion-reduce:animate-none" />
             ) : (
               <div>
                 <p className="text-2xl font-extrabold text-slate-900 dark:text-white">
@@ -953,7 +953,9 @@ export default function UserTransactionsPage() {
         {/* Transactions List Container */}
         <div className="min-w-0 rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-3 sm:p-8 shadow-sm backdrop-blur-md min-h-[420px]">
           {loading ? (
-            <div className="divide-y divide-black/5 dark:divide-white/5">
+            <div role="status">
+              <span className="sr-only">Loading transaction history…</span>
+              <div className="divide-y divide-black/5 dark:divide-white/5">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} className="flex min-w-0 items-center justify-between gap-3 py-4 first:pt-0 last:pb-0 animate-pulse">
                   <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -969,6 +971,7 @@ export default function UserTransactionsPage() {
                   </div>
                 </div>
               ))}
+              </div>
             </div>
           ) : loadError ? (
             <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/5 px-6 text-center" role="alert">
@@ -1185,7 +1188,8 @@ export default function UserTransactionsPage() {
               {displayLimit < filteredTransactions.length && (
                 <div className="pt-4 space-y-3">
                   {loadingMore && (
-                    <div className="space-y-3">
+                    <div role="status" className="space-y-3">
+                      <span className="sr-only">Loading more transactions…</span>
                       {[1, 2, 3].map((i) => (
                         <div key={i} className="flex min-w-0 items-center justify-between gap-3 py-3 border-t border-black/5 dark:border-white/5 animate-pulse">
                           <div className="flex min-w-0 flex-1 items-center gap-3">

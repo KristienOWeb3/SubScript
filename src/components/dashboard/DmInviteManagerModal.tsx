@@ -180,12 +180,13 @@ export default function DmInviteManagerModal({
                     )}
 
                     {loading ? (
-                        <div className="space-y-4">
-                            <div className="h-20 rounded-2xl border border-black/5 bg-white/70 p-4 animate-pulse space-y-2">
-                                <div className="h-4 w-44 bg-black/10 rounded" />
-                                <div className="h-3 w-60 bg-black/5 rounded" />
+                        <div role="status" aria-label="Loading invite settings" className="space-y-4">
+                            <span className="sr-only">Loading invite settings…</span>
+                            <div className="h-20 rounded-2xl border border-black/5 bg-white/70 p-4 animate-pulse motion-reduce:animate-none space-y-2">
+                                <div className="h-4 w-44 max-w-full bg-black/10 rounded" />
+                                <div className="h-3 w-60 max-w-full bg-black/5 rounded" />
                             </div>
-                            <div className="h-14 rounded-2xl border border-black/5 bg-white/70 p-3 animate-pulse" />
+                            <div className="h-14 rounded-2xl border border-black/5 bg-white/70 p-3 animate-pulse motion-reduce:animate-none" />
                         </div>
                     ) : (
                         <>
