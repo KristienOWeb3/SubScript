@@ -1070,7 +1070,7 @@ function MobileSendSheet({
         if (!open) return;
         const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         const frame = requestAnimationFrame(() => {
-            sheetRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.focus({ preventScroll: true });
+            sheetRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Close send dialog"]')?.focus({ preventScroll: true });
         });
         return () => {
             cancelAnimationFrame(frame);
@@ -1865,7 +1865,7 @@ function MobileSendSheet({
                                 <button
                                     type="button"
                                     onClick={handleClose}
-                                    aria-label="Close"
+                                    aria-label="Close send dialog"
                                     className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 dark:border-white/10 text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95 transition"
                                 >
                                     ✕

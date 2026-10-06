@@ -248,7 +248,7 @@ test.describe("send flow uses platform data", () => {
     await expect(page.locator("#mobile-nav-capsule")).toBeVisible();
     await expect.poll(() => page.evaluate(() => (window as unknown as { arcMotion: { frames: Keyframe[]; timing: KeyframeAnimationOptions }[] }).arcMotion.some(item => item.timing.duration === 780 && item.timing.delay === 200 && item.frames[0].height === "0px" && item.frames[0].filter === "blur(8px)"))).toBe(true);
     await openSend(page, true);
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Close send dialog", exact: true }).click();
     await expect(dialog).toBeHidden();
     expect(errors).toEqual([]);
     await context.close();
@@ -615,14 +615,23 @@ test.describe("send flow uses platform data", () => {
   });
 
   for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }]) {
-    test(`${viewport.width}px deposit steps share height and local bank remains coming soon`, async ({ browser }, info) => {
+    test(`${viewport.width}px deposit steps share height and onramp switches back to crypto`, async ({ browser }, info) => {
       const { page, context } = await fixture(browser, viewport.width, viewport.height);
       await page.getByTestId("wallet-actions").getByRole("button", { name: "Deposit", exact: true }).click();
       const dialog = page.locator("#deposit-sheet-card");
       await expect(dialog).toBeVisible();
       await page.waitForTimeout(1000);
       const before = await dialog.boundingBox();
-      await expect(dialog.getByRole("button", { name: /Local bank.*Coming soon/i })).toBeDisabled();
+      const onramp = dialog.getByRole("tab", { name: "Onramp", exact: true });
+      const crypto = dialog.getByRole("tab", { name: "Deposit crypto", exact: true });
+      await expect(onramp).toBeEnabled();
+      await expect(onramp).not.toContainText("Coming soon");
+      await onramp.click();
+      await expect(onramp).toHaveAttribute("aria-selected", "true");
+      await expect(dialog.getByRole("button", { name: "Buy USDC", exact: true })).toBeEnabled();
+      await expect(dialog.getByRole("button", { name: /Arc.*Native Arc/i })).toHaveCount(0);
+      await crypto.click();
+      await expect(crypto).toHaveAttribute("aria-selected", "true");
       await dialog.getByRole("button", { name: /Arc.*Native Arc/i }).click();
       await expect(dialog.locator("#deposit-sheet-title")).toContainText("Deposit via");
       await page.waitForTimeout(800);

@@ -79,6 +79,7 @@ for (const width of [390, 1280]) for (const reducedMotion of [false, true]) {
         const dialog = page.getByRole("dialog");
         const crypto = dialog.getByRole("tab", { name: "Deposit crypto" });
         const onramp = dialog.getByRole("tab", { name: "Onramp", exact: true });
+        await expect(onramp).not.toContainText("Coming soon");
         await expect(onramp.locator('[data-icon="Building2"]')).toHaveCount(1);
         await expect(crypto).toHaveAttribute("aria-selected", "true");
         await page.waitForTimeout(700); // Measure both tabs after the open animation settles.
@@ -155,5 +156,10 @@ for (const width of [390, 1280]) for (const reducedMotion of [false, true]) {
         await expect(sendDialog.getByText("Local bank", { exact: true })).toHaveCount(0);
         await page.waitForTimeout(700);
         await page.screenshot({ path: testInfo.outputPath(`send-reference-${width}.png`) });
+        const closeSend = sendDialog.getByRole("button", { name: "Close send dialog", exact: true });
+        await expect(closeSend).toBeVisible();
+        if (width < 768) await expect(closeSend).toBeFocused();
+        await closeSend.click();
+        await expect(sendDialog).toHaveCount(0);
     });
 }

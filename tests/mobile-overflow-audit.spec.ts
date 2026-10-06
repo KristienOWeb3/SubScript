@@ -594,6 +594,7 @@ test.describe("mobile overflow audit", () => {
     await expect(sendDialog).toBeVisible();
     await expect(sendDialog.getByRole("button", { name: "Scan QR" })).toBeVisible();
     await sendDialog.getByRole("button", { name: "Close send dialog" }).click();
+    await expect(sendDialog).toBeHidden();
 
     const summaryCards = mobilePage.getByTestId("home-summary-cards");
     const summaryBoxes = await summaryCards.locator(":scope > *").evaluateAll((elements) =>

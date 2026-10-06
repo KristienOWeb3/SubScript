@@ -788,7 +788,6 @@ export default function DepositModal({
             >
                 {depositMethod === "onramp" && <motion.span layoutId={methodPillId} className="absolute inset-0 rounded-xl bg-white dark:bg-[#1D2129] shadow-sm" transition={{ duration: reduceMotion ? 0 : 0.38, ease: [0.16, 1, 0.3, 1] }} />}
                 <Building2 className="relative h-3.5 w-3.5" /><span className="relative">Onramp</span>
-                <span className="relative not-italic text-[8px] font-black uppercase bg-[#2775CA]/20 text-[#2775CA] dark:bg-[#2775CA]/30 dark:text-[#6A8BE8] px-1.5 py-0.5 rounded">Coming soon</span>
             </button>
         </div>
     );

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { buildSync } from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
 import { layoutOverflow } from "./fixtures/dashboard-layout";
@@ -91,6 +92,52 @@ async function checkGeometry(page: Page, description: string) {
   const clipped = await page.locator(".admin-workspace, header, [role=dialog] > div:not([aria-hidden=true])").evaluateAll(elements => elements.filter(element => element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1).map(element => ({ text: element.textContent?.slice(0, 70), width: element.clientWidth, scrollWidth: element.scrollWidth, className: element.className })));
   expect.soft(clipped, `${description}: clipped content`).toEqual([]);
 }
+
+test("chart measures a late-mounted plot before ResizeObserver delivers and tracks resizing", async ({ page }) => {
+  const chartScript = buildSync({
+    stdin: {
+      contents: `import React, {useState} from 'react'; import {createRoot} from 'react-dom/client';
+        import {AreaTrendChart} from './src/components/admin/analytics/AreaTrendChart';
+        function Fixture() {
+          const [data, setData] = useState([]);
+          return <div id="chart" style={{width:216}}><button onClick={() => setData([
+            {date:'2026-09-28',label:'Sep 28',value:3}, {date:'2026-09-29',label:'Sep 29',value:10}
+          ])}>Load data</button><AreaTrendChart data={data} valueKind="count" showRangeSelector={false}/></div>;
+        } createRoot(document.getElementById('root')).render(<Fixture/>);`,
+      resolveDir: process.cwd(), loader: "tsx",
+    },
+    bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic",
+    define: { "process.env.NODE_ENV": '"production"' },
+  }).outputFiles[0].text;
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.setContent("<div id='root'></div>");
+  // Hold initial observer delivery to deterministically expose fallback-width rendering.
+  await page.evaluate(() => {
+    const observations = new Map<ResizeObserver, { target: Element; callback: ResizeObserverCallback }>();
+    window.ResizeObserver = class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(target: Element) { observations.set(this as unknown as ResizeObserver, { target, callback: this.callback }); }
+      unobserve() {}
+      disconnect() { observations.delete(this as unknown as ResizeObserver); }
+    } as unknown as typeof ResizeObserver;
+    (window as unknown as { deliverChartResize: () => void }).deliverChartResize = () => {
+      observations.forEach(({ target, callback }, observer) => callback([
+        { target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry,
+      ], observer));
+    };
+  });
+  await page.addScriptTag({ content: chartScript });
+  await page.getByRole("button", { name: "Load data" }).click();
+  const chart = page.locator("#chart svg");
+  await expect(chart).toHaveAttribute("width", "216");
+  const label = page.locator("#chart svg text").filter({ hasText: "Sep 29" });
+  expect((await label.boundingBox())!.x + (await label.boundingBox())!.width).toBeLessThanOrEqual(224);
+  await page.evaluate(() => {
+    document.getElementById("chart")!.style.width = "280px";
+    (window as unknown as { deliverChartResize: () => void }).deliverChartResize();
+  });
+  await expect(chart).toHaveAttribute("width", "280");
+});
 
 for (const [width, height] of [[320, 568], [767, 900], [768, 1024], [1024, 768], [1440, 900], [2560, 1440], [667, 375]] as const) {
   test(`all admin tabs and analytics fit ${width}x${height}`, async ({ page, context }, info) => {
