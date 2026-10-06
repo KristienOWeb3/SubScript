@@ -96,6 +96,34 @@ for (const pathname of ["/dashboard/user/transactions", "/dashboard/payroll", "/
 }
 
 const detailSizes = [[320, 568], [768, 1024], [1024, 768], [1440, 900], [667, 375]] as const;
+test("USER Spend Analysis loading skeleton fits narrow screens", async ({ browser }, info) => {
+  const { context, page, errors } = await dashboardFixture(browser, "USER", 390, 844);
+  await renderDashboard(page, "/dashboard/user?tab=dns");
+  const menuItem = page.getByRole("button").filter({ has: page.getByText("Spend Analysis", { exact: true }) });
+  await expect(menuItem).toBeVisible();
+  const time = new Date("2026-10-06T12:00:00Z");
+  await page.clock.install({ time });
+  await page.clock.pauseAt(time);
+  // Keep the loading state visible while measuring every responsive layout.
+  await menuItem.evaluate(button => (button as HTMLButtonElement).click());
+  const skeleton = page.getByTestId("spend-analysis-skeleton");
+  await expect(skeleton).toBeVisible();
+  for (const [width, height] of [[320, 568], [390, 844], ...detailSizes.slice(1)] as const) {
+    await page.setViewportSize({ width, height });
+    await expect(skeleton).toBeVisible();
+    const geometry = await layoutOverflow(page);
+    expect.soft(geometry.documentWidth, JSON.stringify(geometry)).toBeLessThanOrEqual(width + 1);
+    expect.soft(geometry.offenders, JSON.stringify(geometry)).toEqual([]);
+    expect.soft(geometry.clippedElements, JSON.stringify(geometry)).toEqual([]);
+    await skeleton.locator(":scope > div").nth(2).evaluate(chart => chart.scrollIntoView({ block: "center", behavior: "instant" }));
+    await page.screenshot({ path: info.outputPath(`spend-loading-${width}x${height}.png`) });
+  }
+  await page.clock.runFor(450);
+  await expect(skeleton).toBeHidden();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
 for (const role of ["USER", "ENTERPRISE"] as const) {
   const sections = role === "USER"
     ? ["Account Profile", "Appearance & Theme", "KYC Verification", "Spend Analysis", "Transactions", "Notifications", "Security", "Support"]

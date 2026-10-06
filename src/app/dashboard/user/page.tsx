@@ -12146,9 +12146,9 @@ function SpendAnalysisSkeleton() {
         </div>
         <div className="h-44 w-full rounded-2xl bg-black/5 dark:bg-white/[0.03] flex items-end justify-between p-4 gap-3">
           {[40, 65, 30, 85, 50, 70].map((h, idx) => (
-            <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+            <div key={idx} className="min-w-0 flex-1 flex flex-col items-center gap-2 h-full justify-end">
               <div className="w-full rounded-t-xl subscript-skeleton" style={{ height: `${h}%` }} />
-              <div className="h-3 w-8 rounded subscript-skeleton subscript-skeleton--faint" />
+              <div className="h-3 w-8 max-w-full rounded subscript-skeleton subscript-skeleton--faint" />
             </div>
           ))}
         </div>
