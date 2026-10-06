@@ -50,7 +50,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
   return (
     <div className="space-y-6">
       {/* Top Headline Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-4">
         <StatCardWithSparkline
           label="Total Settled GMV"
           value={`$${analytics?.volume?.totalUsdc ?? "0.00"}`}
@@ -96,7 +96,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
       />
 
       {/* Breakdown Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-6">
         {/* Ticket Size Brackets. The bars are payment counts, not amounts, so no currency here. */}
         <BarMetricChart
           data={bracketData}
@@ -108,7 +108,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
         />
 
         {/* Volume Run-Rate & Velocity Info */}
-        <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">
+        <div className="@container/run-rate min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
               Volume Run-Rate & Settlement Horizon
@@ -117,10 +117,10 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
               Historical multi-window analysis on Arc Mainnet
             </p>
 
-            <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="grid grid-cols-1 @[400px]/run-rate:grid-cols-2 gap-3 mt-4">
               <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-3.5">
                 <span className="text-[10px] font-black uppercase text-[#64748b]">7-Day Volume</span>
-                <p className="text-lg font-black text-[#0f172a] mt-0.5">
+                <p className="break-all text-lg font-black text-[#0f172a] mt-0.5">
                   ${analytics?.volume?.last7DaysUsdc ?? "0.00"}
                 </p>
                 <p className="text-[10px] text-[#94a3b8]">
@@ -130,7 +130,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
 
               <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-3.5">
                 <span className="text-[10px] font-black uppercase text-[#64748b]">90-Day Trajectory</span>
-                <p className="text-lg font-black text-[#0f172a] mt-0.5">
+                <p className="break-all text-lg font-black text-[#0f172a] mt-0.5">
                   ${analytics?.volume?.last90DaysUsdc ?? analytics?.volume?.totalUsdc ?? "0.00"}
                 </p>
                 <p className="text-[10px] text-[#94a3b8]">
@@ -141,7 +141,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
           </div>
 
           <div className="mt-4 border-t border-[#f1f5f9] pt-3 text-xs text-[#64748b]">
-            <p className="flex items-center justify-between font-semibold">
+            <p className="flex flex-wrap items-center justify-between gap-2 font-semibold">
               <span>Annualized Run-Rate (ARR Estimate):</span>
               <span className="font-mono text-[#0f172a] font-bold">
                 $

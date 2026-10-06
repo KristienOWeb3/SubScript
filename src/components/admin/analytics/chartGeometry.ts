@@ -11,7 +11,7 @@
  * must get it from ONE function, not from two formulas that happen to match today.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 /* Plot padding in CSS pixels. Left is wide enough for a y-axis label like "$12.5k"; axis is the
  * band below the plot that x-labels live in. These are pixels and not viewBox units on purpose —
@@ -30,18 +30,20 @@ export type Pt = { x: number; y: number };
  * pixels, so 11px text is 11px everywhere and SVG coordinates equal overlay coordinates.
  */
 export function useMeasuredWidth<T extends HTMLElement>(fallback = 320) {
-    const ref = useRef<T | null>(null);
     const [width, setWidth] = useState(fallback);
 
-    useEffect(() => {
-        const el = ref.current;
+    const ref = useCallback((el: T | null) => {
         if (!el) return;
-        /* No synchronous measurement here on purpose. ResizeObserver delivers an entry as soon as it
-           starts observing, so the first real width arrives through the same path as every later
-           one — one code path rather than two, and nothing setting state in the effect body. */
+        const measure = (w: number) => {
+            if (w > 0) setWidth(Math.round(w));
+        };
+        // Measure on attachment so narrow charts never paint fallback-width coordinates.
+        // A callback ref also observes plots mounted after initially empty data.
+        const style = getComputedStyle(el);
+        measure(el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
         const ro = new ResizeObserver((entries) => {
             const w = entries[entries.length - 1]?.contentRect.width;
-            if (typeof w === "number" && w > 0) setWidth(Math.round(w));
+            if (typeof w === "number") measure(w);
         });
         ro.observe(el);
         return () => ro.disconnect();

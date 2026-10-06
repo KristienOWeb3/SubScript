@@ -709,19 +709,19 @@ export default function UserTransactionsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#090a0f] dark:text-white font-sans transition-colors duration-200">
-      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 space-y-6">
+      <div className="min-w-0 max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 space-y-6">
         
         {/* Top Header Navigation */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-black/10 dark:border-white/10">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/dashboard/user"
-              className="p-2 rounded-2xl bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 hover:border-[#2775CA] hover:text-[#2775CA] transition-all shadow-sm flex items-center justify-center text-slate-700 dark:text-slate-200"
+              className="shrink-0 p-2 rounded-2xl bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 hover:border-[#2775CA] hover:text-[#2775CA] transition-all shadow-sm flex items-center justify-center text-slate-700 dark:text-slate-200"
               title="Return to User Dashboard"
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-extrabold uppercase tracking-tight text-slate-900 dark:text-white">
                 Full Transaction History
               </h1>
@@ -745,7 +745,7 @@ export default function UserTransactionsPage() {
         </div>
 
         {/* Spend Overview Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid min-w-0 grid-cols-1 md:grid-cols-3 gap-4">
           {/* 30D Spend */}
           <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-5 shadow-sm backdrop-blur-md">
             <div className="flex items-center justify-between text-slate-500 dark:text-white/40 mb-2">
@@ -756,10 +756,10 @@ export default function UserTransactionsPage() {
               <div className="h-7 w-28 rounded-lg bg-black/10 dark:bg-white/10 animate-pulse" />
             ) : (
               <div>
-                <p className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                <p className="break-words text-2xl font-extrabold text-slate-900 dark:text-white">
                   {balanceVisible ? `$${thirtyDaySpendUsdc.toFixed(2)}` : "••••"}
                 </p>
-                <p className="text-[11px] font-semibold text-[#2775CA] mt-0.5">
+                <p className="break-words text-[11px] font-semibold text-[#2775CA] mt-0.5">
                   ≈ {detectedCurrency.symbol}{(thirtyDaySpendUsdc * exchangeRate).toFixed(0)} {detectedCurrency.code}
                 </p>
               </div>
@@ -776,7 +776,7 @@ export default function UserTransactionsPage() {
               <div className="h-7 w-28 rounded-lg bg-black/10 dark:bg-white/10 animate-pulse" />
             ) : (
               <div>
-                <p className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                <p className="break-words text-2xl font-extrabold text-slate-900 dark:text-white">
                   {balanceVisible ? `$${totalMonthlyCommitmentUsdc.toFixed(2)}` : "••••"} <span className="text-xs font-bold text-[#2775CA]">/mo</span>
                 </p>
                 <p className="text-[11px] font-semibold text-slate-500 dark:text-white/40 mt-0.5">
@@ -896,14 +896,14 @@ export default function UserTransactionsPage() {
                 </select>
 
                 {dateRange === "custom" && (
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="grid min-w-0 grid-cols-1 items-center gap-2 pt-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
                     <input
                       type="date"
                       value={customFrom}
                       max={customTo || undefined}
                       onChange={(e) => setCustomFrom(e.target.value)}
                       aria-label="From date"
-                      className="w-full rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 px-3 py-1.5 text-[11px] font-bold text-slate-900 dark:text-white focus:border-[#2775CA] focus:outline-none"
+                      className="min-w-0 w-full rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 px-3 py-1.5 text-[11px] font-bold text-slate-900 dark:text-white focus:border-[#2775CA] focus:outline-none"
                     />
                     <span className="text-[10px] font-black text-slate-400 dark:text-white/30">TO</span>
                     <input
@@ -912,7 +912,7 @@ export default function UserTransactionsPage() {
                       min={customFrom || undefined}
                       onChange={(e) => setCustomTo(e.target.value)}
                       aria-label="To date"
-                      className="w-full rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 px-3 py-1.5 text-[11px] font-bold text-slate-900 dark:text-white focus:border-[#2775CA] focus:outline-none"
+                      className="min-w-0 w-full rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 px-3 py-1.5 text-[11px] font-bold text-slate-900 dark:text-white focus:border-[#2775CA] focus:outline-none"
                     />
                   </div>
                 )}
@@ -951,19 +951,19 @@ export default function UserTransactionsPage() {
         </div>
 
         {/* Transactions List Container */}
-        <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-5 sm:p-8 shadow-sm backdrop-blur-md min-h-[420px]">
+        <div className="min-w-0 rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-3 sm:p-8 shadow-sm backdrop-blur-md min-h-[420px]">
           {loading ? (
             <div className="divide-y divide-black/5 dark:divide-white/5">
               {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="flex items-center justify-between py-4 first:pt-0 last:pb-0 animate-pulse">
-                  <div className="flex items-center gap-3">
+                <div key={i} className="flex min-w-0 items-center justify-between gap-3 py-4 first:pt-0 last:pb-0 animate-pulse">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     <div className="h-10 w-10 rounded-xl bg-black/10 dark:bg-white/10 shrink-0" />
-                    <div className="space-y-2">
-                      <div className="h-3.5 w-36 rounded bg-black/10 dark:bg-white/10" />
-                      <div className="h-2.5 w-52 rounded bg-black/5 dark:bg-white/5" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-3.5 w-36 max-w-full rounded bg-black/10 dark:bg-white/10" />
+                      <div className="h-2.5 w-52 max-w-full rounded bg-black/5 dark:bg-white/5" />
                     </div>
                   </div>
-                  <div className="space-y-2 text-right">
+                  <div className="shrink-0 space-y-2 text-right">
                     <div className="h-3.5 w-20 rounded bg-black/10 dark:bg-white/10 ml-auto" />
                     <div className="h-2.5 w-14 rounded bg-black/5 dark:bg-white/5 ml-auto" />
                   </div>
@@ -996,8 +996,8 @@ export default function UserTransactionsPage() {
           ) : (
             <div>
               {/* Desktop Table View */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-left font-sans text-xs">
+              <div className="hidden lg:block overflow-x-auto">
+                <table className="w-full min-w-[800px] text-left font-sans text-xs">
                   <thead>
                     <tr className="border-b border-black/10 dark:border-white/10 text-slate-500 dark:text-white/40 uppercase text-[9px] tracking-wider font-bold">
                       <th className="pb-3">Payment / Counterparty</th>
@@ -1019,7 +1019,7 @@ export default function UserTransactionsPage() {
                               identityName={tx.dnsName}
                               profilePic={tx.pic}
                             />
-                            <div className="min-w-0">
+                            <div className="min-w-0 max-w-xs">
                               <p className="truncate font-bold text-slate-900 dark:text-white">{tx.name}</p>
                               <p className="truncate text-[10px] text-slate-500 dark:text-white/40 mt-0.5">{tx.detail}</p>
                               {tx.networkFee?.charged && tx.networkFee.amountMicros !== undefined && (
@@ -1101,7 +1101,7 @@ export default function UserTransactionsPage() {
               </div>
 
               {/* Mobile Card Stack View */}
-              <div className="block md:hidden space-y-3">
+              <div className="block lg:hidden space-y-3">
                 {visibleTransactions.map((tx) => (
                   <div
                     key={tx.id}
@@ -1109,8 +1109,8 @@ export default function UserTransactionsPage() {
                       isOptimisticTxId(tx.id) ? "animate-pulse opacity-80" : ""
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="flex flex-1 items-center gap-2.5 min-w-0">
                         <TransactionAvatar
                           className="h-8 w-8 rounded-lg"
                           direction={tx.incoming ? "incoming" : "outgoing"}
@@ -1131,11 +1131,11 @@ export default function UserTransactionsPage() {
                       <FinancialStatusBadge status={tx.status} />
                     </div>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-black/5 dark:border-white/5 text-xs font-mono">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-black/5 dark:border-white/5 text-xs font-mono">
                       <span className="text-[10px] text-slate-500 dark:text-white/40 font-sans">
                         {new Date(tx.time).toLocaleDateString()}
                       </span>
-                      <div className="text-right">
+                      <div className="min-w-0 max-w-full break-words text-right">
                         <span className={`block font-bold ${tx.incoming ? "text-emerald-600 dark:text-emerald-400" : "text-slate-900 dark:text-white"}`}>
                           {balanceVisible ? tx.amountLabel : "••••"}
                         </span>
@@ -1146,7 +1146,7 @@ export default function UserTransactionsPage() {
                     </div>
 
                     {tx.receiptId ? (
-                      <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/5 dark:border-white/5 text-[10px]">
+                      <div className="pt-2 flex flex-wrap items-center justify-end gap-3 border-t border-black/5 dark:border-white/5 text-[10px]">
                         <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold">
                           View receipt
                         </a>
@@ -1165,7 +1165,7 @@ export default function UserTransactionsPage() {
                             <span>Network</span><span className="text-right">Arc</span>
                           </div>
                         )}
-                        <div className="flex items-center justify-end gap-3">
+                        <div className="flex flex-wrap items-center justify-end gap-3">
                           <a href={getExplorerTxUrl(tx.txHash)} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold inline-flex items-center gap-1">
                             <ExternalLink className="h-3 w-3" /> Primary tx
                           </a>
@@ -1187,12 +1187,12 @@ export default function UserTransactionsPage() {
                   {loadingMore && (
                     <div className="space-y-3">
                       {[1, 2, 3].map((i) => (
-                        <div key={i} className="flex items-center justify-between py-3 border-t border-black/5 dark:border-white/5 animate-pulse">
-                          <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 rounded-xl bg-black/10 dark:bg-white/10" />
-                            <div className="space-y-1.5">
-                              <div className="h-3 w-32 rounded bg-black/10 dark:bg-white/10" />
-                              <div className="h-2 w-48 rounded bg-black/5 dark:bg-white/5" />
+                        <div key={i} className="flex min-w-0 items-center justify-between gap-3 py-3 border-t border-black/5 dark:border-white/5 animate-pulse">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <div className="h-9 w-9 shrink-0 rounded-xl bg-black/10 dark:bg-white/10" />
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              <div className="h-3 w-32 max-w-full rounded bg-black/10 dark:bg-white/10" />
+                              <div className="h-2 w-48 max-w-full rounded bg-black/5 dark:bg-white/5" />
                             </div>
                           </div>
                           <div className="space-y-1 text-right">

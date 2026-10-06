@@ -186,6 +186,15 @@ body {
   background-color: #000000;
 }
 
+/* Dashboard scroll containers own their scrollbars. Reserving another root gutter
+   leaves an uncovered strip beside fixed popup scrims on desktop and mobile. */
+html:has(.user-dashboard-redesign),
+body:has(.user-dashboard-redesign),
+html:has(.dashboard-modal-overlay),
+body:has(.dashboard-modal-overlay) {
+  scrollbar-gutter: auto;
+}
+
 body {
   background-color: #000000;
   color: var(--foreground);
@@ -543,6 +552,30 @@ body {
 .dark .subscript-skeleton--faint,
 [data-theme="dark"] .subscript-skeleton--faint {
   background-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .subscript-skeleton::after,
+[data-theme="dark"] .subscript-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 30%,
+    rgba(255, 255, 255, 0.18) 50%,
+    rgba(255, 255, 255, 0.04) 70%,
+    transparent 100%
+  );
+}
+
+.dark .subscript-skeleton--faint::after,
+[data-theme="dark"] .subscript-skeleton--faint::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.02) 30%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.02) 70%,
+    transparent 100%
+  );
 }
 
 .subscript-skeleton::after,
@@ -1027,7 +1060,7 @@ body {
   -webkit-backdrop-filter: blur(22px) saturate(125%) !important;
 }
 
-.user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] {
+.user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"]:not([data-nav-motion]) {
   border-color: #353935 !important;
   background: #353935 !important;
   color: #fffff0 !important;
@@ -1111,8 +1144,24 @@ body {
     box-shadow: none !important;
   }
 
-  .user-dashboard-redesign .wallet-actions {
+  :is(.user-dashboard-redesign, .user-dashboard-loading) .wallet-actions {
     width: 100%;
+    max-width: 290px;
+    margin-inline: auto;
+  }
+
+  :is(.user-dashboard-redesign, .user-dashboard-loading) .wallet-actions > :first-child {
+    flex: 1 1 115px;
+    max-width: 115px;
+  }
+
+  :is(.user-dashboard-redesign, .user-dashboard-loading) .wallet-actions > :last-child {
+    flex: 1 1 167px;
+    max-width: 167px;
+  }
+
+  .user-dashboard-redesign .wallet-actions button[aria-label="Send"] {
+    max-width: 115px;
   }
 
   .user-dashboard-redesign .commit-vault-shell {
@@ -2210,7 +2259,7 @@ aside [class~="bg-[#FFFFF0]"] *,
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(39, 117, 202, 0.5) !important;
 }
 
-[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] {
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"]:not([data-nav-motion]) {
   border-color: rgba(255, 255, 255, 0.2) !important;
   background: linear-gradient(135deg, #2775ca, #1f62ab) !important;
   color: #ffffff !important;
@@ -2328,6 +2377,19 @@ aside [class~="bg-[#FFFFF0]"] *,
 
 [data-theme="dark"] .user-dashboard-loading [class*="bg-black/"] {
   background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign .subscript-skeleton::after,
+[data-theme="dark"] .user-dashboard-loading .subscript-skeleton::after,
+[data-theme="dark"] .merchant-dashboard-workspace .subscript-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 30%,
+    rgba(255, 255, 255, 0.18) 50%,
+    rgba(255, 255, 255, 0.04) 70%,
+    transparent 100%
+  ) !important;
 }
 
 /* -------------------------------------------------------------- Footer */
@@ -2683,12 +2745,16 @@ aside [class~="bg-[#FFFFF0]"] *,
    compositing layer. On blur-heavy dashboard pages that presents as a bright flash when a dialog
    opens or closes. Keep the scrim stable and animate only the dialog's transform. */
 .dashboard-modal-overlay {
+  opacity: 1 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   isolation: isolate;
 }
 
 .dashboard-modal-surface {
+  max-height: calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   filter: none !important;
   -webkit-filter: none !important;
   backface-visibility: hidden;
@@ -2696,4 +2762,178 @@ aside [class~="bg-[#FFFFF0]"] *,
   will-change: transform, opacity;
 }
 
+/* ── 120fps Rolling Number Slots & Swipe-to-Send Flow ── */
+.roll-slot {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  vertical-align: bottom;
+  white-space: pre;
+  line-height: 1.15;
+}
+.roll-slot > span {
+  display: inline-block;
+}
+.roll-slot > .roll-leaving {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
 
+@keyframes sendReviewReady {
+  0% { transform: scale(.96); filter: blur(3px); }
+  60% { transform: scale(1.02); filter: blur(0px); }
+  100% { transform: scale(1); filter: blur(0px); }
+}
+
+.send-recipient-reveal {
+  animation: sendRecipientReveal 380ms cubic-bezier(.16,1,.3,1);
+}
+@keyframes sendRecipientReveal {
+  from { opacity: 0; transform: scale(.6); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: blur(0px); }
+}
+.send-validation-hint {
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: height 350ms, opacity 300ms, margin 300ms;
+}
+.send-validation-hint.is-visible { height: 18px; opacity: 1; margin-top: 7px; }
+.send-receipt-reveal { animation: sendReceiptReveal 220ms 160ms both; }
+.send-fee-row { transition: opacity 160ms, filter 160ms; }
+.send-fee-row.is-replaced { opacity: 0; filter: blur(3px); pointer-events: none; }
+#sheet-card [data-send-details] > div { min-height: 42px; padding-top: 0; }
+#sheet-card [data-testid="send-review"],
+#sheet-card [data-testid="send-review"] .koboyo-icon { color: #fff !important; }
+@keyframes sendReceiptReveal {
+  from { opacity: 0; filter: blur(3px); }
+  to { opacity: 1; filter: blur(0px); }
+}
+.send-confirming-dot { animation: dt 1.2s infinite; }
+#sheet-wrapper .send-live-dot { animation: lv 1.6s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  #sheet-wrapper *, [data-testid="send-desktop"] * {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+@keyframes sweepPulse {
+  0%, 45%, 100% { opacity: 0.2; }
+  15% { opacity: 1; }
+}
+
+@keyframes arcSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes thumbPulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(39, 117, 202, 0.5); }
+  70%, 100% { box-shadow: 0 0 0 12px rgba(39, 117, 202, 0); }
+}
+
+@keyframes liveDotPulse {
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+@keyframes dotWave {
+  0%, 60%, 100% { opacity: 0.25; }
+  20% { opacity: 1; }
+}
+@keyframes pl {
+  0%, 45%, 100% { opacity: 0.2; }
+  15% { opacity: 1; }
+}
+
+@keyframes sp {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes hl {
+  0% { box-shadow: 0 0 0 0 rgba(39, 117, 202, 0.5); }
+  70%, 100% { box-shadow: 0 0 0 12px rgba(39, 117, 202, 0); }
+}
+
+@keyframes dt {
+  0%, 60%, 100% { opacity: 0.25; }
+  20% { opacity: 1; }
+}
+
+@keyframes lv {
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+.sl-cf {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.d, .slot-digit {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  vertical-align: bottom;
+  white-space: pre;
+  line-height: 1.15;
+}
+.d > span, .slot-digit > span {
+  display: inline-block;
+}
+.d > .x, .slot-digit > .x, .slot-digit > .slot-old {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.rs {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0px);
+  }
+}
+
+@keyframes netPopupIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.97);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0px);
+  }
+}
+
+@keyframes netItemIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0px);
+  }
+}
+
+@keyframes netShake {
+  0%, 100% { transform: none; }
+  25% { transform: translateX(-6px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-3px); }
+}

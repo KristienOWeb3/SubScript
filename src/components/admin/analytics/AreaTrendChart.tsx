@@ -210,7 +210,7 @@ export function AreaTrendChart({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-3 text-[11px] font-semibold mr-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold mr-2">
                         <span className="flex items-center gap-1.5 text-[#0f172a]">
                             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
                             {primaryLabel}
@@ -450,27 +450,29 @@ export function AreaTrendChart({
                     </p>
 
                     {/* Same numbers as a table, so the data doesn't depend on hovering to be read */}
-                    <table className="sr-only">
-                        <caption>{tableCaption ?? `${title ?? primaryLabel} by date`}</caption>
-                        <thead>
-                            <tr>
-                                <th scope="col">Date</th>
-                                <th scope="col">{primaryLabel}</th>
-                                {hasSecondary && secondaryLabel && <th scope="col">{secondaryLabel}</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {activeData.map((d, i) => (
-                                <tr key={`${d.date}-${i}`}>
-                                    <th scope="row">{d.label}</th>
-                                    <td>{formatValue(d.value)}</td>
-                                    {hasSecondary && secondaryLabel && (
-                                        <td>{d.secondaryValue !== undefined ? formatValue(d.secondaryValue) : "—"}</td>
-                                    )}
+                    <div className="sr-only">
+                        <table>
+                            <caption>{tableCaption ?? `${title ?? primaryLabel} by date`}</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Date</th>
+                                    <th scope="col">{primaryLabel}</th>
+                                    {hasSecondary && secondaryLabel && <th scope="col">{secondaryLabel}</th>}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {activeData.map((d, i) => (
+                                    <tr key={`${d.date}-${i}`}>
+                                        <th scope="row">{d.label}</th>
+                                        <td>{formatValue(d.value)}</td>
+                                        {hasSecondary && secondaryLabel && (
+                                            <td>{d.secondaryValue !== undefined ? formatValue(d.secondaryValue) : "—"}</td>
+                                        )}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
         </div>

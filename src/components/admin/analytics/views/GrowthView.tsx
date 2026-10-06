@@ -52,7 +52,7 @@ export function GrowthView({ analytics }: GrowthViewProps) {
   return (
     <div className="space-y-6">
       {/* Top Growth KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-4">
         <StatCardWithSparkline
           label="Total Registered Accounts"
           value={growth?.usersTotal ?? 0}
@@ -95,7 +95,7 @@ export function GrowthView({ analytics }: GrowthViewProps) {
       />
 
       {/* Two Column Composition Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-6">
         {/* Roles Donut */}
         <DonutMetricChart
           segments={roleSegments}

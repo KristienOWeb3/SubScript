@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import React, { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import NotificationBell from "@/components/dashboard/NotificationBell";
 import {
@@ -70,7 +71,9 @@ export default function MerchantDashboardNav({
     useEffect(() => {
         try {
             const stored = localStorage.getItem("subscript_merchant_sidebar_collapsed");
-            if (stored === "true") {
+            if (stored !== null) {
+                setIsCollapsed(stored === "true");
+            } else if (typeof window !== "undefined" && window.innerWidth < 1024) {
                 setIsCollapsed(true);
             }
         } catch {
@@ -114,8 +117,8 @@ export default function MerchantDashboardNav({
             : `${baseRow} ${
                 active ? selectedRow : "text-white/80 hover:bg-white/10 hover:text-white"
             }`;
-    const childClass = (active: boolean) =>
-        isCollapsed
+    const childClass = (active: boolean, expanded = false) =>
+        isCollapsed && !expanded
             ? `flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-200 ${
                 active ? selectedRow : "text-white/70 hover:bg-white/10 hover:text-white"
             }`
@@ -130,7 +133,7 @@ export default function MerchantDashboardNav({
                 className={`merchant-rail relative hidden h-full shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#353935] pb-5 pt-6 text-white md:flex transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
                     isCollapsed
                         ? "w-16 px-2"
-                        : "w-[clamp(230px,17.3vw,288px)] px-3.5 sm:px-4"
+                        : "w-[clamp(200px,16vw,270px)] md:w-52 lg:w-64 px-3 sm:px-4"
                 }`}
             >
                 {isLoading && (
@@ -560,7 +563,7 @@ export default function MerchantDashboardNav({
             {/* Mobile Bottom Navigation */}
             {mobileEnabled && (
                 <nav
-                    className="merchant-bottom-nav fixed bottom-3 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-lg -translate-x-1/2 items-center justify-around rounded-full bg-[#353935] px-2 py-2.5 min-h-[53px] shadow-[0_10px_40px_rgba(8,40,36,0.25)] border border-white/10 md:hidden"
+                    className="merchant-bottom-nav fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-lg -translate-x-1/2 items-center justify-around rounded-full bg-[#353935] px-2 py-2 min-h-[53px] shadow-[0_10px_40px_rgba(8,40,36,0.25)] border border-white/10 md:hidden"
                     aria-label="Merchant mobile navigation"
                 >
                     {[
@@ -577,20 +580,21 @@ export default function MerchantDashboardNav({
                             <button
                                 key={String(id)}
                                 onClick={() => onSelect(String(id))}
-                                className={`flex min-w-0 flex-col items-center gap-1 rounded-full px-3 py-1.5 text-[10px] transition ${
+                                aria-current={active ? "page" : undefined}
+                                className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[10px] transition ${
                                     active
                                         ? "bg-[#FFFFF0] text-[#082824] shadow-sm font-bold"
                                         : "text-white/70 hover:text-white"
                                 }`}
                             >
                                 <Icon className="h-4 w-4" />
-                                <span className="truncate">{String(label)}</span>
+                                <span className="max-w-full truncate">{String(label)}</span>
                             </button>
                         );
                     })}
                     <button
                         onClick={() => setMoreOpen(true)}
-                        className="flex flex-col items-center gap-1 rounded-full px-3 py-1.5 text-[10px] text-white/70 hover:text-white"
+                        className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[10px] text-white/70 hover:text-white"
                     >
                         <Menu className="h-4 w-4" /> More
                     </button>
@@ -598,72 +602,86 @@ export default function MerchantDashboardNav({
             )}
 
             {/* Mobile More Sheet */}
-            {mobileEnabled && moreOpen && (
-                <div
-                    className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm p-3 md:hidden"
-                    onClick={() => setMoreOpen(false)}
-                >
-                    <div
-                        className="merchant-more-sheet absolute bottom-3 left-3 right-3 rounded-[30px] bg-[#353935] border border-white/15 p-5 text-white shadow-2xl"
-                        onClick={(event) => event.stopPropagation()}
+            <AnimatePresence>
+                {mobileEnabled && moreOpen && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm p-3 md:hidden flex flex-col justify-end"
+                        onClick={() => setMoreOpen(false)}
                     >
-                        <div className="mb-4 flex items-center justify-between">
-                            <h2 className="text-lg font-bold">More</h2>
-                            <button
-                                onClick={() => setMoreOpen(false)}
-                                className="rounded-full bg-white/10 p-2 text-white"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button
-                                onClick={() => {
-                                    onSelect("checkout");
-                                    setMoreOpen(false);
-                                }}
-                                className={childClass(activeId === "checkout")}
-                            >
-                                <CheckoutPlaybook className="h-4 w-4" /> Checkout Setup
-                            </button>
-                            <button
-                                onClick={() => {
-                                    onSelect("webhooks");
-                                    setMoreOpen(false);
-                                }}
-                                className={childClass(activeId === "webhooks")}
-                            >
-                                <Webhook className="h-4 w-4" /> Webhooks
-                            </button>
-                            <button
-                                onClick={() => {
-                                    onSelect("settings");
-                                    setMoreOpen(false);
-                                }}
-                                className={childClass(activeId === "settings")}
-                            >
-                                <Settings className="h-4 w-4" /> Settings
-                            </button>
-                            <Link
-                                href="/support"
-                                className={childClass(false)}
-                                onClick={() => setMoreOpen(false)}
-                            >
-                                <HelpCircle className="h-4 w-4" /> Help Center
-                            </Link>
-                            <button
-                                onClick={() => {
-                                    setMoreOpen(false);
-                                    onLogout?.();
-                                }}
-                                className="col-span-2 flex w-full items-center justify-center gap-2 rounded-full px-3.5 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all mt-1"
-                            >
-                                <LogOut className="h-4 w-4" /> Log out
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                        <motion.div
+                            initial={{ y: "100%", opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            exit={{ y: "100%", opacity: 0 }}
+                            transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="More merchant navigation"
+                            className="merchant-more-sheet max-h-[calc(100dvh-2rem)] w-full overflow-y-auto overscroll-contain rounded-[30px] bg-[#353935] border border-white/15 p-4 sm:p-5 text-white shadow-2xl mb-[calc(0.25rem+env(safe-area-inset-bottom))]"
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div className="mb-4 flex items-center justify-between">
+                                <h2 className="text-lg font-bold">More</h2>
+                                <button
+                                    onClick={() => setMoreOpen(false)}
+                                    aria-label="Close merchant navigation"
+                                    className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
+                                <button
+                                    onClick={() => {
+                                        onSelect("checkout");
+                                        setMoreOpen(false);
+                                    }}
+                                    className={childClass(activeId === "checkout", true)}
+                                >
+                                    <CheckoutPlaybook className="h-4 w-4" /> Checkout Setup
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        onSelect("webhooks");
+                                        setMoreOpen(false);
+                                    }}
+                                    className={childClass(activeId === "webhooks", true)}
+                                >
+                                    <Webhook className="h-4 w-4" /> Webhooks
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        onSelect("settings");
+                                        setMoreOpen(false);
+                                    }}
+                                    className={childClass(activeId === "settings", true)}
+                                >
+                                    <Settings className="h-4 w-4" /> Settings
+                                </button>
+                                <Link
+                                    href="/support"
+                                    className={childClass(false, true)}
+                                    onClick={() => setMoreOpen(false)}
+                                >
+                                    <HelpCircle className="h-4 w-4" /> Help Center
+                                </Link>
+                                <button
+                                    onClick={() => {
+                                        setMoreOpen(false);
+                                        onLogout?.();
+                                    }}
+                                    className="col-span-1 min-[360px]:col-span-2 flex w-full items-center justify-center gap-2 rounded-full px-3.5 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all mt-1"
+                                >
+                                    <LogOut className="h-4 w-4" /> Log out
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </>
     );
 }

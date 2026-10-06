@@ -38,6 +38,12 @@ export interface ContractCall {
      * orchestrator or a sponsor top-up — the classifier in @/lib/sponsor/policy decides which it is.
      */
     gasPayer?: "platform" | "wallet";
+    /**
+     * When true (default), wait until transaction is CONFIRMED on chain.
+     * When false, return immediately upon successful transaction creation/acceptance at Circle
+     * (returns circleTxId and submissionDurationMs).
+     */
+    waitForConfirmation?: boolean;
 }
 
 /**
@@ -90,12 +96,16 @@ export function cancelSubscriptionIdempotencyKey(contractAddress: string, subId:
 
 export interface ContractExecution {
     txHash: string;
+    circleTxId?: string;
+    submissionDurationMs?: number;
+    confirmationDurationMs?: number;
+    state?: string;
 }
 
 /* How long to wait for a Circle transaction to confirm before giving up. Circle SCA transactions
    go through the 4337 pipeline, so confirmation can take a bit longer than a raw EOA send. */
 const CIRCLE_TX_CONFIRM_TIMEOUT_MS = Number(process.env.CIRCLE_TX_CONFIRM_TIMEOUT_MS) || 110_000;
-const CIRCLE_TX_POLL_INTERVAL_MS = Number(process.env.CIRCLE_TX_POLL_INTERVAL_MS) || 800;
+const CIRCLE_TX_POLL_INTERVAL_MS = Number(process.env.CIRCLE_TX_POLL_INTERVAL_MS) || 500;
 const CIRCLE_FIRST_TX_QUEUE_RETRY_DELAYS_MS = [500, 1_000, 1_500, 2_000] as const;
 
 const CIRCLE_FIRST_TX_QUEUE_CODE = 155505;
@@ -182,6 +192,7 @@ class CircleCustody implements WalletCustody {
             idempotencyKey,
         } as const;
 
+        const submissionStart = performance.now();
         let created;
         for (let attempt = 0; ; attempt++) {
             try {
@@ -201,11 +212,23 @@ class CircleCustody implements WalletCustody {
                 await wait(retryDelay);
             }
         }
+        const submissionDurationMs = Math.round(performance.now() - submissionStart);
         const txId = created.data?.id;
         if (!txId) {
             throw new Error("Circle contract execution returned no transaction id.");
         }
 
+        if (call.waitForConfirmation === false) {
+            return {
+                txHash: "",
+                circleTxId: txId,
+                submissionDurationMs,
+                confirmationDurationMs: 0,
+                state: created.data?.state || "INITIATED",
+            };
+        }
+
+        const confirmStart = performance.now();
         /* CONFIRMED = mined successfully; the SDK rejects if the tx enters FAILED/CANCELLED/
            DENIED/STUCK, which covers on-chain reverts. */
         const confirmed = await client.getTransaction({
@@ -214,9 +237,15 @@ class CircleCustody implements WalletCustody {
             pollingInterval: CIRCLE_TX_POLL_INTERVAL_MS,
             signal: AbortSignal.timeout(CIRCLE_TX_CONFIRM_TIMEOUT_MS),
         });
+        const confirmationDurationMs = Math.round(performance.now() - confirmStart);
         const txHash = confirmed.data?.transaction?.txHash;
         if (txHash) {
-            return { txHash };
+            return {
+                txHash,
+                circleTxId: txId,
+                submissionDurationMs,
+                confirmationDurationMs,
+            };
         }
         /* Defensive: txHash should be populated at CONFIRMED for both EOA and SCA. */
         const withHash = await client.getTransaction({
@@ -225,7 +254,12 @@ class CircleCustody implements WalletCustody {
             pollingInterval: CIRCLE_TX_POLL_INTERVAL_MS,
             signal: AbortSignal.timeout(CIRCLE_TX_CONFIRM_TIMEOUT_MS),
         });
-        return { txHash: withHash.data.transaction.txHash };
+        return {
+            txHash: withHash.data.transaction.txHash,
+            circleTxId: txId,
+            submissionDurationMs,
+            confirmationDurationMs: Math.round(performance.now() - confirmStart),
+        };
     }
 
     async signTypedData(
@@ -268,4 +302,73 @@ export async function getWalletCustody(walletAddress: string): Promise<WalletCus
         return new CircleCustody(address, record.circle_wallet_id);
     }
     throw new Error("This wallet has no server-held key. Connect a browser wallet to sign transactions.");
+}
+
+/** Verify the actual USDC leg, not merely the successful outer ERC-4337 transaction. */
+export async function getArcTransferStatus(txHash: string, sender: string): Promise<{
+    status: "pending" | "confirmed" | "failed"; txHash: string; error?: string;
+}> {
+    try {
+        const { readProvider } = await import("@/lib/vault/onchain");
+        const { USDC_NATIVE_GAS_ADDRESS } = await import("@/lib/contracts/constants");
+        const receipt = await readProvider().getTransactionReceipt(txHash);
+        if (!receipt) return { status: "pending", txHash };
+        if (receipt.status === 0) return { status: "failed", txHash, error: "The transfer reverted on Arc." };
+        if (receipt.status !== 1) return { status: "pending", txHash };
+        const events = new ethers.Interface([
+            "event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)",
+            "event Transfer(address indexed from, address indexed to, uint256 value)",
+        ]);
+        let credited = false;
+        for (const log of receipt.logs ?? []) {
+            let parsed;
+            try { parsed = events.parseLog({ topics: [...log.topics], data: log.data }); } catch { continue; }
+            if (parsed?.name === "UserOperationEvent" && String(parsed.args.sender).toLowerCase() === sender.toLowerCase() && parsed.args.success === false) {
+                return { status: "failed", txHash, error: "The embedded USDC transfer reverted on Arc." };
+            }
+            if (parsed?.name === "Transfer" && log.address.toLowerCase() === USDC_NATIVE_GAS_ADDRESS.toLowerCase()
+                && String(parsed.args.from).toLowerCase() === sender.toLowerCase() && BigInt(parsed.args.value) > 0n) credited = true;
+        }
+        return { status: credited ? "confirmed" : "pending", txHash };
+    } catch (err: any) {
+        return { status: "pending", txHash, error: err?.message };
+    }
+}
+
+/** Resolve only transactions belonging to the caller's actual funding wallet. Circle's
+ * CONFIRMED state and an outer receipt alone cannot establish that USDC reached a recipient. */
+export async function getCircleTransactionStatus(circleTxId: string, walletAddress: string): Promise<{
+    status: "pending" | "confirmed" | "failed"; txHash?: string; state?: string; error?: string;
+}> {
+    try {
+        const record = await pgMaybeOne<EmbeddedWalletRow>(
+            "select circle_wallet_id from user_embedded_wallets where wallet_address = $1 limit 1",
+            [walletAddress.toLowerCase()],
+        );
+        const res = await getDevWalletsClient().getTransaction({ id: circleTxId });
+        const tx = res.data?.transaction;
+        if (!tx) return { status: "pending", state: "PENDING" };
+        if (!record?.circle_wallet_id || tx.walletId !== record.circle_wallet_id) {
+            return { status: "pending", error: "Transaction does not belong to this funding wallet." };
+        }
+        const { state, txHash } = tx;
+        let result: { status: "pending" | "confirmed" | "failed"; txHash?: string; state?: string; error?: string };
+        if (txHash) {
+            // Once broadcast, verified chain execution is authoritative. A stale provider
+            // failure must not free headroom for a USDC transfer that actually settled.
+            result = { ...await getArcTransferStatus(txHash, walletAddress), state };
+        } else if (state === "FAILED" || state === "CANCELLED" || state === "DENIED") {
+            result = { status: "failed", state, error: "Circle transaction failed." };
+        } else {
+            result = { status: "pending", state };
+        }
+        if (result.status !== "pending") {
+            const { reconcileSubmittedSpendingLimitOperation } = await import("@/lib/spendingLimits");
+            await reconcileSubmittedSpendingLimitOperation(walletAddress, circleTxId, result.status)
+                .catch((err) => console.error("Failed to reconcile submitted spending operation:", err));
+        }
+        return result;
+    } catch (err: any) {
+        return { status: "pending", error: err?.message };
+    }
 }

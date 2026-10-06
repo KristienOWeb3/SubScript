@@ -243,7 +243,7 @@ export function AdminAccountsView() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -252,15 +252,15 @@ export function AdminAccountsView() {
             Inspect custody models, linked authentication identities, active sessions, and apply moderation actions.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:w-auto">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs">
             <Search className="h-3.5 w-3.5 text-[#64748b]" />
             <input
               type="text"
               placeholder="Search wallet 0x..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="bg-transparent font-mono text-xs focus:outline-none w-48"
+              className="min-w-0 w-full bg-transparent font-mono text-xs focus:outline-none sm:w-48"
             />
           </div>
           <button
@@ -276,7 +276,7 @@ export function AdminAccountsView() {
       </div>
 
       {/* Sub-Tabs: All Accounts vs Recently Deleted Accounts */}
-      <div className="flex items-center gap-2 border-b border-[#e2e8f0] pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#e2e8f0] pb-2">
         <button
           type="button"
           onClick={() => setActiveSubTab("all")}
@@ -312,7 +312,7 @@ export function AdminAccountsView() {
       ) : activeSubTab === "deleted" ? (
         /* Recently Deleted Accounts Table */
         <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-          <div className="border-b border-[#e2e8f0] px-6 py-3.5 bg-[#f8fafc] flex items-center justify-between">
+          <div className="border-b border-[#e2e8f0] px-4 sm:px-6 py-3.5 bg-[#f8fafc] flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-bold text-[#0f172a]">Closed & Deleted Accounts Log</span>
             <span className="text-[10px] font-mono text-[#64748b]">{filteredDeletedAccounts.length} record(s)</span>
           </div>
@@ -475,16 +475,16 @@ export function AdminAccountsView() {
       {/* Account Deep Drill-Down Modal */}
       {selectedAddress && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl border border-gray-200 space-y-5">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div>
+          <div className="min-w-0 w-full max-w-3xl max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-gray-200 space-y-5">
+            <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-3">
+              <div className="min-w-0">
                 <h3 className="text-base font-bold text-[#0f172a]">Account Deep Drill-Down</h3>
                 <p className="font-mono text-xs text-[#64748b] select-all">{selectedAddress}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedAddress(null)}
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
               >
                 ✕
               </button>
@@ -504,7 +504,7 @@ export function AdminAccountsView() {
             ) : accountDetail ? (
               <div className="space-y-5 text-xs">
                 {/* Identity & Custody Summary Card */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,120px),1fr))] gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <div>
                     <span className="text-[10px] font-bold uppercase text-slate-500">Custody Model</span>
                     <p className="font-semibold text-slate-900 mt-0.5">{accountDetail.custodyType}</p>
@@ -534,7 +534,7 @@ export function AdminAccountsView() {
                   {accountDetail.customer && (
                     <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Customer Spend Limits</span>
-                      <div className="grid grid-cols-3 gap-2 pt-1 text-center font-mono">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-center font-mono">
                         <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
                           <span className="text-[9px] text-slate-400 block font-sans">DAILY</span>
                           <span className="font-bold text-slate-800">${accountDetail.customer.spendingLimitDaily || "—"}</span>
@@ -554,7 +554,7 @@ export function AdminAccountsView() {
                   {accountDetail.merchant && (
                     <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Merchant Balances & Identity</span>
-                      <div className="grid grid-cols-3 gap-2 pt-1 text-center font-mono">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-center font-mono">
                         <div className="bg-emerald-50 rounded-lg p-2 border border-emerald-100">
                           <span className="text-[9px] text-emerald-600 block font-sans">AVAILABLE</span>
                           <span className="font-bold text-emerald-700">${accountDetail.merchant.availableBalanceUsdc}</span>
@@ -696,7 +696,7 @@ export function AdminAccountsView() {
                     <div className="space-y-1.5 max-h-32 overflow-y-auto">
                       {accountDetail.subscriptionsAsSubscriber.length > 0 ? (
                         accountDetail.subscriptionsAsSubscriber.map((sub) => (
-                          <div key={sub.subscriptionId} className="flex items-center justify-between text-[11px] p-1.5 bg-slate-50 rounded border border-slate-100">
+                          <div key={sub.subscriptionId} className="flex flex-wrap items-center justify-between gap-2 text-[11px] p-1.5 bg-slate-50 rounded border border-slate-100">
                             <span className="font-mono text-slate-700">#{sub.subscriptionId}</span>
                             <span className="font-bold text-slate-900">${(Number(sub.amountCapUsdc) / 1_000_000).toFixed(2)} USDC</span>
                             <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[9px] font-bold">{sub.status}</span>
@@ -715,7 +715,7 @@ export function AdminAccountsView() {
                     <div className="space-y-1.5 max-h-32 overflow-y-auto">
                       {accountDetail.subscriptionsAsMerchant.length > 0 ? (
                         accountDetail.subscriptionsAsMerchant.map((sub) => (
-                          <div key={sub.subscriptionId} className="flex items-center justify-between text-[11px] p-1.5 bg-slate-50 rounded border border-slate-100">
+                          <div key={sub.subscriptionId} className="flex flex-wrap items-center justify-between gap-2 text-[11px] p-1.5 bg-slate-50 rounded border border-slate-100">
                             <span className="font-mono text-slate-700">{sub.subscriber.slice(0, 8)}...</span>
                             <span className="font-bold text-emerald-600">${(Number(sub.amountCapUsdc) / 1_000_000).toFixed(2)} USDC</span>
                             <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-bold">{sub.status}</span>
@@ -736,7 +736,7 @@ export function AdminAccountsView() {
                   <div className="space-y-1.5 max-h-40 overflow-y-auto">
                     {accountDetail.receipts.length > 0 ? (
                       accountDetail.receipts.map((rcpt) => (
-                        <div key={rcpt.receiptId} className="flex items-center justify-between text-[11px] p-2 bg-slate-50 rounded border border-slate-100">
+                        <div key={rcpt.receiptId} className="flex flex-wrap items-center justify-between gap-2 text-[11px] p-2 bg-slate-50 rounded border border-slate-100">
                           <div>
                             <span className="font-bold text-slate-900 block">{rcpt.title || "Payment Receipt"}</span>
                             <span className="font-mono text-[10px] text-slate-400">{rcpt.receiptId}</span>

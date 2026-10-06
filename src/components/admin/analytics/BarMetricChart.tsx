@@ -243,26 +243,28 @@ export function BarMetricChart({
 
             {/* The chart's figures in text, for anyone who can't read the bars. */}
             {data.length > 0 && (
-                <table className="sr-only">
-                    <caption>{title ? `${title} — full figures` : "Chart values"}</caption>
-                    <thead>
-                        <tr>
-                            <th scope="col">Bucket</th>
-                            <th scope="col">Value</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {data.map((item, idx) => (
-                            <tr key={`${item.label}-row-${idx}`}>
-                                <th scope="row">{item.label}</th>
-                                <td>
-                                    {fullValue(values[idx])}
-                                    {item.sublabel ? ` (${item.sublabel})` : ""}
-                                </td>
+                <div className="sr-only">
+                    <table>
+                        <caption>{title ? `${title} — full figures` : "Chart values"}</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Bucket</th>
+                                <th scope="col">Value</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {data.map((item, idx) => (
+                                <tr key={`${item.label}-row-${idx}`}>
+                                    <th scope="row">{item.label}</th>
+                                    <td>
+                                        {fullValue(values[idx])}
+                                        {item.sublabel ? ` (${item.sublabel})` : ""}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             )}
         </div>
     );

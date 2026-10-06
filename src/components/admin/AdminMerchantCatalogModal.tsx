@@ -169,19 +169,19 @@ export function AdminMerchantCatalogModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-2xl border border-gray-200 space-y-5">
+      <div className="min-w-0 w-full max-w-3xl max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl bg-white p-4 sm:p-6 shadow-2xl border border-gray-200 space-y-5 [overflow-wrap:anywhere]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-          <div className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-[#2775ca]" />
-            <div>
+        <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Building2 className="h-5 w-5 shrink-0 text-[#2775ca]" />
+            <div className="min-w-0">
               <h3 className="text-base font-bold text-[#0f172a]">Merchant Catalog & API Health</h3>
               <p className="font-mono text-xs text-[#64748b]">{merchantAddress}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
           >
             ✕
           </button>
@@ -230,7 +230,7 @@ export function AdminMerchantCatalogModal({
                   </div>
                 )}
                 <div className="flex items-start justify-between gap-2 border-t border-gray-100 pt-2">
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold">Display name</p>
                     {editingName ? (
                       <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -240,7 +240,7 @@ export function AdminMerchantCatalogModal({
                           onChange={(e) => setNameDraft(e.target.value)}
                           maxLength={60}
                           placeholder="Business display name"
-                          className="flex-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-900"
+                          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-900"
                         />
                         <div className="flex gap-2">
                           <button
@@ -289,7 +289,7 @@ export function AdminMerchantCatalogModal({
               <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
                 {data.plans.length > 0 ? (
                   data.plans.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
+                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-gray-50 border border-gray-100">
                       <div>
                         <span className="font-bold text-gray-900">{p.name}</span>
                         <span className="text-emerald-600 font-bold ml-2">${p.amountUsdc} USDC</span>
@@ -326,7 +326,7 @@ export function AdminMerchantCatalogModal({
               <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
                 {data.paymentLinks.length > 0 ? (
                   data.paymentLinks.map((l) => (
-                    <div key={l.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
+                    <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-gray-50 border border-gray-100">
                       <div>
                         <span className="font-bold text-gray-900">{l.title}</span>
                         <span className="text-emerald-600 font-bold ml-2">${l.amountUsdc} USDC</span>
@@ -363,7 +363,7 @@ export function AdminMerchantCatalogModal({
               <div className="space-y-2 border border-gray-200 rounded-lg p-2">
                 {data.apiKeys.length > 0 ? (
                   data.apiKeys.map((k) => (
-                    <div key={k.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
+                    <div key={k.id} className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-gray-50 border border-gray-100">
                       <div>
                         <span className="font-mono text-gray-900">{k.publishableKey}</span>
                         <span className="text-gray-400 text-[10px] ml-2">({k.mode})</span>
@@ -399,7 +399,7 @@ export function AdminMerchantCatalogModal({
               <div className="space-y-1.5 max-h-36 overflow-y-auto border border-gray-200 rounded-lg p-2">
                 {data.webhookDeliveries.length > 0 ? (
                   data.webhookDeliveries.map((d) => (
-                    <div key={d.id} className="flex items-center justify-between p-1.5 text-[11px] border-b border-gray-100 last:border-0">
+                    <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 p-1.5 text-[11px] border-b border-gray-100 last:border-0">
                       <div>
                         <span className="font-mono text-gray-800">{d.event}</span>
                         <span className="text-gray-400 ml-2">HTTP {d.httpStatus || "N/A"} ({d.attempts} att)</span>

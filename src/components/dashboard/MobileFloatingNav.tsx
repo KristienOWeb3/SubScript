@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useId } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "@/components/icons";
 import { Wallet } from "@/components/icons";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
@@ -17,6 +18,7 @@ interface MobileFloatingNavProps<T extends string = string> {
   readonly onSelectTab: (tabId: T) => void;
   readonly pendingDmCount?: number;
   readonly scrollContainerSelector?: string;
+  readonly isLocked?: boolean;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -37,8 +39,30 @@ export default function MobileFloatingNav<T extends string = string>({
   onSelectTab,
   pendingDmCount = 0,
   scrollContainerSelector = ".user-dashboard-content, .user-dashboard-redesign",
+  isLocked = false,
 }: MobileFloatingNavProps<T>) {
   const [isRetracted, setIsRetracted] = useState(false);
+  const reduceMotion = useReducedMotion();
+  const selectionId = useId();
+  const tabTransition = { duration: reduceMotion ? 0 : 0.58, ease: [0.32, 0.72, 0, 1] as const };
+  const labelElements = useRef(new Map<T, HTMLSpanElement>());
+  const [labelWidths, setLabelWidths] = useState<Partial<Record<T, number>>>({});
+  const isLockedRef = useRef(Boolean(isLocked));
+
+  useLayoutEffect(() => {
+    let cancelled = false;
+    const measureLabels = () => {
+      if (cancelled) return;
+      const widths: Partial<Record<T, number>> = {};
+      labelElements.current.forEach((element, id) => {
+        widths[id] = element.getBoundingClientRect().width;
+      });
+      setLabelWidths(previous => tabs.every(tab => previous[tab.id] === widths[tab.id]) ? previous : widths);
+    };
+    measureLabels();
+    void document.fonts?.ready.then(measureLabels);
+    return () => { cancelled = true; };
+  }, [tabs]);
 
   // Mutable tracking refs — isolated from React render cycle for zero-jitter 120fps performance
   const trackingRef = useRef({
@@ -51,12 +75,20 @@ export default function MobileFloatingNav<T extends string = string>({
     scrollContainerEl: null as HTMLElement | null,
   });
 
-  // Always expand gracefully whenever user switches active tab
+  // Always expand gracefully whenever user switches active tab or when locked open
   useEffect(() => {
     setIsRetracted(false);
   }, [activeTab]);
 
+  useEffect(() => {
+    isLockedRef.current = Boolean(isLocked);
+    if (isLocked) {
+      setIsRetracted(false);
+    }
+  }, [isLocked]);
+
   const updateRetractionState = useCallback((shouldRetract: boolean) => {
+    if (isLockedRef.current && shouldRetract) return;
     const now = Date.now();
     // 80ms minimum commitment prevents strobe effects during frantic opposite-direction flicks
     if (now - trackingRef.current.lastToggleTime < 80) return;
@@ -76,6 +108,8 @@ export default function MobileFloatingNav<T extends string = string>({
     const t = trackingRef.current;
     let pollInterval: ReturnType<typeof setInterval> | null = null;
     let pollCount = 0;
+    let scrollFrame: number | null = null;
+    let attachedContainer: HTMLElement | null = null;
 
     const findContainer = (): HTMLElement | null => {
       const selectors = scrollContainerSelector.split(",").map((s) => s.trim());
@@ -88,11 +122,14 @@ export default function MobileFloatingNav<T extends string = string>({
 
     // ── High-performance Scroll Handler with Inertia Filtering ──
     const handleScrollEvent = (targetEl?: HTMLElement | Window) => {
+      if (isLockedRef.current) return;
       if (t.rafScheduled) return;
       t.rafScheduled = true;
 
-      requestAnimationFrame(() => {
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = null;
         t.rafScheduled = false;
+        if (isLockedRef.current) return;
         const currentY =
           targetEl && "scrollTop" in targetEl
             ? targetEl.scrollTop
@@ -130,6 +167,7 @@ export default function MobileFloatingNav<T extends string = string>({
 
     // ── Direct Touch Gesture Tracking for Instant Response on Mobile ──
     const handleTouchStart = (e: TouchEvent) => {
+      if (isLockedRef.current) return;
       if (e.touches && e.touches.length > 0) {
         t.touchStartY = e.touches[0].clientY;
         t.isTouchActive = true;
@@ -137,6 +175,7 @@ export default function MobileFloatingNav<T extends string = string>({
     };
 
     const handleTouchMove = (e: TouchEvent) => {
+      if (isLockedRef.current) return;
       if (!t.isTouchActive || !e.touches || e.touches.length === 0) return;
       const currentTouchY = e.touches[0].clientY;
       const deltaTouchY = currentTouchY - t.touchStartY;
@@ -159,6 +198,7 @@ export default function MobileFloatingNav<T extends string = string>({
 
     // ── Trackpad Wheel Gesture Support ──
     const handleWheel = (e: WheelEvent) => {
+      if (isLockedRef.current) return;
       if (Math.abs(e.deltaY) < 5) return;
       if (e.deltaY > 10) {
         updateRetractionState(true);
@@ -167,14 +207,20 @@ export default function MobileFloatingNav<T extends string = string>({
       }
     };
 
+    const handleContainerScroll = () => {
+      if (attachedContainer) handleScrollEvent(attachedContainer);
+    };
+    const handleWindowScroll = () => handleScrollEvent(window);
+
     const attachListeners = (container: HTMLElement | null) => {
       if (container) {
+        attachedContainer = container;
         t.scrollContainerEl = container;
         t.lastScrollY = container.scrollTop;
-        container.addEventListener("scroll", () => handleScrollEvent(container), { passive: true });
+        container.addEventListener("scroll", handleContainerScroll, { passive: true });
       }
 
-      window.addEventListener("scroll", () => handleScrollEvent(window), { passive: true });
+      window.addEventListener("scroll", handleWindowScroll, { passive: true });
       window.addEventListener("touchstart", handleTouchStart, { passive: true });
       window.addEventListener("touchmove", handleTouchMove, { passive: true });
       window.addEventListener("touchend", handleTouchEnd, { passive: true });
@@ -190,9 +236,10 @@ export default function MobileFloatingNav<T extends string = string>({
         pollCount++;
         const found = findContainer();
         if (found) {
+          attachedContainer = found;
           t.scrollContainerEl = found;
           t.lastScrollY = found.scrollTop;
-          found.addEventListener("scroll", () => handleScrollEvent(found), { passive: true });
+          found.addEventListener("scroll", handleContainerScroll, { passive: true });
           if (pollInterval) {
             clearInterval(pollInterval);
             pollInterval = null;
@@ -205,15 +252,16 @@ export default function MobileFloatingNav<T extends string = string>({
     }
 
     return () => {
-      if (t.scrollContainerEl) {
-        t.scrollContainerEl.removeEventListener("scroll", () => handleScrollEvent(t.scrollContainerEl!));
-      }
-      window.removeEventListener("scroll", () => handleScrollEvent(window));
+      attachedContainer?.removeEventListener("scroll", handleContainerScroll);
+      window.removeEventListener("scroll", handleWindowScroll);
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleTouchEnd);
       window.removeEventListener("wheel", handleWheel);
       if (pollInterval) clearInterval(pollInterval);
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+      t.rafScheduled = false;
+      t.scrollContainerEl = null;
     };
   }, [scrollContainerSelector, updateRetractionState]);
 
@@ -227,7 +275,7 @@ export default function MobileFloatingNav<T extends string = string>({
    * Cubic bezier (0.22, 1, 0.36, 1) over 500ms creates a regal, buttery glide
    * ───────────────────────────────────────────────────────────────────────── */
   const motionBezier = "cubic-bezier(0.22, 1, 0.36, 1)";
-  const capsuleTransition = `width 500ms ${motionBezier}, height 500ms ${motionBezier}, max-width 500ms ${motionBezier}, min-height 500ms ${motionBezier}, transform 500ms ${motionBezier}, border-radius 500ms ${motionBezier}, background 350ms ease, box-shadow 500ms ${motionBezier}`;
+  const capsuleTransition = reduceMotion ? "none" : `width 580ms ${motionBezier}, height 580ms ${motionBezier}, max-width 580ms ${motionBezier}, min-height 580ms ${motionBezier}, transform 580ms ${motionBezier}, border-radius 580ms ${motionBezier}, background 350ms ease, box-shadow 580ms ${motionBezier}`;
 
   // When retracted, identify which pill is the active selection
   const isLeftSelected = !isInboxActive;
@@ -235,8 +283,9 @@ export default function MobileFloatingNav<T extends string = string>({
 
   return (
     <aside
+      id="mobile-bottom-bar"
       aria-label="Mobile navigation bar"
-      className={`fixed bottom-4 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center box-border pointer-events-none ${
+      className={`fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center box-border pointer-events-none ${
         isRetracted ? "justify-between" : "justify-center gap-2"
       }`}
       style={{
@@ -247,6 +296,7 @@ export default function MobileFloatingNav<T extends string = string>({
     >
       {/* ── Left Navigation Capsule (Shrinks to active tab icon circle on scroll down) ── */}
       <nav
+        id="mobile-nav-capsule"
         aria-label="Primary navigation"
         data-retracted-selected={isRetracted && isLeftSelected ? "true" : undefined}
         data-retracted={isRetracted ? "true" : "false"}
@@ -271,7 +321,8 @@ export default function MobileFloatingNav<T extends string = string>({
           height: CAPSULE_HEIGHT,
           minHeight: CAPSULE_HEIGHT,
           maxHeight: CAPSULE_HEIGHT,
-          maxWidth: isRetracted ? CAPSULE_RETRACTED_SIZE : targetExpandedWidth,
+          maxWidth: isRetracted ? CAPSULE_RETRACTED_SIZE : `calc(100% - ${isInboxActive ? 120 : CAPSULE_RETRACTED_SIZE + 8}px)`,
+          minWidth: 0,
           boxSizing: "border-box",
         }}
       >
@@ -286,7 +337,7 @@ export default function MobileFloatingNav<T extends string = string>({
           }`}
           style={{
             transitionTimingFunction: motionBezier,
-            transitionDuration: "450ms",
+            transitionDuration: reduceMotion ? "0ms" : "450ms",
           }}
         >
           <button
@@ -321,11 +372,10 @@ export default function MobileFloatingNav<T extends string = string>({
               : "opacity-100 scale-100 pointer-events-auto"
           }`}
           style={{
-            width: targetExpandedWidth,
-            minWidth: targetExpandedWidth,
+            width: "100%",
+            minWidth: 0,
             transitionTimingFunction: motionBezier,
-            transitionDuration: "380ms",
-            transform: "translate3d(0, 0, 0)",
+            transitionDuration: reduceMotion ? "0ms" : "480ms",
             WebkitBackfaceVisibility: "hidden",
           }}
         >
@@ -333,32 +383,55 @@ export default function MobileFloatingNav<T extends string = string>({
             const isActive = activeTab === tab.id;
             const IconComponent = tab.icon;
             return (
-              <button
+              <motion.button
                 key={tab.id}
+                data-nav-motion="true"
+                initial={false}
+                animate={{ width: isActive ? 90 : 36 }}
+                transition={tabTransition}
                 type="button"
                 aria-pressed={isActive}
                 aria-current={isActive ? "page" : undefined}
                 aria-label={tab.label}
                 onClick={() => onSelectTab(tab.id)}
-                className={`relative h-8.5 flex items-center justify-center rounded-full transition-all duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#353935] dark:focus-visible:ring-[#2775CA] ${
+                className={`relative h-8.5 shrink-0 flex items-center justify-center rounded-full bg-transparent active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#353935] dark:focus-visible:ring-[#2775CA] ${
                   isActive
-                    ? "shadow-sm px-2.5 gap-1.5 flex-1 min-w-[72px] max-w-[90px]"
-                    : "bg-transparent text-black dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/10 hover:text-black dark:hover:text-white w-9 shrink-0"
+                    ? "text-[#FFFFF0] dark:text-white"
+                    : "text-black dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/10"
                 }`}
               >
+                {isActive && (
+                  <motion.span
+                    layoutId={selectionId}
+                    data-testid="mobile-nav-selection"
+                    transition={tabTransition}
+                    className="mobile-nav-selection absolute inset-0 rounded-full bg-[#353935] dark:bg-[#2775CA]"
+                    aria-hidden="true"
+                  />
+                )}
                 <IconComponent
-                  className={`h-4.5 w-4.5 shrink-0 transition-colors duration-250 ${
+                  className={`relative z-10 h-4.5 w-4.5 shrink-0 transition-colors duration-300 motion-reduce:transition-none ${
                     isActive
                       ? "!text-[#FFFFF0] !bg-[#FFFFF0] dark:!text-white dark:!bg-white"
                       : "!text-black !bg-black dark:!text-white/70 dark:!bg-white/70"
                   }`}
                 />
-                {isActive && (
-                  <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-wider text-[#FFFFF0] dark:text-white truncate">
-                    {tab.label}
-                  </span>
-                )}
-              </button>
+                <motion.span
+                    initial={false}
+                    animate={{ width: isActive ? labelWidths[tab.id] ?? 0 : 0, opacity: isActive ? 1 : 0, marginLeft: isActive ? 6 : 0 }}
+                    transition={tabTransition}
+                    aria-hidden={!isActive}
+                    className="relative z-10 shrink-0 overflow-hidden whitespace-nowrap text-[8.5px] font-black uppercase tracking-wider text-[#FFFFF0] dark:text-white">
+                    <span
+                      ref={element => {
+                        if (element) labelElements.current.set(tab.id, element);
+                        else labelElements.current.delete(tab.id);
+                      }}
+                      data-nav-label={tab.id}
+                      className="block w-max max-w-none"
+                    >{tab.label}</span>
+                </motion.span>
+              </motion.button>
             );
           })}
         </div>
@@ -366,6 +439,7 @@ export default function MobileFloatingNav<T extends string = string>({
 
       {/* ── Right Edge: Action Button (DMs) ── */}
       <div
+        id="mobile-nav-payments-btn"
         className="pointer-events-auto relative shrink-0 flex items-center"
         style={{
           transform: "translate3d(0, 0, 0)",
@@ -375,6 +449,7 @@ export default function MobileFloatingNav<T extends string = string>({
       >
         <button
           type="button"
+          id="wal"
           data-testid="mobile-dm-btn"
           data-retracted-selected={isRetracted && isRightSelected ? "true" : undefined}
           aria-current={isInboxActive ? "page" : undefined}

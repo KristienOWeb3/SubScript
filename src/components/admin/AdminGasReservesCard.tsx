@@ -100,8 +100,8 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
     <div className={`min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between ${className}`}>
       <div>
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#f1f5f9]">
-          <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-[#f1f5f9]">
+          <div className="flex min-w-0 items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#2775ca]/10 text-[#2775ca] shrink-0">
               <Fuel className="h-5 w-5" />
             </div>
@@ -168,7 +168,7 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
 
         {/* Live CCTP Chains Gas Balances Grid */}
         {(loading || refreshing) ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 admin-skeleton-shimmer" role="status" aria-label="Loading native gas reserves...">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,150px),1fr))] gap-2.5 admin-skeleton-shimmer" role="status" aria-label="Loading native gas reserves...">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
                 key={i}
@@ -181,7 +181,7 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
                   </div>
                   <div className="h-4 w-12 rounded-full bg-[#e2e8f0]" />
                 </div>
-                <div className="flex items-baseline justify-between gap-1 pt-1 border-t border-[#f1f5f9]">
+                <div className="flex flex-wrap items-baseline justify-between gap-1 pt-1 border-t border-[#f1f5f9]">
                   <div className="h-4 w-14 rounded bg-[#e2e8f0]" />
                   <div className="h-2.5 w-6 rounded bg-[#e2e8f0]" />
                 </div>
@@ -206,7 +206,7 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
               </div>
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,150px),1fr))] gap-2.5">
               {balances.map((chain) => (
                 <div
                   key={chain.chainId}
@@ -222,8 +222,8 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
                     {statusBadge(chain.status)}
                   </div>
 
-                  <div className="flex items-baseline justify-between gap-1 pt-1 border-t border-[#f1f5f9]">
-                    <span className="font-mono text-sm font-black text-[#0f172a]">
+                  <div className="flex flex-wrap items-baseline justify-between gap-1 pt-1 border-t border-[#f1f5f9]">
+                    <span className="min-w-0 font-mono text-sm font-black text-[#0f172a] [overflow-wrap:anywhere]">
                       {chain.formattedBalance}
                     </span>
                     <span className="text-[10px] font-bold text-[#64748b]">

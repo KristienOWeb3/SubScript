@@ -43,6 +43,7 @@ export const TIER_SPENDING_LIMITS: Record<KycTier, TierSpendingLimits> = {
 export interface SpendingReserveResult {
     allowed: boolean;
     operationId?: string;
+    reused?: boolean;
     reason?: string;
     code?: string;
     tier?: KycTier;
@@ -101,6 +102,7 @@ export async function checkAndReserveSpendingLimit(
     walletAddress: string,
     amountMicros: bigint,
     operationKind: string = "DIRECT_SEND",
+    stableOperationId?: string,
 ): Promise<SpendingReserveResult> {
     if (amountMicros <= 0n) {
         return { allowed: false, reason: "Transfer amount must be positive.", code: "INVALID_AMOUNT" };
@@ -132,30 +134,60 @@ export async function checkAndReserveSpendingLimit(
             const lockId = advisoryLockKey(normalizedWallet);
             await client.query("SELECT pg_advisory_xact_lock($1)", [lockId]);
 
+            let expiredReplay = false;
+            if (stableOperationId) {
+                const existing = await client.query(
+                    `SELECT user_address, amount_usdc::text, operation_kind, status,
+                            (created_at >= statement_timestamp() - interval '15 minutes'
+                             OR EXISTS (SELECT 1 FROM spending_limit_reservations r
+                                         WHERE r.operation_id = spending_limit_operations.id
+                                           AND r.expires_at > statement_timestamp())) AS active
+                       FROM spending_limit_operations WHERE id = $1 FOR UPDATE`,
+                    [stableOperationId],
+                );
+                const operation = existing.rows[0];
+                if (operation) {
+                    if (operation.user_address.toLowerCase() !== normalizedWallet
+                        || BigInt(operation.amount_usdc) !== amountMicros
+                        || operation.operation_kind !== operationKind) {
+                        await client.query("ROLLBACK");
+                        return { allowed: false, code: "SPENDING_OPERATION_CONFLICT", reason: "This operation identity belongs to a different transfer." };
+                    }
+                    if (operation.status === "RELEASED") {
+                        await client.query("ROLLBACK");
+                        return { allowed: false, code: "SPENDING_OPERATION_RELEASED", reason: "This transfer operation was released. Start a new transfer with a new request ID." };
+                    }
+                    if (operation.status === "FINALIZED" || operation.active) {
+                        await client.query("COMMIT");
+                        return { allowed: true, operationId: stableOperationId, reused: true, tier: tierInfo.tier, tierLabel: tierInfo.tierLabel };
+                    }
+                    // An unsubmitted reservation can expire. Recheck current headroom before
+                    // reactivating it; a replay must not bypass spending accumulated since then.
+                    expiredReplay = true;
+                }
+            }
+
             const dailyLimit = tierLimits.dailyLimitMicros;
             const weeklyLimit = tierLimits.weeklyLimitMicros;
             const monthlyLimit = tierLimits.monthlyLimitMicros;
 
             // Query cumulative spent amounts in rolling 24h, 7d, and 30d windows.
-            // Spends in 'FINALIZED' or active 'PENDING' states within the window count against the cap.
-            // Expired reservations (> 15 mins old without finalization) are ignored.
+            // Unsubmitted reservations expire after 15 minutes. Submitted reservations remain
+            // active until positive settlement/failure evidence, even beyond a rolling window.
             const spentRes = await client.query(
                 `SELECT
                     COALESCE(SUM(CASE
-                        WHEN created_at >= statement_timestamp() - interval '24 hours'
-                             AND (status = 'FINALIZED' OR (status = 'PENDING' AND created_at >= statement_timestamp() - interval '15 minutes'))
+                        WHEN (created_at >= statement_timestamp() - interval '24 hours' AND status = 'FINALIZED') OR (status = 'PENDING' AND (created_at >= statement_timestamp() - interval '15 minutes' OR EXISTS (SELECT 1 FROM spending_limit_reservations r WHERE r.operation_id = spending_limit_operations.id AND r.expires_at > statement_timestamp())))
                         THEN amount_usdc ELSE 0 END), 0)::text as daily_spent,
                     COALESCE(SUM(CASE
-                        WHEN created_at >= statement_timestamp() - interval '7 days'
-                             AND (status = 'FINALIZED' OR (status = 'PENDING' AND created_at >= statement_timestamp() - interval '15 minutes'))
+                        WHEN (created_at >= statement_timestamp() - interval '7 days' AND status = 'FINALIZED') OR (status = 'PENDING' AND (created_at >= statement_timestamp() - interval '15 minutes' OR EXISTS (SELECT 1 FROM spending_limit_reservations r WHERE r.operation_id = spending_limit_operations.id AND r.expires_at > statement_timestamp())))
                         THEN amount_usdc ELSE 0 END), 0)::text as weekly_spent,
                     COALESCE(SUM(CASE
-                        WHEN created_at >= statement_timestamp() - interval '30 days'
-                             AND (status = 'FINALIZED' OR (status = 'PENDING' AND created_at >= statement_timestamp() - interval '15 minutes'))
+                        WHEN (created_at >= statement_timestamp() - interval '30 days' AND status = 'FINALIZED') OR (status = 'PENDING' AND (created_at >= statement_timestamp() - interval '15 minutes' OR EXISTS (SELECT 1 FROM spending_limit_reservations r WHERE r.operation_id = spending_limit_operations.id AND r.expires_at > statement_timestamp())))
                         THEN amount_usdc ELSE 0 END), 0)::text as monthly_spent
                    FROM spending_limit_operations
                   WHERE lower(user_address) = $1
-                    AND created_at >= statement_timestamp() - interval '30 days'`,
+                    AND (created_at >= statement_timestamp() - interval '30 days' OR status = 'PENDING')`,
                 [normalizedWallet],
             );
 
@@ -212,12 +244,16 @@ export async function checkAndReserveSpendingLimit(
             }
 
             // Spends are within tier limits: atomically reserve the operation
-            const insertRes = await client.query(
+            const insertRes = expiredReplay ? await client.query(
+                `UPDATE spending_limit_operations SET created_at = now()
+                  WHERE id = $1 AND status = 'PENDING' RETURNING id`,
+                [stableOperationId],
+            ) : await client.query(
                 `INSERT INTO spending_limit_operations (
-                    user_address, amount_usdc, operation_kind, status, created_at
-                ) VALUES ($1, $2, $3, 'PENDING', now())
+                    id, user_address, amount_usdc, operation_kind, status, created_at
+                ) VALUES (COALESCE($4::uuid, gen_random_uuid()), $1, $2, $3, 'PENDING', now())
                 RETURNING id`,
-                [normalizedWallet, amountMicros.toString(), operationKind],
+                [normalizedWallet, amountMicros.toString(), operationKind, stableOperationId ?? null],
             );
 
             await client.query("COMMIT");
@@ -250,20 +286,17 @@ export async function getAccountSpendingStatus(walletAddress: string): Promise<A
         const spentRes = await client.query(
             `SELECT
                 COALESCE(SUM(CASE
-                    WHEN created_at >= statement_timestamp() - interval '24 hours'
-                         AND (status = 'FINALIZED' OR (status = 'PENDING' AND created_at >= statement_timestamp() - interval '15 minutes'))
+                    WHEN (created_at >= statement_timestamp() - interval '24 hours' AND status = 'FINALIZED') OR (status = 'PENDING' AND (created_at >= statement_timestamp() - interval '15 minutes' OR EXISTS (SELECT 1 FROM spending_limit_reservations r WHERE r.operation_id = spending_limit_operations.id AND r.expires_at > statement_timestamp())))
                     THEN amount_usdc ELSE 0 END), 0)::text as daily_spent,
                 COALESCE(SUM(CASE
-                    WHEN created_at >= statement_timestamp() - interval '7 days'
-                         AND (status = 'FINALIZED' OR (status = 'PENDING' AND created_at >= statement_timestamp() - interval '15 minutes'))
+                    WHEN (created_at >= statement_timestamp() - interval '7 days' AND status = 'FINALIZED') OR (status = 'PENDING' AND (created_at >= statement_timestamp() - interval '15 minutes' OR EXISTS (SELECT 1 FROM spending_limit_reservations r WHERE r.operation_id = spending_limit_operations.id AND r.expires_at > statement_timestamp())))
                     THEN amount_usdc ELSE 0 END), 0)::text as weekly_spent,
                 COALESCE(SUM(CASE
-                    WHEN created_at >= statement_timestamp() - interval '30 days'
-                         AND (status = 'FINALIZED' OR (status = 'PENDING' AND created_at >= statement_timestamp() - interval '15 minutes'))
+                    WHEN (created_at >= statement_timestamp() - interval '30 days' AND status = 'FINALIZED') OR (status = 'PENDING' AND (created_at >= statement_timestamp() - interval '15 minutes' OR EXISTS (SELECT 1 FROM spending_limit_reservations r WHERE r.operation_id = spending_limit_operations.id AND r.expires_at > statement_timestamp())))
                     THEN amount_usdc ELSE 0 END), 0)::text as monthly_spent
                FROM spending_limit_operations
               WHERE lower(user_address) = $1
-                AND created_at >= statement_timestamp() - interval '30 days'`,
+                AND (created_at >= statement_timestamp() - interval '30 days' OR status = 'PENDING')`,
             [normalizedWallet],
         );
 
@@ -314,7 +347,7 @@ export async function finalizeSpendingLimitOperation(
                     SET status = 'FINALIZED',
                         amount_usdc = $2,
                         finalized_at = now()
-                  WHERE id = $1`,
+                  WHERE id = $1 AND status = 'PENDING'`,
                 [operationId, settledAmountMicros.toString()],
             );
         } else {
@@ -322,7 +355,7 @@ export async function finalizeSpendingLimitOperation(
                 `UPDATE spending_limit_operations
                     SET status = 'FINALIZED',
                         finalized_at = now()
-                  WHERE id = $1`,
+                  WHERE id = $1 AND status = 'PENDING'`,
                 [operationId],
             );
         }
@@ -344,6 +377,56 @@ export async function releaseSpendingLimitOperation(
                     finalized_at = now()
               WHERE id = $1 AND status = 'PENDING'`,
             [operationId],
+        );
+    });
+}
+
+/** Protect a submitted send from the pre-submission reservation's 15-minute TTL.
+ * Persist before calling custody: even a lost submission response may have moved funds. */
+export async function retainSubmittedSpendingLimitOperation(operationId: string): Promise<void> {
+    await withPgClient(async (client) => {
+        await client.query("BEGIN");
+        try {
+            // Serialize repeated retain/bind requests through the existing operation row.
+            await client.query("SELECT id FROM spending_limit_operations WHERE id = $1 FOR UPDATE", [operationId]);
+            await client.query(
+                `INSERT INTO spending_limit_reservations (operation_id, user_address, amount_usdc, expires_at)
+                 SELECT id, user_address, amount_usdc, 'infinity'::timestamptz
+                   FROM spending_limit_operations WHERE id = $1 AND status = 'PENDING'
+                    AND NOT EXISTS (SELECT 1 FROM spending_limit_reservations r WHERE r.operation_id = $1)`,
+                [operationId],
+            );
+            await client.query("COMMIT");
+        } catch (err) {
+            await client.query("ROLLBACK").catch(() => {});
+            throw err;
+        }
+    });
+}
+
+/** Circle UUID becomes the durable reservation identity, allowing owned status polls to
+ * reconcile this particular operation rather than an arbitrary client-supplied operation id. */
+export async function bindSubmittedSpendingLimitOperation(operationId: string, circleTxId: string): Promise<void> {
+    await withPgClient(async (client) => {
+        await client.query(
+            `UPDATE spending_limit_reservations SET id = $2::uuid
+              WHERE operation_id = $1 AND expires_at = 'infinity'::timestamptz`,
+            [operationId, circleTxId],
+        );
+    });
+}
+
+export async function reconcileSubmittedSpendingLimitOperation(
+    walletAddress: string, circleTxId: string, status: "confirmed" | "failed",
+): Promise<void> {
+    await withPgClient(async (client) => {
+        await client.query(
+            `UPDATE spending_limit_operations AS operation
+                SET status = $3, finalized_at = now(), created_at = now()
+               FROM spending_limit_reservations AS reservation
+              WHERE reservation.operation_id = operation.id AND reservation.id = $2::uuid
+                AND lower(operation.user_address) = $1 AND operation.status = 'PENDING'`,
+            [walletAddress.toLowerCase(), circleTxId, status === "confirmed" ? "FINALIZED" : "RELEASED"],
         );
     });
 }

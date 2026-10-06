@@ -220,7 +220,7 @@ export function AdminSupportTicketsView({
 
             {/* Filter Tabs & Search */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {(["ALL", "OPEN", "CLAIMED", "RESOLVED"] as const).map((status) => (
                         <button
                             key={status}
@@ -236,7 +236,7 @@ export function AdminSupportTicketsView({
                     ))}
                 </div>
 
-                <div className="relative w-full sm:w-64 shrink-0">
+                <div className="relative min-w-0 w-full sm:w-48 xl:w-64 shrink-0">
                     <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
                     <input
                         type="text"
@@ -249,10 +249,10 @@ export function AdminSupportTicketsView({
             </div>
 
             {/* Main Split Console */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-[580px]">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
                 {/* Left Ticket Queue List */}
-                <div className={`lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between max-h-[640px] overflow-hidden ${mobileDetailOpen ? "hidden lg:flex" : "flex"}`}>
-                    <div className="overflow-y-auto space-y-2 pr-1 flex-1">
+                <div className={`min-w-0 xl:col-span-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between h-[clamp(22rem,70dvh,40rem)] overflow-hidden ${mobileDetailOpen ? "hidden xl:flex" : "flex"}`}>
+                    <div className="min-h-0 overflow-y-auto space-y-2 pr-1 flex-1">
                         {loading ? (
                             <div className="p-2">
                                 <SkeletonRows count={4} avatar={false} lines={2} label="Loading support ticket queue..." />
@@ -315,16 +315,16 @@ export function AdminSupportTicketsView({
                 </div>
 
                 {/* Right Chat & Details Pane */}
-                <div className={`lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between max-h-[640px] overflow-hidden ${!mobileDetailOpen ? "hidden lg:flex" : "flex"}`}>
+                <div className={`min-w-0 xl:col-span-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between h-[clamp(22rem,70dvh,40rem)] overflow-hidden ${!mobileDetailOpen ? "hidden xl:flex" : "flex"}`}>
                     {selectedTicket ? (
                         <>
                             {/* Ticket Detail Header */}
-                            <div className="border-b border-slate-100 pb-3 flex items-center justify-between gap-3 shrink-0">
+                            <div className="border-b border-slate-100 pb-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
                                 <div className="flex items-center gap-2.5 min-w-0">
                                     <button
                                         type="button"
                                         onClick={() => setMobileDetailOpen(false)}
-                                        className="lg:hidden flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0 shadow-2xs"
+                                        className="xl:hidden flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0 shadow-2xs"
                                         aria-label="Back to ticket list"
                                         title="Back to tickets"
                                     >
@@ -383,7 +383,7 @@ export function AdminSupportTicketsView({
                             )}
 
                             {/* Messages Container */}
-                            <div ref={chatScrollRef} className="flex-1 overflow-y-auto space-y-3.5 my-3 pr-1">
+                            <div ref={chatScrollRef} className="min-h-0 flex-1 overflow-y-auto space-y-3.5 my-3 pr-1">
                                 {loadingMessages ? (
                                     <div className="p-3">
                                         <SkeletonRows count={3} avatar={true} lines={2} label="Loading conversation thread..." />
@@ -466,7 +466,7 @@ export function AdminSupportTicketsView({
                                                 : "Type response to user..."
                                         }
                                         disabled={replying}
-                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs text-[#0f172a] placeholder-slate-400 focus:border-[#2775ca] focus:outline-none transition"
+                                        className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs text-[#0f172a] placeholder-slate-400 focus:border-[#2775ca] focus:outline-none transition"
                                     />
                                     <button
                                         type="submit"

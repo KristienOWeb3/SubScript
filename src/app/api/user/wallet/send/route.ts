@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { getWalletCustody, deterministicIdempotencyKey, CirclePaymasterPolicyError } from "@/lib/custody";
+import { getWalletCustody, getCircleTransactionStatus, deterministicIdempotencyKey, CirclePaymasterPolicyError } from "@/lib/custody";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -26,13 +26,15 @@ import {
     checkAndReserveSpendingLimit,
     finalizeSpendingLimitOperation,
     releaseSpendingLimitOperation,
+    retainSubmittedSpendingLimitOperation,
+    bindSubmittedSpendingLimitOperation,
 } from "@/lib/spendingLimits";
 import {
     estimateArcNetworkFeeMicros,
     chargeNetworkFee,
     type ChargeNetworkFeeResult,
 } from "@/lib/sponsor/userPaidTransfer";
-import { readUsdcBalance } from "@/lib/vault/onchain";
+import { readUsdcBalance, embeddedTransferReverted } from "@/lib/vault/onchain";
 
 export const maxDuration = 120;
 
@@ -86,6 +88,8 @@ export async function POST(request: Request) {
        for instance). Cleared once the in-band release path has settled the accounting. */
     let strandedReservation: { commitId: string; micros: bigint } | null = null;
     let spendingOperationId: string | null = null;
+    let submissionMayHaveMovedFunds = false;
+    let reusedSpendingOperation = false;
 
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -110,6 +114,8 @@ export async function POST(request: Request) {
 
         const normalizedSender = wallet.toLowerCase();
         const recipients = normalizeRecipients(body);
+        // Batch acceptance must not let the first confirmed leg stand in for the entire batch.
+        let earlySubmission = Boolean(body?.earlySubmission) && recipients.length === 1;
         if (recipients.length === 0 || recipients.length > MAX_BATCH_RECIPIENTS) {
             return NextResponse.json(
                 { error: `Provide between 1 and ${MAX_BATCH_RECIPIENTS} recipients` },
@@ -117,30 +123,18 @@ export async function POST(request: Request) {
             );
         }
 
+        const requestStart = performance.now();
+        const preflightStart = performance.now();
+
         /* A delegated (sub-user) caller spends the *parent's* USDC, because the parent is the one
            who committed the funds — so the funding wallet, the custody that signs, and the
            self-send guard below all key off `fundingWallet`, never off the caller's own address.
            Root callers resolve to themselves and behave exactly as before. */
         const authority = await resolveSpendingAuthority(normalizedSender);
         const fundingWallet = authority.fundingWallet;
-        try {
-            /* This route is a user-wallet outflow. For delegated sends the parent funding wallet
-               is the account whose funds leave the chain, so the hold is keyed to that wallet. */
-            await assertWithdrawalAllowed(fundingWallet, "USER");
-            /* The account holder's own brake, checked on the same wallet and for the same reason:
-               the funding account is the one whose money leaves. A delegated send is covered twice
-               over, because resolveSpendingAuthority above already refuses a halted parent — this
-               is the gate that runs before any gas is reserved. */
-            await assertAccountNotHalted(fundingWallet);
-        } catch (holdError) {
-            if (holdError instanceof WithdrawalHeldError) {
-                return NextResponse.json({ error: holdError.message }, { status: holdError.status });
-            }
-            if (holdError instanceof AccountHaltError) {
-                return NextResponse.json({ error: holdError.message }, { status: holdError.status });
-            }
-            throw holdError;
-        }
+        // The asynchronous operation ledger tracks the funding wallet's KYC reservation,
+        // not the delegated allowance. Preserve synchronous accounting for delegated sends.
+        if (authority.delegated) earlySubmission = false;
 
         const parsedRecipients = recipients.map((item, index) => {
             if (!item.receiverAddress || !ethers.isAddress(item.receiverAddress)) {
@@ -172,17 +166,59 @@ export async function POST(request: Request) {
             (sum, r) => sum + r.amountMicros, BigInt(0)
         );
 
-        /* Block check: prevent transfers to or from any blocked accounts */
-        for (const recipient of parsedRecipients) {
-            await assertNotBlocked(fundingWallet, recipient.receiver, "sending funds");
+        /* Selective parallelization of independent preflight checks:
+           1. Withdrawal hold check for funding wallet
+           2. Account halt check for funding wallet
+           3. Recipient block list checks
+           4. Arc network fee estimation
+           5. On-chain USDC balance query
+           6. Embedded wallet record lookup in PostgreSQL
+        */
+        const [
+            withdrawalAllowedResult,
+            accountHaltedResult,
+            blockedCheckResult,
+            feeEstimate,
+            onChainBalance,
+            walletRecord,
+        ] = await Promise.all([
+            assertWithdrawalAllowed(fundingWallet, "USER").then(() => null).catch((err) => err),
+            assertAccountNotHalted(fundingWallet).then(() => null).catch((err) => err),
+            Promise.all(parsedRecipients.map((recipient) => assertNotBlocked(fundingWallet, recipient.receiver, "sending funds"))).then(() => null).catch((err) => err),
+            estimateArcNetworkFeeMicros(parsedRecipients.length),
+            readUsdcBalance(fundingWallet).catch(() => null),
+            withPgClient(async (client) => {
+                const result = await client.query(
+                    `select encrypted_private_key, circle_wallet_id, provider
+                       from user_embedded_wallets
+                      where wallet_address = $1
+                      limit 1`,
+                    [fundingWallet]
+                );
+                return result.rows[0] as EmbeddedWalletRecord | undefined;
+            }),
+        ]);
+
+        if (withdrawalAllowedResult) {
+            if (withdrawalAllowedResult instanceof WithdrawalHeldError) {
+                return NextResponse.json({ error: withdrawalAllowedResult.message }, { status: withdrawalAllowedResult.status });
+            }
+            throw withdrawalAllowedResult;
+        }
+        if (accountHaltedResult) {
+            if (accountHaltedResult instanceof AccountHaltError) {
+                return NextResponse.json({ error: accountHaltedResult.message }, { status: accountHaltedResult.status });
+            }
+            throw accountHaltedResult;
+        }
+        if (blockedCheckResult) {
+            throw blockedCheckResult;
         }
 
         /* USER→USER sends are user-paid on Arc: estimate the network fee and require the wallet to
            hold the full amount PLUS that fee, so the recipient always receives the exact amount and
            the fee-recovery transfer after the loop cannot fail for lack of funds. No gas sponsorship
            is requested here — this outflow must never draw on the merchant-commerce budget. */
-        const feeEstimate = await estimateArcNetworkFeeMicros(parsedRecipients.length);
-        const onChainBalance = await readUsdcBalance(fundingWallet).catch(() => null);
         if (onChainBalance !== null && onChainBalance < totalAmountMicros + feeEstimate.feeMicros) {
             const balStr = formatAmount(onChainBalance);
             const errorMsg = onChainBalance <= totalAmountMicros
@@ -193,7 +229,9 @@ export async function POST(request: Request) {
                 code: "INSUFFICIENT_BALANCE_FOR_FEE",
             }, { status: 422 });
         }
+        const preflightDurationMs = Math.round(performance.now() - preflightStart);
 
+        const reservationStart = performance.now();
         // Tier-based cumulative spending limit enforcement
         /* Keyed to the funding wallet: limits are strictly derived from the account's KYC Tier.
            Cumulative outflows across rolling 24h, 7d, and 30d windows are checked and reserved
@@ -203,6 +241,9 @@ export async function POST(request: Request) {
             fundingWallet,
             totalAmountMicros,
             parsedRecipients.length > 1 ? "BATCH_SEND" : "DIRECT_SEND",
+            earlySubmission ? deterministicIdempotencyKey(
+                `wallet-send:${normalizedSender}:${requestId}:${parsedRecipients[0].receiver}:${parsedRecipients[0].amountMicros.toString()}`
+            ) : undefined,
         );
         if (!spendingReservation.allowed) {
             return NextResponse.json({
@@ -217,6 +258,10 @@ export async function POST(request: Request) {
             }, { status: 403 });
         }
         spendingOperationId = spendingReservation.operationId || null;
+        reusedSpendingOperation = Boolean(earlySubmission && spendingReservation.reused);
+        // A replay may follow an accepted request. Local pre-submission failures on this
+        // attempt cannot prove that the original attempt did not move funds.
+        if (reusedSpendingOperation) submissionMayHaveMovedFunds = true;
 
         /* Reserve the delegation budget BEFORE anything moves. A cap checked after the transfer is
            not a cap, and recordSubUserSpend's conditional UPDATE is what serialises concurrent
@@ -245,19 +290,7 @@ export async function POST(request: Request) {
             reservedMicros = totalAmountMicros;
             strandedReservation = { commitId: authority.commitId, micros: reservedMicros };
         }
-
-        /* Custody, key lookup and signing all follow the funding wallet: a delegated send is
-           signed by the parent, whose USDC is actually moving. */
-        const walletRecord = await withPgClient(async (client) => {
-            const result = await client.query(
-                `select encrypted_private_key, circle_wallet_id, provider
-                   from user_embedded_wallets
-                  where wallet_address = $1
-                  limit 1`,
-                [fundingWallet]
-            );
-            return result.rows[0] as EmbeddedWalletRecord | undefined;
-        });
+        const reservationDurationMs = Math.round(performance.now() - reservationStart);
 
         if (!walletRecord?.encrypted_private_key && !walletRecord?.circle_wallet_id) {
             /* Nothing moved, so hand the whole reservation back — otherwise a parent with a
@@ -266,7 +299,7 @@ export async function POST(request: Request) {
                 await releaseSubUserSpend(authority.commitId, reservedMicros);
                 strandedReservation = null;
             }
-            if (spendingOperationId) {
+            if (spendingOperationId && !submissionMayHaveMovedFunds) {
                 await releaseSpendingLimitOperation(spendingOperationId).catch(() => {});
                 spendingOperationId = null;
             }
@@ -280,6 +313,9 @@ export async function POST(request: Request) {
         // Execution goes through the custody provider (legacy AES key or Circle MPC), which
         // waits for each transfer to confirm and throws on revert.
         const custody = await getWalletCustody(fundingWallet);
+        if (earlySubmission && spendingOperationId) {
+            await retainSubmittedSpendingLimitOperation(spendingOperationId);
+        }
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
         /* Kept beside `txs` rather than folded into it: `txs` is the response body, and a receipt
            needs the raw micros that formatAmount() has already rounded for display. */
@@ -298,13 +334,17 @@ export async function POST(request: Request) {
         /* Tracked per settled transfer rather than derived from `failure.index`, so the release
            below reflects what actually left the wallet even if the loop exits some other way. */
         let settledMicros = BigInt(0);
+        let totalSubmissionMs = 0;
+        let totalConfirmationMs = 0;
+        const circleTxIds: string[] = [];
         for (let i = 0; i < parsedRecipients.length; i++) {
             const item = parsedRecipients[i];
             try {
+                if (earlySubmission) submissionMayHaveMovedFunds = true;
                 /* USER→USER transfer: the sender pays Arc network gas via fee-recovery after the
                    batch settles. No requireSponsoredGas — this must never consume the merchant-
                    commerce sponsorship budget. gasPayer:"wallet" marks the call user-paid. */
-                const { txHash } = await custody.executeContract({
+                const execResult = await custody.executeContract({
                     contractAddress: USDC_NATIVE_GAS_ADDRESS,
                     abi: USDC_ERC20_ABI,
                     functionName: "transfer",
@@ -313,20 +353,42 @@ export async function POST(request: Request) {
                         `wallet-send:${normalizedSender}:${requestId}:${item.receiver}:${item.amountMicros.toString()}`
                     ),
                     gasPayer: "wallet",
+                    waitForConfirmation: !earlySubmission,
                 });
+                const { txHash } = execResult;
+                if (earlySubmission && spendingOperationId && execResult.circleTxId) {
+                    await bindSubmittedSpendingLimitOperation(spendingOperationId, execResult.circleTxId)
+                        .catch((err) => console.error("Failed to bind submitted spending reservation:", err));
+                }
+                if (execResult.circleTxId) circleTxIds.push(execResult.circleTxId);
+                if (execResult.submissionDurationMs) totalSubmissionMs += execResult.submissionDurationMs;
+                if (execResult.confirmationDurationMs) totalConfirmationMs += execResult.confirmationDurationMs;
+
+                /* An embedded (Circle SCA / ERC-4337) wallet mines its userOp inside an outer
+                   transaction that reports success even when the inner USDC transfer reverts, so a
+                   txHash on its own does not prove the recipient was credited. This throws only on
+                   positive evidence of an inner revert; any ambiguity (plain EOA send, RPC hiccup)
+                   falls through so a real transfer is never dropped. See embeddedTransferReverted. */
+                if (txHash && await embeddedTransferReverted(txHash, fundingWallet)) {
+                    throw new Error("The transfer was mined but its USDC transfer reverted on Arc, so the recipient was not credited. Please try again.");
+                }
                 settledMicros += item.amountMicros;
                 txs.push({
                     receiverAddress: item.receiver,
                     amountUsdc: formatAmount(item.amountMicros),
-                    txHash,
+                    txHash: txHash || "",
                 });
-                settledForReceipts.push({ receiver: item.receiver, amountMicros: item.amountMicros, txHash });
+                settledForReceipts.push({ receiver: item.receiver, amountMicros: item.amountMicros, txHash: txHash || "" });
             } catch (err: any) {
+                // Circle rejects a missing paymaster policy before accepting a transaction.
+                if (earlySubmission && !reusedSpendingOperation && err instanceof CirclePaymasterPolicyError) submissionMayHaveMovedFunds = false;
                 failure = {
                     index: i,
                     receiverAddress: item.receiver,
                     amountUsdc: formatAmount(item.amountMicros),
-                    error: err?.message || "Transfer failed",
+                    error: earlySubmission && submissionMayHaveMovedFunds
+                        ? "The submission outcome is uncertain. Your spending reservation is retained; do not resend until this operation is reconciled."
+                        : err?.message || "Transfer failed",
                     code: err instanceof CirclePaymasterPolicyError ? err.code : undefined,
                 };
                 break;
@@ -340,7 +402,7 @@ export async function POST(request: Request) {
            is logged rather than thrown: the ledger over-counts (fails safe, toward less spending)
            and the parent can re-cap. */
         if (authority.delegated) {
-            const unspent = reservedMicros - settledMicros;
+            const unspent = earlySubmission && submissionMayHaveMovedFunds ? 0n : reservedMicros - settledMicros;
             if (unspent > BigInt(0)) {
                 try {
                     await releaseSubUserSpend(authority.commitId, unspent);
@@ -356,8 +418,8 @@ export async function POST(request: Request) {
             strandedReservation = null;
         }
 
-        // Finalize or release spending limit reservation based on settled amount
-        if (spendingOperationId) {
+        // Finalize or release spending limit reservation based on settled amount (only if not earlySubmission)
+        if (spendingOperationId && (!earlySubmission || !submissionMayHaveMovedFunds)) {
             if (settledMicros > BigInt(0)) {
                 await finalizeSpendingLimitOperation(spendingOperationId, settledMicros).catch((err) => {
                     console.error("Failed to finalize spending limit operation:", err);
@@ -370,11 +432,13 @@ export async function POST(request: Request) {
             spendingOperationId = null;
         }
 
-        /* Recover the Arc network fee from the sender for what actually settled. Charged once for the
-           batch, only after transfers mined (never for a send that didn't happen), scaled to the
-           settled count so a partial batch is fee'd only for the transfers that went through. A
-           failure is logged inside chargeNetworkFee, never thrown — the sends are irreversible. */
-        let networkFeeResult: ChargeNetworkFeeResult = { charged: false, feeMicros: BigInt(0) };
+        /* Recover the Arc network fee from the sender for what actually settled — but AFTER the
+           response returns (see the after() block below). It is pure post-settlement reconciliation
+           (idempotent by request key, logged-never-thrown, and the sends are already irreversible),
+           and waiting for its on-chain confirmation was a SECOND confirmation that doubled the time
+           the user sat on the sending screen. We report the fee here as a pending estimate and charge
+           it in the background. */
+        let feeToChargeMicros = BigInt(0);
         if (txs.length > 0) {
             /* A partial batch is re-estimated for exactly the settled primary legs. Cap it at the
                full pre-confirmation quote so changing RPC conditions can never increase the charge
@@ -382,35 +446,85 @@ export async function POST(request: Request) {
             const applicableFeeMicros = txs.length === parsedRecipients.length
                 ? feeEstimate.feeMicros
                 : (await estimateArcNetworkFeeMicros(txs.length)).feeMicros;
-            const networkFeeMicros = applicableFeeMicros > feeEstimate.feeMicros
+            feeToChargeMicros = applicableFeeMicros > feeEstimate.feeMicros
                 ? feeEstimate.feeMicros
                 : applicableFeeMicros;
-            networkFeeResult = await chargeNetworkFee({
-                wallet: fundingWallet,
-                feeMicros: networkFeeMicros,
-                requestKey: `wallet-send-fee:${normalizedSender}:${requestId}`,
-                parentTransactionHashes: txs.map((tx) => tx.txHash),
-            });
         }
-        const networkFee = serializeNetworkFee(networkFeeResult);
+        /* charged:false — the debit lands in after(); the client shows this as an estimate. */
+        const networkFee = serializeNetworkFee({ charged: false, feeMicros: feeToChargeMicros });
 
         /*
          * Receipts for whatever actually settled, to both sides, whether the batch finished or
-         * stopped early. Wallet-to-wallet sends were the last settlement path that mailed nobody:
-         * the email audit's finding 2 named "peer-to-peer transfers" but pointed at the payment-link
-         * worker, and P2P payment links were already covered there — this route is the real gap.
-         *
-         * Keyed per transaction, so retrying only the remaining recipients after a partial batch
-         * never re-mails one that already settled. In after() because a transfer is irreversible
-         * once mined and nothing about email may touch that path.
+         * stopped early. In after() because a transfer is irreversible once mined and nothing about
+         * email may touch that path.
          */
-        if (settledForReceipts.length > 0) {
+        if (settledForReceipts.length > 0 || (earlySubmission && circleTxIds.length > 0)) {
             after(async () => {
+                let confirmedTxHash: string | undefined;
+                if (earlySubmission && circleTxIds[0]) {
+                    try {
+                        const { getDevWalletsClient } = await import("@/lib/circle/devWallets");
+                        const client = getDevWalletsClient();
+                        const confirmed = await client.getTransaction({
+                            id: circleTxIds[0],
+                            waitForState: "CONFIRMED",
+                            pollingInterval: 500,
+                            signal: AbortSignal.timeout(110_000),
+                        });
+                        const status = await getCircleTransactionStatus(circleTxIds[0], fundingWallet);
+                        if (status.status === "failed") {
+                            if (spendingOperationId) await releaseSpendingLimitOperation(spendingOperationId).catch(console.error);
+                            if (authority.delegated) await releaseSubUserSpend(authority.commitId, reservedMicros).catch(console.error);
+                            return; // A reverted inner transfer must never charge a fee or receive a success receipt.
+                        }
+                        if (status.status !== "confirmed") return; // Unknown is still reserved, never a failure.
+                        confirmedTxHash = status.txHash || confirmed?.data?.transaction?.txHash;
+                    } catch (confirmErr) {
+                        console.error("[WalletSend] Background confirmation error:", confirmErr);
+                        // The SDK may reject either on a timeout or a terminal state; only live
+                        // positive failure evidence permits releasing an accepted operation.
+                        const status = await getCircleTransactionStatus(circleTxIds[0], fundingWallet);
+                        if (status.status === "failed") {
+                            if (spendingOperationId) await releaseSpendingLimitOperation(spendingOperationId).catch(console.error);
+                            if (authority.delegated) await releaseSubUserSpend(authority.commitId, reservedMicros).catch(console.error);
+                            return;
+                        }
+                        if (status.status !== "confirmed") return;
+                        confirmedTxHash = status.txHash;
+                    }
+                }
+
+                if (earlySubmission && spendingOperationId) {
+                    if (confirmedTxHash) {
+                        // getCircleTransactionStatus already verified the actual USDC leg.
+                        await finalizeSpendingLimitOperation(spendingOperationId, settledMicros).catch(console.error);
+                    } else return;
+                    spendingOperationId = null;
+                }
+
+                /* Deferred fee recovery: idempotent by request key and never user-facing,
+                   so it settles after the response instead of making the sender wait on a second
+                   on-chain confirmation. Logged, never thrown — the primary sends are irreversible. */
+                if (confirmedTxHash && txs[0] && !txs[0].txHash) {
+                    txs[0].txHash = confirmedTxHash;
+                }
+                if (feeToChargeMicros > BigInt(0) && (!earlySubmission || confirmedTxHash)) {
+                    await chargeNetworkFee({
+                        wallet: fundingWallet,
+                        feeMicros: feeToChargeMicros,
+                        requestKey: `wallet-send-fee:${normalizedSender}:${requestId}`,
+                        parentTransactionHashes: txs.map((tx) => tx.txHash).filter(Boolean),
+                    }).catch((err) => console.error("Deferred Arc network fee recovery failed:", err));
+                }
                 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
                 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
                 const supabase = supabaseUrl && supabaseServiceKey ? createClient(supabaseUrl, supabaseServiceKey) : null;
 
-                for (const settled of settledForReceipts) {
+                const receiptsToBind = confirmedTxHash
+                    ? [{ receiver: parsedRecipients[0].receiver, amountMicros: parsedRecipients[0].amountMicros, txHash: confirmedTxHash }]
+                    : settledForReceipts.filter((s) => Boolean(s.txHash));
+
+                for (const settled of receiptsToBind) {
                     if (supabase) {
                         await bindTxToReceipt(supabase, {
                             txHash: settled.txHash,
@@ -427,10 +541,17 @@ export async function POST(request: Request) {
                         txHash: settled.txHash,
                         payerAddress: normalizedSender,
                         payeeAddress: settled.receiver,
-                    });
+                    }).catch((err) => console.error("Failed to send settlement receipts:", err));
                 }
             });
         }
+
+        const totalDurationMs = Math.round(performance.now() - requestStart);
+        console.info(
+            `[WalletSendTiming] sender=${normalizedSender} preflight=${preflightDurationMs}ms ` +
+            `reservation=${reservationDurationMs}ms submission=${totalSubmissionMs}ms ` +
+            `confirmation=${totalConfirmationMs}ms total=${totalDurationMs}ms`
+        );
 
         if (failure) {
             const sent = txs.length;
@@ -441,6 +562,7 @@ export async function POST(request: Request) {
                 || failure.error.includes("gas sponsorship");
             return NextResponse.json({
                 success: false,
+                status: earlySubmission && submissionMayHaveMovedFunds ? "pending" : "failed",
                 partial: sent > 0,
                 transfers: txs,
                 networkFee,
@@ -448,25 +570,48 @@ export async function POST(request: Request) {
                 networkFeeUsdc: networkFee.amountUsdc,
                 failedRecipient: failure,
                 code: isPaymasterError ? "CIRCLE_PAYMASTER_POLICY_REQUIRED" : failure.code,
-                error: sent > 0
-                    ? `Sent ${sent} of ${total} transfers, then recipient ${failure.index + 1} failed: ${failure.error}. The ${sent} completed transfer(s) were already settled on-chain — do not resend them; retry only the remaining recipients.`
-                    : `Transfer to recipient ${failure.index + 1} failed: ${failure.error}`,
+                operationId: spendingOperationId || requestId,
+                circleTxIds,
+                timings: {
+                    preflightMs: preflightDurationMs,
+                    reservationMs: reservationDurationMs,
+                    submissionMs: totalSubmissionMs,
+                    confirmationMs: totalConfirmationMs,
+                    totalMs: totalDurationMs,
+                },
+                error: earlySubmission && submissionMayHaveMovedFunds
+                    ? failure.error
+                    : sent > 0
+                        ? `Sent ${sent} of ${total} transfers, then recipient ${failure.index + 1} failed: ${failure.error}. The ${sent} completed transfer(s) were already settled on-chain — do not resend them; retry only the remaining recipients.`
+                        : `Transfer to recipient ${failure.index + 1} failed: ${failure.error}`,
             }, { status: sent > 0 ? 207 : (isPaymasterError ? 503 : 400) });
         }
 
         return NextResponse.json({
             success: true,
+            accepted: true,
+            status: earlySubmission ? "pending" : "confirmed",
             transfers: txs,
             networkFee,
             /* Backward-compatible amount field; new consumers must inspect charged/unrecovered. */
             networkFeeUsdc: networkFee.amountUsdc,
+            operationId: spendingOperationId || requestId,
+            circleTxId: circleTxIds[0] || null,
+            circleTxIds,
+            timings: {
+                preflightMs: preflightDurationMs,
+                reservationMs: reservationDurationMs,
+                submissionMs: totalSubmissionMs,
+                confirmationMs: totalConfirmationMs,
+                totalMs: totalDurationMs,
+            },
         }, { status: 200 });
     } catch (error: any) {
         /* A throw after the reservation but before the release path ran (a custody lookup that
            failed, for example) leaves budget stranded — the reservation debited the cap but nothing
            settled on-chain. Release exactly that amount; do not log the release failure itself into
            the catch's own error, since it is secondary and would only hide the original throw. */
-        if (strandedReservation) {
+        if (strandedReservation && !submissionMayHaveMovedFunds) {
             try {
                 await releaseSubUserSpend(strandedReservation.commitId, strandedReservation.micros);
             } catch (releaseError) {
@@ -476,7 +621,7 @@ export async function POST(request: Request) {
                 );
             }
         }
-        if (spendingOperationId) {
+        if (spendingOperationId && !submissionMayHaveMovedFunds) {
             try {
                 await releaseSpendingLimitOperation(spendingOperationId);
             } catch (releaseError) {

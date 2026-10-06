@@ -4,6 +4,7 @@
    dismissible "Install app" button — but only inside the dashboard, so the marketing site
    isn't installable. Only the dashboard becomes the installed app. */
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { usePathname } from "next/navigation";
 
 type BeforeInstallPromptEvent = Event & {
@@ -106,28 +107,38 @@ export default function PwaInstaller() {
     };
 
     return (
-        <div className="fixed bottom-4 left-1/2 z-[80] -translate-x-1/2 px-4 w-full max-w-sm">
-            <div className="flex items-center gap-3 rounded-2xl border border-black/15 bg-white/95 px-4 py-3 shadow-2xl backdrop-blur-xl text-black">
-                <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-[#111827]">Install SubScript</p>
-                    <p className="text-[10px] text-black/60 leading-snug">Add to your home screen for one-tap access and instant updates.</p>
-                </div>
-                <button
-                    type="button"
-                    onClick={install}
-                    className="shrink-0 rounded-xl bg-[#2775CA] px-3.5 py-2 text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[#1f62ab]"
+        <AnimatePresence>
+            {isOverview && visible && deferredPrompt && (
+                <motion.div
+                    initial={{ opacity: 0, y: 24, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 16, scale: 0.95 }}
+                    transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                    className="fixed bottom-20 md:bottom-6 left-1/2 z-[80] -translate-x-1/2 px-4 w-full max-w-sm"
                 >
-                    Install
-                </button>
-                <button
-                    type="button"
-                    onClick={dismiss}
-                    aria-label="Dismiss install prompt"
-                    className="shrink-0 rounded-xl border border-black/10 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider text-black/45 transition hover:bg-black/5 hover:text-black"
-                >
-                    ✕
-                </button>
-            </div>
-        </div>
+                    <div className="flex items-center gap-3 rounded-2xl border border-black/15 bg-white/95 px-4 py-3 shadow-2xl backdrop-blur-xl text-black">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-[#111827]">Install SubScript</p>
+                            <p className="text-[10px] text-black/60 leading-snug">Add to your home screen for one-tap access and instant updates.</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={install}
+                            className="shrink-0 rounded-xl bg-[#2775CA] px-3.5 py-2 text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[#1f62ab]"
+                        >
+                            Install
+                        </button>
+                        <button
+                            type="button"
+                            onClick={dismiss}
+                            aria-label="Dismiss install prompt"
+                            className="shrink-0 rounded-xl border border-black/10 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider text-black/45 transition hover:bg-black/5 hover:text-black"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 }

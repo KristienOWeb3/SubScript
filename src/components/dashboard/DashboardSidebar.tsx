@@ -41,6 +41,7 @@ export default function DashboardSidebar({
     ariaLabel,
     className = "",
     isLoading = false,
+    onCollapseChange,
 }: {
     items: ReadonlyArray<DashboardSidebarItem>;
     footerItems?: ReadonlyArray<DashboardSidebarItem>;
@@ -60,6 +61,7 @@ export default function DashboardSidebar({
     ariaLabel: string;
     className?: string;
     isLoading?: boolean;
+    onCollapseChange?: (collapsed: boolean) => void;
 }) {
     const [promoVisible, setPromoVisible] = useState(true);
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -71,8 +73,16 @@ export default function DashboardSidebar({
         const stored = localStorage.getItem("subscript_sidebar_collapsed");
         if (stored === "true") {
             setIsCollapsed(true);
+            onCollapseChange?.(true);
+        } else if (stored === "false") {
+            setIsCollapsed(false);
+            onCollapseChange?.(false);
+        } else {
+            const shouldCollapse = typeof window !== "undefined" && window.innerWidth < 1024;
+            setIsCollapsed(shouldCollapse);
+            onCollapseChange?.(shouldCollapse);
         }
-    }, []);
+    }, [onCollapseChange]);
 
     // Auto-expand any group that contains activeId
     useEffect(() => {
@@ -95,6 +105,7 @@ export default function DashboardSidebar({
             } catch {
                 /* ignore storage errors */
             }
+            onCollapseChange?.(next);
             return next;
         });
     };
@@ -103,7 +114,7 @@ export default function DashboardSidebar({
 
     const rowBase = isCollapsed
         ? "group flex w-full items-center justify-center rounded-2xl text-center font-semibold transition-all relative"
-        : "group flex w-full items-center justify-center lg:justify-start gap-3 rounded-[4px] text-left font-semibold transition-all relative";
+        : "group flex w-full items-center justify-start gap-2.5 lg:gap-3 rounded-[6px] text-left font-semibold transition-all relative";
     
     const activeRow = isCollapsed
         ? "bg-[#FFFFF0] text-[#353935] font-bold shadow-sm"
@@ -117,8 +128,8 @@ export default function DashboardSidebar({
         const sizing = isCollapsed
             ? "py-2.5 px-1.5 text-xs"
             : compact
-            ? "py-1.5 px-2.5 lg:px-3 text-[11px]"
-            : "py-2.5 px-3 lg:px-3.5 text-xs";
+            ? "py-1.5 px-2 md:px-2.5 lg:px-3 text-[11px]"
+            : "py-2 px-2.5 md:py-2 md:px-2.5 lg:py-2.5 lg:px-3.5 text-xs";
         const className = `${rowBase} ${sizing} ${isActive ? activeRow : idleRow}`;
         const style = item.accent ? ({ "--sb-accent": item.accent } as CSSProperties) : undefined;
 
@@ -133,9 +144,9 @@ export default function DashboardSidebar({
                 />
                 {!isCollapsed && (
                     <>
-                        <span className="hidden lg:inline truncate">{item.label}</span>
+                        <span className="truncate inline text-xs">{item.label}</span>
                         {item.tag && (
-                            <span className="hidden lg:inline-flex ml-auto shrink-0 rounded-full border border-[color:var(--sb-accent)]/25 bg-[color:var(--sb-accent)]/10 px-1.5 py-0.5 text-[8px] font-bold text-[color:var(--sb-accent)]">
+                            <span className="inline-flex ml-auto shrink-0 rounded-full border border-[color:var(--sb-accent)]/25 bg-[color:var(--sb-accent)]/10 px-1.5 py-0.5 text-[8px] font-bold text-[color:var(--sb-accent)]">
                                 {item.tag}
                             </span>
                         )}
@@ -189,8 +200,8 @@ export default function DashboardSidebar({
         <aside
             aria-busy={isLoading}
             style={{ "--sb-accent": accent, "--sb-panel": panelColor } as AccentStyle}
-            className={`hidden md:flex h-full max-h-screen shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#353935] p-2.5 lg:p-3.5 text-white/90 transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className} ${
-                isCollapsed ? "w-14" : "w-16 lg:w-52"
+            className={`flex h-full max-h-[100dvh] shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#353935] p-2 md:p-2.5 lg:p-3.5 text-white/90 transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className} ${
+                isCollapsed ? "w-14" : "w-44 md:w-48 lg:w-56"
             }`}
         >
             <div className="space-y-4">
@@ -202,7 +213,7 @@ export default function DashboardSidebar({
                             aria-hidden="true"
                         >
                             <div className="h-5 w-5 shrink-0 rounded-full subscript-skeleton" />
-                            {!isCollapsed && <div className="hidden h-2 w-20 rounded-full subscript-skeleton lg:block" />}
+                            {!isCollapsed && <div className="h-2 w-16 lg:w-20 rounded-full subscript-skeleton" />}
                         </div>
                     ) : (
                         <button
@@ -222,7 +233,7 @@ export default function DashboardSidebar({
                                 )}
                             </div>
                             {!isCollapsed && (
-                                <div className="hidden lg:flex flex-col min-w-0 max-w-[115px]">
+                                <div className="flex flex-col min-w-0 max-w-[95px] lg:max-w-[130px]">
                                     <span className="truncate font-mono text-[10px] font-bold text-white leading-tight">
                                         {identity.label}
                                     </span>
@@ -257,12 +268,12 @@ export default function DashboardSidebar({
                         ? Array.from({ length: Math.max(5, Math.min(items.length, 8)) }).map((_, index) => (
                             <div
                                 key={index}
-                                className={`flex items-center ${isCollapsed ? "justify-center px-1.5" : "gap-2.5 px-3 lg:px-3.5"} py-2`}
+                                className={`flex items-center ${isCollapsed ? "justify-center px-1.5" : "gap-2.5 px-2.5 lg:px-3.5"} py-2`}
                                 aria-hidden="true"
                             >
                                 <div className="h-4 w-4 shrink-0 rounded-md subscript-skeleton subscript-skeleton--faint" />
                                 {!isCollapsed && (
-                                    <div className={`hidden h-2 rounded-full subscript-skeleton lg:block ${index % 3 === 0 ? "w-28" : index % 2 === 0 ? "w-20" : "w-24"}`} />
+                                    <div className={`h-2 rounded-full subscript-skeleton ${index % 3 === 0 ? "w-20 lg:w-28" : index % 2 === 0 ? "w-16 lg:w-20" : "w-18 lg:w-24"}`} />
                                 )}
                             </div>
                         ))
@@ -299,16 +310,16 @@ export default function DashboardSidebar({
                                                 }
                                             }}
                                             title={item.label}
-                                            className={`${rowBase} py-2 px-3 lg:px-3.5 text-xs ${isGroupActive && !isOpen ? activeRow : "text-white/80 hover:bg-white/[0.08] hover:text-white"}`}
+                                            className={`${rowBase} py-2 px-2.5 lg:px-3.5 text-xs ${isGroupActive && !isOpen ? activeRow : "text-white/80 hover:bg-white/[0.08] hover:text-white"}`}
                                         >
                                             <Icon className={`h-4 w-4 shrink-0 ${isGroupActive && !isOpen ? "text-[#353935]" : "text-white/70 group-hover:text-white"}`} />
-                                            <span className="hidden lg:inline truncate font-bold text-white/90">{item.label}</span>
-                                            <span className="hidden lg:inline-flex ml-auto shrink-0 text-white/40">
+                                            <span className="truncate font-bold text-white/90 text-xs">{item.label}</span>
+                                            <span className="inline-flex ml-auto shrink-0 text-white/40">
                                                 {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                                             </span>
                                         </button>
                                         {isOpen && (
-                                            <div className="space-y-0.5 pl-3 lg:pl-3.5 border-l border-white/10 ml-3 lg:ml-4 my-1">
+                                            <div className="space-y-0.5 pl-2.5 lg:pl-3.5 border-l border-white/10 ml-2.5 lg:ml-4 my-1">
                                                 {item.children.map((child) => renderRow(child, true))}
                                             </div>
                                         )}
@@ -352,7 +363,22 @@ export default function DashboardSidebar({
 
                 {footerItems.length > 0 && (
                     <div className="space-y-1">
-                        {footerItems.map((item) => renderRow(item, true))}
+                        {isLoading ? (
+                            Array.from({ length: footerItems.length }).map((_, i) => (
+                                <div
+                                    key={i}
+                                    className={`flex items-center ${isCollapsed ? "justify-center px-1.5" : "gap-2.5 px-2.5 lg:px-3.5"} py-2`}
+                                    aria-hidden="true"
+                                >
+                                    <div className="h-3.5 w-3.5 shrink-0 rounded-md subscript-skeleton subscript-skeleton--faint" />
+                                    {!isCollapsed && (
+                                        <div className={`h-2 rounded-full subscript-skeleton subscript-skeleton--faint ${i % 2 === 0 ? "w-16 lg:w-20" : "w-18 lg:w-24"}`} />
+                                    )}
+                                </div>
+                            ))
+                        ) : (
+                            footerItems.map((item) => renderRow(item, true))
+                        )}
                     </div>
                 )}
             </div>

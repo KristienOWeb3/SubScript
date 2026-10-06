@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useState, useEffect, useLayoutEffect, useMemo, useRef, useId, type ReactNode } from "react";
+import { motion, AnimatePresence, useReducedMotion, useMotionValue, animate } from "framer-motion";
 import {
     X,
     Copy,
@@ -13,10 +13,10 @@ import {
     ArrowRight,
     AlertCircle,
 } from "lucide-react";
+import { Globe, Building2 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import { createPublicClient, formatUnits, http } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
-import { arcHttp } from "@/lib/arc/transport";
 import {
     USDC_NATIVE_GAS_ADDRESS,
     ARC_CCTP_ENABLED,
@@ -28,6 +28,77 @@ import {
     isProd,
 } from "@/lib/contracts/constants";
 import { ChainLogo } from "@/components/ChainLogo";
+import ArcOnramp from "@/components/ArcOnramp";
+
+const EASE = "cubic-bezier(.16,1,.3,1)";
+const EASE_EXP = "cubic-bezier(.32,.72,0,1)";
+const EASE_CLOSE = "cubic-bezier(.45,0,.1,1)";
+
+function DepositMethodPanel({ method, mobile, children }: {
+    method: "crypto" | "onramp";
+    mobile: boolean;
+    children: ReactNode;
+}) {
+    const contentRef = useRef<HTMLDivElement>(null);
+    const height = useMotionValue<number | string>("auto");
+    const heightInitialized = useRef(false);
+    const reduceMotion = useReducedMotion();
+    const direction = method === "onramp" ? 1 : -1;
+
+    useLayoutEffect(() => {
+        const content = contentRef.current;
+        if (!content || mobile) return;
+        let stopAnimation: (() => void) | undefined;
+        let targetHeight: number | undefined;
+        const measure = () => {
+            const nextHeight = content.offsetHeight;
+            if (nextHeight === targetHeight) return;
+            targetHeight = nextHeight;
+            stopAnimation?.();
+            if (!heightInitialized.current || reduceMotion) {
+                height.set(nextHeight);
+                heightInitialized.current = true;
+            } else {
+                const animation = animate(height, nextHeight, { duration: 0.44, ease: [0.16, 1, 0.3, 1] });
+                stopAnimation = () => animation.stop();
+            }
+        };
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(content);
+        return () => { observer.disconnect(); stopAnimation?.(); };
+    }, [method, mobile, reduceMotion, height]);
+
+    return (
+        <motion.div
+            data-testid="deposit-method-container"
+            style={{ position: "relative", overflow: "hidden", minHeight: 0, flex: mobile ? 1 : undefined, height: mobile ? undefined : height }}
+        >
+            <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+                <motion.div
+                    key={method}
+                    data-testid="deposit-method-panel"
+                    data-method={method}
+                    custom={direction}
+                    initial={reduceMotion ? false : { opacity: 0, x: direction * 28, filter: "blur(10px)" }}
+                    animate={{ opacity: 1, x: 0, filter: "blur(0px)", pointerEvents: "auto" }}
+                    exit="leave"
+                    variants={{ leave: (dir: number) => ({ opacity: 0, x: reduceMotion ? 0 : -dir * 28, filter: reduceMotion ? "blur(0px)" : "blur(10px)", pointerEvents: "none" }) }}
+                    transition={{ duration: reduceMotion ? 0 : 0.38, ease: [0.16, 1, 0.3, 1] }}
+                    style={{
+                        position: mobile ? "absolute" : "relative",
+                        inset: mobile ? 0 : undefined,
+                    }}
+                >
+                    {/* popLayout owns its child's ref; measure an inner element instead. */}
+                    <div ref={contentRef} style={{ display: "flex", flexDirection: "column", gap: mobile ? 12 : 16, height: mobile ? "100%" : undefined }}>
+                        {children}
+                    </div>
+                </motion.div>
+            </AnimatePresence>
+        </motion.div>
+    );
+}
 
 const ERC20_ABI = [
     {
@@ -59,11 +130,6 @@ const ERC20_ABI = [
     },
 ] as const;
 
-const publicClient = createPublicClient({
-    chain: activeArcChain,
-    transport: arcHttp(),
-});
-
 /* Read-only clients for origin chains, built lazily from CCTP_CONFIG. */
 const originClientCache = new Map<number, ReturnType<typeof createPublicClient>>();
 function originPublicClient(originChainId: number) {
@@ -83,6 +149,7 @@ export interface DepositModalProps {
     isTier1?: boolean;
     depositAddress: string;
     onSuccess?: () => void;
+    isMobile?: boolean;
 }
 
 type DepositStep = "chains" | "address";
@@ -109,9 +176,31 @@ export default function DepositModal({
     isTier1 = true,
     depositAddress,
     onSuccess,
+    isMobile,
 }: DepositModalProps) {
+    const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== "undefined" ? window.innerWidth <= 600 : false);
+    useEffect(() => {
+        const check = () => setIsMobileScreen(window.innerWidth <= 600);
+        check();
+        window.addEventListener("resize", check);
+        return () => window.removeEventListener("resize", check);
+    }, []);
+    const effectiveIsMobile = isMobile !== undefined ? isMobile : isMobileScreen;
+
+    const sheetRef = useRef<HTMLDivElement | null>(null);
+    const pageRef = useRef<HTMLDivElement | null>(null);
+    const scrimRef = useRef<HTMLDivElement | null>(null);
+    const tintRef = useRef<HTMLDivElement | null>(null);
+
     const [step, setStep] = useState<DepositStep>("chains");
+    const [depositMethod, setDepositMethod] = useState<"crypto" | "onramp">("crypto");
+    const methodPillId = useId();
+    const reduceMotion = useReducedMotion();
     const [selectedChainId, setSelectedChainId] = useState<number>(() => activeArcChain.id);
+    const closingRef = useRef(false);
+    const swappingRef = useRef(false);
+    const animateDeposit = useCallback((element: HTMLElement, frames: Keyframe[] | PropertyIndexedKeyframes, options: KeyframeAnimationOptions) =>
+        element.animate(frames, reduceMotion ? { ...options, duration: 1, delay: 0 } : options), [reduceMotion]);
 
     /* Full list of chains supporting deposits: Arc native (active) + CCTP chains (Coming soon) */
     const supportedChains = useMemo<SupportedDepositChain[]>(() => {
@@ -224,7 +313,6 @@ export default function DepositModal({
 
     const [copied, setCopied] = useState(false);
     const [copiedContract, setCopiedContract] = useState(false);
-    const [usdcBalance, setUsdcBalance] = useState("0.00");
     const [originBalance, setOriginBalance] = useState("0.00");
     const [loadingOriginBalance, setLoadingOriginBalance] = useState(false);
 
@@ -275,21 +363,6 @@ export default function DepositModal({
         }
     }, []);
 
-    const fetchBalance = useCallback(async () => {
-        if (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS") return;
-        try {
-            const balanceRaw = await publicClient.readContract({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: ERC20_ABI,
-                functionName: "balanceOf",
-                args: [depositAddress as `0x${string}`],
-            });
-            setUsdcBalance(parseFloat(formatUnits(balanceRaw as bigint, 6)).toFixed(2));
-        } catch (err) {
-            console.error("Failed to read balance in modal:", err);
-        }
-    }, [depositAddress]);
-
     /* Poll bridge status every 15 seconds while the modal is open on a CCTP chain. */
     useEffect(() => {
         if (!isOpen || selectedChain.isArc || !derivedAddress || bridgeStatus === "completed") return;
@@ -318,7 +391,6 @@ export default function DepositModal({
                             isAlreadyBridgingOrDone = true;
                             setBridgeStatus("completed");
                             setOriginBalance("0.00");
-                            void fetchBalance();
                             if (onSuccess) onSuccess();
                             return;
                         } else if (matched.bridgeStatus === "pending_attestation" || matched.bridgeStatus === "minting") {
@@ -352,7 +424,7 @@ export default function DepositModal({
         poll();
         const interval = setInterval(poll, 15_000);
         return () => clearInterval(interval);
-    }, [isOpen, selectedChain, derivedAddress, bridgeStatus, activeIntentId, fetchBalance, onSuccess]);
+    }, [isOpen, selectedChain, derivedAddress, bridgeStatus, activeIntentId, onSuccess]);
 
     const fetchOriginBalance = useCallback(async () => {
         if (
@@ -403,13 +475,13 @@ export default function DepositModal({
     useEffect(() => {
         if (!isOpen) return;
         setStep("chains");
+        setDepositMethod("crypto");
         setSelectedChainId(activeArcChain.id);
         setBridgeStatus("idle");
         setBridgeError(null);
         setDerivedAddress(null);
         setActiveIntentId(null);
-        fetchBalance();
-    }, [isOpen, fetchBalance]);
+    }, [isOpen, depositAddress]);
 
     useEffect(() => {
         if (isOpen && !selectedChain.isArc) {
@@ -470,6 +542,560 @@ export default function DepositModal({
         onClose();
     };
 
+    /* ── BAR-TO-SHEET MORPH: Open Animation ── */
+    useEffect(() => {
+        if (!isOpen || !effectiveIsMobile) return;
+        closingRef.current = false;
+        swappingRef.current = false;
+        setStep("chains");
+
+        const sh = sheetRef.current;
+        const pg = pageRef.current;
+        const tint = tintRef.current;
+        const sc = scrimRef.current;
+        if (!sh || !pg) return;
+
+        sh.style.display = "block";
+
+        const barEl = (document.getElementById("mobile-nav-capsule") || document.querySelector("aside[aria-label='Mobile navigation bar'] nav")) as HTMLElement | null;
+        const walEl = (document.getElementById("mobile-nav-payments-btn") || document.getElementById("wal")) as HTMLElement | null;
+        const previousBarVisibility = barEl?.style.visibility ?? "";
+        let ghostBar: HTMLElement | null = null;
+        let walletAnimation: Animation | null = null;
+
+        if (sc) sc.style.pointerEvents = "auto";
+
+        const FULL = "inset(0px 0px 0px 0px round 28px 28px 0px 0px)";
+
+        if (barEl) {
+            const b = barEl.getBoundingClientRect();
+            const s = sh.getBoundingClientRect();
+            const g = {
+                T: b.top - s.top,
+                R: s.right - b.right,
+                B: s.bottom - b.bottom,
+                L: b.left - s.left,
+                r: b.height / 2,
+                w: b.width,
+                h: b.height,
+            };
+            const cp = `inset(${g.T}px ${g.R}px ${g.B}px ${g.L}px round ${g.r}px)`;
+
+            const gh = barEl.cloneNode(true) as HTMLElement;
+            ghostBar = gh;
+            gh.id = "ghost-bottom-bar-deposit";
+            gh.style.position = "absolute";
+            gh.style.pointerEvents = "none";
+            gh.style.zIndex = "6";
+            gh.style.left = `${g.L}px`;
+            gh.style.top = `${g.T}px`;
+            gh.style.width = `${g.w}px`;
+            gh.style.height = `${g.h}px`;
+            gh.style.right = "auto";
+            gh.style.bottom = "auto";
+            sh.appendChild(gh);
+
+            barEl.style.visibility = "hidden";
+            if (sc) sc.style.pointerEvents = "auto";
+
+            // Morph capsule into sheet (480ms)
+            animateDeposit(sh, [
+                { clipPath: cp, filter: "blur(0px)" },
+                { filter: "blur(2.5px)", offset: 0.35 },
+                { clipPath: FULL, filter: "blur(0px)" },
+            ], { duration: 480, easing: EASE_EXP, fill: "forwards" });
+
+            if (tint) animateDeposit(tint, { opacity: [1, 0] }, { duration: 340, easing: "ease-out", fill: "forwards" });
+            animateDeposit(gh, { opacity: [1, 0], filter: ["blur(0px)", "blur(7px)"] }, { duration: 220, easing: "ease-out", fill: "forwards" }).onfinish = () => gh.remove();
+
+            animateDeposit(pg, [
+                { opacity: 0, transform: "translateY(20px)", filter: "blur(10px)" },
+                { opacity: 1, transform: "none", filter: "blur(0px)" },
+            ], { duration: 420, delay: 120, easing: EASE_EXP, fill: "backwards" });
+
+            // Disappear Payments button
+            if (walEl) {
+                walletAnimation = animateDeposit(walEl, [
+                    { opacity: 1, transform: "none", filter: "blur(0px)" },
+                    { opacity: 0, transform: "scale(.8) translateY(10px)", filter: "blur(6px)" },
+                ], { duration: 240, easing: "ease-out", fill: "forwards" });
+            }
+
+            if (sc) animateDeposit(sc, { opacity: [0, 1] }, { duration: 360, fill: "forwards" });
+        } else {
+            sh.style.clipPath = FULL;
+            animateDeposit(sh, [
+                { transform: "translateY(100%)", filter: "blur(8px)" },
+                { transform: "translateY(0%)", filter: "blur(0px)" },
+            ], { duration: 420, easing: EASE, fill: "forwards" });
+            if (sc) animateDeposit(sc, { opacity: [0, 1] }, { duration: 300, fill: "forwards" });
+        }
+
+        return () => {
+            [sh, pg, tint, sc].forEach((element) => element?.getAnimations().forEach((animation) => animation.cancel()));
+            walletAnimation?.cancel();
+            ghostBar?.remove();
+            if (barEl) barEl.style.visibility = previousBarVisibility;
+        };
+    }, [isOpen, effectiveIsMobile, animateDeposit]);
+
+    /* ── BAR-TO-SHEET MORPH: Close Animation ── */
+    const handleMobileClose = async () => {
+        if (closingRef.current || swappingRef.current || bridgeStatus === "bridging") return;
+        closingRef.current = true;
+        try {
+            const sh = sheetRef.current;
+            const pg = pageRef.current;
+            const tint = tintRef.current;
+            const sc = scrimRef.current;
+            const barEl = (document.getElementById("mobile-nav-capsule") || document.querySelector("aside[aria-label='Mobile navigation bar'] nav")) as HTMLElement | null;
+            const walEl = (document.getElementById("mobile-nav-payments-btn") || document.getElementById("wal")) as HTMLElement | null;
+            const FULL = "inset(0px 0px 0px 0px round 28px 28px 0px 0px)";
+
+            if (sh && pg && barEl) {
+                const b = barEl.getBoundingClientRect();
+                const s = sh.getBoundingClientRect();
+                const g = {
+                    T: b.top - s.top,
+                    R: s.right - b.right,
+                    B: s.bottom - b.bottom,
+                    L: b.left - s.left,
+                    r: b.height / 2,
+                    w: b.width,
+                    h: b.height,
+                };
+                const cp = `inset(${g.T}px ${g.R}px ${g.B}px ${g.L}px round ${g.r}px)`;
+
+                const gh = barEl.cloneNode(true) as HTMLElement;
+                gh.id = "ghost-bottom-bar-deposit-close";
+                gh.style.position = "absolute";
+                gh.style.pointerEvents = "none";
+                gh.style.zIndex = "6";
+                gh.style.left = `${g.L}px`;
+                gh.style.top = `${g.T}px`;
+                gh.style.width = `${g.w}px`;
+                gh.style.height = `${g.h}px`;
+                gh.style.right = "auto";
+                gh.style.bottom = "auto";
+                gh.style.opacity = "0";
+                sh.appendChild(gh);
+
+                animateDeposit(pg, [
+                    { opacity: 1, transform: "none", filter: "blur(0px)" },
+                    { opacity: 0, transform: "translateY(16px)", filter: "blur(8px)" },
+                ], { duration: 200, easing: "cubic-bezier(.5,0,1,1)", fill: "forwards" });
+
+                animateDeposit(gh, [
+                    { opacity: 0, filter: "blur(6px)" },
+                    { opacity: 1, filter: "blur(0px)" },
+                ], { duration: 240, delay: 240, easing: "ease-out", fill: "forwards" });
+
+                if (tint) animateDeposit(tint, { opacity: [0, 1] }, { duration: 280, delay: 100, fill: "forwards" });
+                if (sc) animateDeposit(sc, { opacity: [1, 0] }, { duration: 380, fill: "forwards" });
+                const dash = document.querySelector(".user-dashboard-content, .user-dashboard-redesign, main") as HTMLElement | null;
+                if (dash) {
+                    dash.getAnimations().forEach((a) => a.cancel());
+                    dash.style.transform = "";
+                }
+
+                await animateDeposit(sh, [
+                    { clipPath: FULL, filter: "blur(0px)" },
+                    { filter: "blur(2.5px)", offset: 0.55 },
+                    { clipPath: cp, filter: "blur(0px)" },
+                ], { duration: 440, easing: EASE_CLOSE, fill: "forwards" }).finished;
+
+                barEl.style.visibility = "visible";
+                [sh, pg, tint, sc].forEach((e) => e?.getAnimations().forEach((a) => a.cancel()));
+                gh.remove();
+                sh.style.display = "none";
+                if (sc) sc.style.pointerEvents = "none";
+
+                // Reappear Payments button
+                if (walEl) {
+                    animateDeposit(walEl, [
+                        { opacity: 0, transform: "scale(.8) translateY(10px)", filter: "blur(6px)" },
+                        { opacity: 1, transform: "none", filter: "blur(0px)" },
+                    ], { duration: 320, easing: EASE, fill: "forwards" });
+                }
+            } else if (sh) {
+                await animateDeposit(sh, [
+                    { transform: "translateY(0%)", filter: "blur(0px)" },
+                    { transform: "translateY(100%)", filter: "blur(8px)" },
+                ], { duration: 320, easing: EASE_CLOSE, fill: "forwards" }).finished;
+                sh.style.display = "none";
+            }
+            resetAndClose();
+        } catch (error) {
+            if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
+        } finally {
+            closingRef.current = false;
+        }
+    };
+
+    /* ── STEP TRANSITION (CHAINS <-> ADDRESS) ── */
+    const swapStep = async (nextStep: DepositStep, dir: number) => {
+        if (closingRef.current || swappingRef.current) return;
+        const pg = pageRef.current;
+        const sh = sheetRef.current;
+        if (!pg || !sh) {
+            setStep(nextStep);
+            return;
+        }
+        swappingRef.current = true;
+        try {
+            await animateDeposit(pg, [
+                { opacity: 1, transform: "none", filter: "blur(0px)" },
+                { opacity: 0, transform: `translateX(${-dir * 52}px) scale(.98)`, filter: "blur(12px)" },
+            ], { duration: 280, easing: "cubic-bezier(.5,0,1,1)", fill: "forwards" }).finished;
+
+            setStep(nextStep);
+            pg.getAnimations().forEach((a) => a.cancel());
+
+            animateDeposit(pg, [
+                { opacity: 0, transform: `translateX(${dir * 52}px) scale(.98)`, filter: "blur(12px)" },
+                { opacity: 1, transform: "none", filter: "blur(0px)" },
+            ], { duration: 560, easing: EASE });
+        } catch (error) {
+            if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
+        } finally {
+            swappingRef.current = false;
+        }
+    };
+
+    const fundingMethodTabs = (
+        <div role="tablist" aria-label="Deposit method" className="flex gap-1.5 rounded-2xl bg-black/5 dark:bg-white/5 p-1 text-xs">
+            <button
+                type="button"
+                role="tab"
+                aria-selected={depositMethod === "crypto"}
+                onClick={() => setDepositMethod("crypto")}
+                className={`relative flex flex-1 items-center justify-center gap-1.5 py-2 font-bold rounded-xl transition ${
+                    depositMethod === "crypto" ? "text-black dark:text-white" : "text-black/50 dark:text-white/50"
+                }`}
+            >
+                {depositMethod === "crypto" && <motion.span layoutId={methodPillId} className="absolute inset-0 rounded-xl bg-white dark:bg-[#1D2129] shadow-sm" transition={{ duration: reduceMotion ? 0 : 0.38, ease: [0.16, 1, 0.3, 1] }} />}
+                <Globe className="relative h-3.5 w-3.5" /><span className="relative">Deposit crypto</span>
+            </button>
+            <button
+                type="button"
+                role="tab"
+                aria-label="Onramp"
+                aria-selected={depositMethod === "onramp"}
+                onClick={() => setDepositMethod("onramp")}
+                className={`relative flex flex-1 items-center justify-center gap-1.5 py-2 font-bold rounded-xl transition ${
+                    depositMethod === "onramp" ? "text-black dark:text-white" : "text-black/50 dark:text-white/50"
+                }`}
+            >
+                {depositMethod === "onramp" && <motion.span layoutId={methodPillId} className="absolute inset-0 rounded-xl bg-white dark:bg-[#1D2129] shadow-sm" transition={{ duration: reduceMotion ? 0 : 0.38, ease: [0.16, 1, 0.3, 1] }} />}
+                <Building2 className="relative h-3.5 w-3.5" /><span className="relative">Onramp</span>
+            </button>
+        </div>
+    );
+
+    if (effectiveIsMobile && isOpen) {
+        return (
+            <div id="deposit-sheet-wrapper" className="fixed inset-0 z-[100] flex flex-col justify-end overflow-hidden pointer-events-none font-sans select-none">
+                {/* Scrim Overlay */}
+                <div
+                    ref={scrimRef}
+                    id="deposit-scrim-overlay"
+                    onClick={handleMobileClose}
+                    className="absolute inset-0 bg-[#2A302A]/70 pointer-events-none opacity-0 transition-opacity"
+                />
+
+                {/* Bottom Sheet Card */}
+                <section
+                    ref={sheetRef}
+                    id="deposit-sheet-card"
+                    data-modal="deposit"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="deposit-sheet-title"
+                    className="pointer-events-auto relative w-full max-w-lg mx-auto bg-[#FDFEF3] dark:bg-[#15181F] text-[#111827] dark:text-[#F1F3F8] rounded-t-[28px] px-5 pt-3.5 pb-6 shadow-2xl overflow-hidden will-change-transform"
+                    style={{
+                        boxSizing: "border-box",
+                        height: "min(720px, 94dvh)",
+                        paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))",
+                    }}
+                >
+                    {/* Bar Tint Layer during morph */}
+                    <div
+                        ref={tintRef}
+                        id="deposit-sheet-bar-tint"
+                        className="absolute inset-0 pointer-events-none z-10 opacity-0 bg-gradient-to-b from-[#B4D1EE] to-[#9EC2E7] dark:from-[#2E4D70] dark:to-[#243F5E]"
+                    />
+
+                    {/* Page Content Container */}
+                    <div ref={pageRef} id="deposit-sheet-page-content" className="relative z-20 h-full min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {/* Top Drag Handle */}
+                        <div className="w-10 h-1 rounded-full bg-black/15 dark:bg-white/15 mx-auto mb-2" />
+
+                        {step === "chains" ? (
+                            /* ── STEP 1: SELECT NETWORK ── */
+                            <div className="h-[calc(100%-12px)] min-h-0 flex flex-col">
+                                <div className="flex flex-1 min-h-0 flex-col gap-3 [&>div:not(:last-child)]:shrink-0">
+                                    <div className="flex items-center justify-between">
+                                        <h2 id="deposit-sheet-title" className="text-xl font-black uppercase tracking-wider text-[#111827] dark:text-white">
+                                            Deposit USDC
+                                        </h2>
+                                        <button
+                                            type="button"
+                                            onClick={handleMobileClose}
+                                            aria-label="Close"
+                                            className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 dark:border-white/10 text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95 transition"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-black/50 dark:text-white/50 -mt-1">
+                                        Receive USDC on Arc Network instantly or bridge from other chains.
+                                    </p>
+
+                                    {fundingMethodTabs}
+
+                                {!isTier1 && (
+                                    <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3.5 text-left text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                                        <div className="flex items-center gap-1.5 font-bold">
+                                            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                                            <span>Tier 1 KYC Verification Required</span>
+                                        </div>
+                                        <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                                            All accounts must be verified at Tier 1 (link your email) before depositing funds on SubScript.
+                                        </p>
+                                    </div>
+                                )}
+
+                                <DepositMethodPanel method={depositMethod} mobile>
+                                {depositMethod === "onramp" ? (
+                                    <ArcOnramp key={depositAddress} destinationAddress={depositAddress} disabled={!isTier1}
+                                        onRefresh={() => onSuccess?.()} />
+                                ) : (
+                                    <>
+                                <div className="text-left">
+                                    <p className="text-xs text-black/60 dark:text-white/60 font-medium">
+                                        Select the network where you currently have USDC:
+                                    </p>
+                                </div>
+
+                                <div className="space-y-2 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                    {supportedChains.map((chain) => {
+                                        const isArc = chain.isArc;
+                                        const routeId = isArc ? "arc" : chain.chainId === 501 ? "solana" : String(chain.chainId);
+                                        const gasStatus = routeGasStatus?.[routeId] ?? null;
+                                        const gasDepleted = !isArc && !chain.disabled && (gasStatus === null || !gasStatus.available);
+                                        if (chain.disabled) {
+                                            return (
+                                                <div
+                                                    key={chain.chainId}
+                                                    className="flex w-full items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] p-3.5 text-left opacity-65 cursor-not-allowed select-none"
+                                                >
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <ChainLogo chain={chain.chainId === 501 ? "solana" : chain.chainId} size={28} className="h-7 w-7 shrink-0" />
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-bold text-black/80 dark:text-white/80 truncate">{chain.name}</span>
+                                                            </div>
+                                                            <p className="text-[10px] text-black/45 dark:text-white/45 truncate mt-0.5">{chain.subtext}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                                                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/20">
+                                                            {chain.badge}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <button
+                                                key={chain.chainId}
+                                                type="button"
+                                                disabled={!isTier1 || gasDepleted}
+                                                onClick={() => {
+                                                    if (!isTier1 || gasDepleted) return;
+                                                    setSelectedChainId(chain.chainId);
+                                                    swapStep("address", 1);
+                                                    if (!chain.isArc) {
+                                                        registerIntent(chain.chainId);
+                                                    }
+                                                }}
+                                                className={`flex w-full items-center justify-between rounded-2xl border p-3.5 text-left transition shadow-sm group ${
+                                                    !isTier1 || gasDepleted
+                                                        ? "border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] opacity-50 cursor-not-allowed"
+                                                        : "border-black/15 dark:border-white/15 bg-white dark:bg-[#1D2129] hover:border-[#2775CA] active:scale-[0.99]"
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <ChainLogo chain={chain.chainId} size={28} className="h-7 w-7 shrink-0" />
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-black text-black dark:text-white truncate">{chain.name}</span>
+                                                            {isArc && (
+                                                                <span className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                                                    Active · Native
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-[10px] text-black/50 dark:text-white/50 truncate mt-0.5">{chain.subtext}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0 ml-2">
+                                                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                                        gasDepleted
+                                                            ? "bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/20"
+                                                            : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20"
+                                                    }`}>
+                                                        {gasDepleted ? "Unavailable ⛽" : chain.badge}
+                                                    </span>
+                                                    <ArrowRight className="h-3.5 w-3.5 text-black/30 dark:text-white/40" />
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                    </>
+                                )}
+                                </DepositMethodPanel>
+                                </div>
+                            </div>
+                        ) : (
+                            /* ── STEP 2: ADDRESS & QR CODE ── */
+                            <div className="h-[calc(100%-12px)] min-h-fit flex flex-col gap-3.5 justify-between text-left">
+                                <div className="flex flex-1 flex-col gap-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                disabled={bridgeStatus === "bridging"}
+                                                onClick={() => swapStep("chains", -1)}
+                                                className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 dark:border-white/10 text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95 transition disabled:opacity-40"
+                                                aria-label="Back to networks"
+                                            >
+                                                <ArrowLeft className="w-4 h-4" />
+                                            </button>
+                                            <h2 id="deposit-sheet-title" className="text-base font-black uppercase tracking-wider text-[#111827] dark:text-white">
+                                                Deposit via {selectedChain.shortName}
+                                            </h2>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            disabled={bridgeStatus === "bridging"}
+                                            onClick={handleMobileClose}
+                                            aria-label="Close"
+                                            className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 dark:border-white/10 text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95 transition disabled:opacity-40"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+
+                                    {/* Selected Network Summary Pill */}
+                                    <div className="flex items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1D2129] p-3 shadow-sm">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <ChainLogo chain={selectedChain.chainId} size={24} className="h-6 w-6 shrink-0" />
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-xs font-black text-black dark:text-white truncate">{selectedChain.name}</span>
+                                                    <span className="text-[9px] font-bold text-black/50 dark:text-white/50">({selectedChain.feePercentage})</span>
+                                                </div>
+                                                <p className="text-[10px] text-black/50 dark:text-white/50 truncate">
+                                                    {selectedChain.isArc
+                                                        ? "Instant settlement"
+                                                        : bridgeStatus === "completed"
+                                                        ? "Deposit confirmed on Arc"
+                                                        : "Estimated ~15 mins via CCTP bridge"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            disabled={bridgeStatus === "bridging"}
+                                            onClick={() => swapStep("chains", -1)}
+                                            className="text-[11px] font-bold text-[#2775CA] hover:underline px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition shrink-0 disabled:opacity-40"
+                                        >
+                                            Change
+                                        </button>
+                                    </div>
+
+                                    {/* QR Code */}
+                                    {(!loadingIntent || selectedChain.isArc) && (
+                                        <div className="flex flex-1 items-center justify-center py-4">
+                                            <div className="max-w-full p-3 bg-white border border-black/10 dark:border-white/15 rounded-2xl shadow-sm inline-block">
+                                                <QRCode
+                                                    value={displayAddress}
+                                                    size={240}
+                                                    style={{ maxWidth: "100%", height: "auto" }}
+                                                    ecLevel="H"
+                                                    bgColor="#ffffff"
+                                                    fgColor="#000000"
+                                                    qrStyle="dots"
+                                                    logoImage="/logo-colored.png"
+                                                    logoWidth={44}
+                                                    logoHeight={44}
+                                                    logoOpacity={1}
+                                                    removeQrCodeBehindLogo={true}
+                                                    logoPadding={2}
+                                                    logoPaddingStyle="square"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Copy Address Box */}
+                                    {(!loadingIntent || selectedChain.isArc) && (
+                                        <div className="bg-white dark:bg-[#1D2129] border border-black/15 dark:border-white/15 rounded-2xl p-3 text-left shadow-sm">
+                                            <div className="mb-1">
+                                                <p className="text-[9px] text-black/50 dark:text-white/50 uppercase tracking-wider font-black">
+                                                    {selectedChain.isArc ? "Your Arc Deposit Address" : "Deposit Address"}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <code className="flex-1 text-[11px] text-black dark:text-white font-mono break-all select-all font-semibold">
+                                                    {displayAddress}
+                                                </code>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCopy}
+                                                    className="p-2 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-xl transition shrink-0 active:scale-95"
+                                                    title="Copy address"
+                                                    aria-label="Copy deposit address"
+                                                >
+                                                    {copied ? <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {copied && (
+                                    <p className="text-emerald-700 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider text-center">
+                                        ✓ Address copied to clipboard!
+                                    </p>
+                                )}
+
+                                {/* Token Contract Reference */}
+                                {selectedChain.usdc && selectedChain.usdc !== "0x3600000000000000000000000000000000000000" && (
+                                    <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1D2129] p-2.5 text-[10px] flex items-center justify-between text-black/70 dark:text-white/70 shadow-sm">
+                                        <span className="truncate">
+                                            USDC on {selectedChain.shortName}: <code className="font-mono text-black dark:text-white font-bold">{selectedChain.usdc.slice(0, 8)}...{selectedChain.usdc.slice(-6)}</code>
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handleCopyContract}
+                                            className="text-[10px] font-bold text-[#2775CA] hover:underline shrink-0 ml-2"
+                                        >
+                                            {copiedContract ? "Copied" : "Copy CA"}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </section>
+            </div>
+        );
+    }
+
     return (
         <AnimatePresence>
             {isOpen && (
@@ -513,7 +1139,7 @@ export default function DepositModal({
                                     )}
                                     <h2 id="deposit-modal-title" className="text-sm font-black uppercase tracking-wider text-[#082824] dark:text-[#f4f4f5]">
                                         {step === "chains"
-                                            ? "Select Network"
+                                            ? "Deposit USDC"
                                             : `Deposit via ${selectedChain.shortName}`}
                                     </h2>
                                 </div>
@@ -532,6 +1158,8 @@ export default function DepositModal({
                                 {/* STEP 1: CHAINS LIST */}
                                 {step === "chains" && (
                                     <div className="space-y-4">
+                                        {fundingMethodTabs}
+
                                         {!isTier1 && (
                                             <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3.5 text-left text-xs text-amber-800 dark:text-amber-200 space-y-1">
                                                 <div className="flex items-center gap-1.5 font-bold">
@@ -543,14 +1171,13 @@ export default function DepositModal({
                                                 </p>
                                             </div>
                                         )}
-                                        <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#222327] p-4 text-left shadow-sm">
-                                            <p className="text-[10px] font-black uppercase tracking-wider text-[#082824]/60 dark:text-white/60">Current Balance</p>
-                                            <div className="flex items-baseline gap-2 mt-1">
-                                                <span className="text-2xl font-black text-[#082824] dark:text-white font-mono">{usdcBalance}</span>
-                                                <span className="text-xs font-bold text-[#082824]/70 dark:text-white/70">USDC on Arc</span>
-                                            </div>
-                                        </div>
 
+                                        <DepositMethodPanel method={depositMethod} mobile={false}>
+                                        {depositMethod === "onramp" ? (
+                                            <ArcOnramp key={depositAddress} destinationAddress={depositAddress} disabled={!isTier1}
+                                                onRefresh={() => onSuccess?.()} />
+                                        ) : (
+                                            <>
                                         <div className="text-left">
                                             <p className="text-xs text-[#082824]/70 dark:text-white/70 leading-relaxed font-medium">
                                                 Select the network where you currently have USDC. Arc Network settles deposits directly with 0% protocol fee:
@@ -637,6 +1264,9 @@ export default function DepositModal({
                                                 );
                                             })}
                                         </div>
+                                            </>
+                                        )}
+                                        </DepositMethodPanel>
                                     </div>
                                 )}
 

@@ -1,3 +1,14 @@
+/** Label outgoing transfers consistently across optimistic, DM, and indexed rows. */
+export function sentToLabel(name?: string | null, address?: string | null): string {
+  const label = name?.trim();
+  if (label && !/^0x/i.test(label) && !["recipient", "payment", "subscript transaction"].includes(label.toLowerCase())) {
+    return `Sent to @${label.replace(/^@/, "")}`;
+  }
+  const target = address || label;
+  if (!target) return "Sent USDC";
+  return `Sent to ${target.length > 14 ? `${target.slice(0, 6)}...${target.slice(-4)}` : target}`;
+}
+
 /** Maps internal message-type enums to user-facing labels. */
 export function humanStatus(messageType: string): string {
   const map: Record<string, string> = {

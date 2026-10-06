@@ -46,7 +46,7 @@ export type VaultState = {
 let _cachedReadProvider: ethers.JsonRpcProvider | null = null;
 let _cachedReadProviderUrl: string | null = null;
 
-function readProvider(): ethers.JsonRpcProvider {
+export function readProvider(): ethers.JsonRpcProvider {
     const url = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
     if (!_cachedReadProvider || _cachedReadProviderUrl !== url) {
         _cachedReadProvider = new ethers.JsonRpcProvider(url, SUBSCRIPT_VAULT_CHAIN_ID, {
@@ -56,6 +56,54 @@ function readProvider(): ethers.JsonRpcProvider {
         _cachedReadProviderUrl = url;
     }
     return _cachedReadProvider;
+}
+
+/* EntryPoint event for ERC-4337 smart accounts (Circle SCA embedded wallets). The `success`
+   flag tells us whether the INNER call actually executed — distinct from the outer transaction's
+   receipt status. */
+const USER_OPERATION_EVENT_ABI = [
+    "event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)",
+];
+const _userOperationEventInterface = new ethers.Interface(USER_OPERATION_EVENT_ABI);
+
+/**
+ * Safety net for embedded-wallet (Circle SCA / ERC-4337) transfers.
+ *
+ * A smart-account userOp is mined inside an outer EntryPoint transaction that reports
+ * status = 1 even when the INNER call (the actual USDC transfer) reverts — the EntryPoint
+ * records that in UserOperationEvent.success = false. Because a provider can report such a
+ * transaction as confirmed, a plain "we received a txHash" check can mark a transfer successful
+ * when nothing reached the recipient. That is exactly the "it said sent but the funds never
+ * arrived" symptom.
+ *
+ * Returns true ONLY on positive evidence the transfer did not settle: the outer transaction
+ * reverted, or the sender's UserOperationEvent carries success = false. Every other case — no
+ * receipt yet, no matching event (e.g. a plain EOA send that is not 4337), an RPC or parse
+ * hiccup — returns false, so a genuinely settled transfer is never rejected. Fail-open by design.
+ */
+export async function embeddedTransferReverted(txHash: string, scaSender: string): Promise<boolean> {
+    try {
+        const receipt = await Promise.race([
+            readProvider().getTransactionReceipt(txHash),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        ]);
+        if (!receipt) return false;
+        if (receipt.status === 0) return true;
+        const sender = scaSender.toLowerCase();
+        for (const log of receipt.logs ?? []) {
+            try {
+                const parsed = _userOperationEventInterface.parseLog({ topics: [...log.topics], data: log.data });
+                if (parsed?.name === "UserOperationEvent" && String(parsed.args.sender).toLowerCase() === sender) {
+                    return parsed.args.success === false;
+                }
+            } catch {
+                /* Not the EntryPoint event — keep scanning. */
+            }
+        }
+        return false;
+    } catch {
+        return false;
+    }
 }
 
 export function vaultReadContract(provider?: ethers.Provider) {

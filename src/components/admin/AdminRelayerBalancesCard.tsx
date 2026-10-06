@@ -94,8 +94,8 @@ export function AdminRelayerBalancesCard() {
   const needsAttention = balances.filter((b) => b.status !== "healthy").length;
 
   return (
-    <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 sm:p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-      <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#f1f5f9]">
+    <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 sm:p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-[#f1f5f9]">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#2775ca]/10 text-[#2775ca] shrink-0">
             <Fuel className="w-5 h-5" />
@@ -138,7 +138,7 @@ export function AdminRelayerBalancesCard() {
       </div>
 
       {(loading || refreshing) ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-5" role="status" aria-label="Loading relayer balances...">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-3 mt-5" role="status" aria-label="Loading relayer balances...">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
               key={i}
@@ -202,7 +202,7 @@ export function AdminRelayerBalancesCard() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-3">
             {balances.map((chain) => (
               <div
                 key={chain.chainId}
@@ -221,7 +221,7 @@ export function AdminRelayerBalancesCard() {
                   {statusBadge(chain.status)}
                 </div>
 
-                <div className="flex items-baseline justify-between gap-2 pt-2 border-t border-[#f1f5f9]">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 pt-2 border-t border-[#f1f5f9]">
                   <span className="text-xs text-[#64748b] font-medium">Available</span>
                   <span className="text-base font-bold font-mono text-[#0f172a]">
                     {chain.formattedBalance}{" "}
