@@ -50,15 +50,17 @@ test("mobile admin navigation uses high-contrast labels", () => {
 test("the user mobile bottom nav and its skeleton keep the five-percent height increase", () => {
     const nav = source("src/components/dashboard/MobileFloatingNav.tsx");
     const dashboard = source("src/app/dashboard/user/page.tsx");
+    const skeleton = source("src/components/dashboard/UserDashboardLoading.tsx");
 
     assert.match(nav, /const CAPSULE_HEIGHT = (?:55\.125|60\.6375)/);
     assert.match(nav, /const CAPSULE_RETRACTED_SIZE = (?:55\.125|60\.6375)/);
-    assert.match(dashboard, /h-\[(?:55\.125|60\.6375)px\]/);
-    assert.match(dashboard, /w-\[(?:55\.125|60\.6375)px\]/);
+    assert.match(dashboard, /<UserDashboardLoading\s+items=\{userDesktopTabs\}/);
+    assert.match(skeleton, /h-\[(?:55\.125|60\.6375)px\]/);
+    assert.match(skeleton, /w-\[(?:55\.125|60\.6375)px\]/);
 });
 
 test("the mobile dashboard skeleton mirrors profile, tier, and notification controls", () => {
-    const dashboard = source("src/app/dashboard/user/page.tsx");
+    const dashboard = source("src/components/dashboard/UserDashboardLoading.tsx");
     const headerStart = dashboard.indexOf('aria-label="Loading profile"');
     const headerEnd = dashboard.indexOf("<main", headerStart);
     const mobileSkeleton = dashboard.slice(headerStart, headerEnd);
@@ -66,7 +68,7 @@ test("the mobile dashboard skeleton mirrors profile, tier, and notification cont
     assert.ok(headerStart !== -1, "loading profile skeleton exists");
     assert.match(mobileSkeleton, /h-12 w-12[^\n]*rounded-full/);
     assert.match(mobileSkeleton, /aria-label="Loading account controls"/);
-    assert.equal((mobileSkeleton.match(/h-9 w-9 subscript-skeleton rounded-full/g) || []).length, 2);
+    assert.equal((mobileSkeleton.match(/h-9 w-9 subscript-skeleton(?: max-w-full)? rounded-full/g) || []).length, 2);
     assert.doesNotMatch(mobileSkeleton, /h-3 w-20/);
 });
 
