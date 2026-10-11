@@ -25,7 +25,6 @@ import {
     allScopes,
     hasScope,
     scopesForDelegatedAdmin,
-    LEAST_PRIVILEGE_SCOPE,
     type AdminScope,
 } from "@/lib/admin/scopes";
 
@@ -37,38 +36,49 @@ export type AdminIdentity = {
     scopes: AdminScope[];
 };
 
-export async function getAdminSession(headers: Headers): Promise<AdminIdentity | null> {
+async function lookupAdminSession(headers: Headers): Promise<AdminIdentity | null> {
     try {
-        const session = await getVerifiedSessionToken(headers);
+        const session = await getVerifiedSessionToken(headers, { throwOnDatabaseError: true });
         if (!session) return null;
-        if (!(await isAdminWallet(session.wallet))) return null;
+        if (!(await isAdminWallet(session.wallet, { throwOnDatabaseError: true }))) return null;
 
         const isRoot = isRootAdmin(session.wallet);
         if (isRoot) return { wallet: session.wallet, isRoot: true, scopes: allScopes() };
 
-        /* Delegated. A failed read degrades to the least privilege rather than to full access:
-           isAdminWallet() above already proved this wallet is an admin, so the console must
-           still open, but nothing beyond `read` should be assumed from a row we could not
-           read. This is the inversion of the previous behaviour, where an unrecognised label
-           resolved to SUPER_ADMIN. */
+        // Recheck the live grant while reading scopes. A revoke or expiry between
+        // identity and scope reads must deny access rather than grant fallback read.
         const adminRecord = await prisma.adminWallet
-            .findUnique({
-                where: { wallet: session.wallet.toLowerCase() },
+            .findFirst({
+                where: {
+                    wallet: session.wallet.toLowerCase(),
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                },
                 select: { scopes: true },
-            })
-            .catch((error) => {
-                console.error("[admin] scope lookup failed, degrading to least privilege:", error);
-                return null;
             });
+        if (!adminRecord) return null;
 
         return {
             wallet: session.wallet,
             isRoot: false,
-            scopes: adminRecord ? scopesForDelegatedAdmin(adminRecord.scopes) : [LEAST_PRIVILEGE_SCOPE],
+            scopes: scopesForDelegatedAdmin(adminRecord.scopes),
         };
     } catch (error) {
         console.error("[admin] getAdminSession error:", error);
-        return null;
+        throw error;
+    }
+}
+
+export async function getAdminSession(headers: Headers): Promise<AdminIdentity | null> {
+    let timer: ReturnType<typeof setTimeout>;
+    try {
+        return await Promise.race([
+            lookupAdminSession(headers),
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error("Admin access verification timed out")), 15_000);
+            }),
+        ]);
+    } finally {
+        clearTimeout(timer!);
     }
 }
 
@@ -83,7 +93,18 @@ export async function getAdminSession(headers: Headers): Promise<AdminIdentity |
 export async function requireAdmin(
     request: Request,
 ): Promise<{ ok: true; admin: AdminIdentity } | { ok: false; response: NextResponse }> {
-    const admin = await getAdminSession(request.headers);
+    let admin;
+    try {
+        admin = await getAdminSession(request.headers);
+    } catch {
+        return {
+            ok: false,
+            response: NextResponse.json(
+                { error: "Admin access verification is temporarily unavailable. Please retry." },
+                { status: 503, headers: { "Retry-After": "5", "Cache-Control": "no-store" } },
+            ),
+        };
+    }
     if (!admin) {
         return {
             ok: false,

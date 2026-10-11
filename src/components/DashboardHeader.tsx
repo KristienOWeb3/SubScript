@@ -11,6 +11,7 @@ import { createPublicClient, http, formatUnits } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { getAdminUrl } from "@/utils/navigation";
 
 const ERC20_ABI = [
     {
@@ -238,12 +239,12 @@ export default function DashboardHeader({
                             <div className="flex items-center gap-1 min-w-0">
                                 <NotificationBell audience="MERCHANT" accent="#00d2b4" />
                                 {isAdmin && (
-                                    <Link
-                                        href="/admin"
+                                    <a
+                                        href={getAdminUrl("/admin")}
                                         className="px-2 py-0.5 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-[9px] font-bold uppercase tracking-wider transition shrink-0"
                                     >
                                         Admin
-                                    </Link>
+                                    </a>
                                 )}
                                 {mounted && realIsConnected && chainId && chainId !== activeArcChain.id && (
                                     <button
@@ -326,12 +327,12 @@ export default function DashboardHeader({
                             {isConnected && address ? (
                                 <>
                                     {isAdmin && (
-                                        <Link
-                                            href="/admin"
+                                        <a
+                                            href={getAdminUrl("/admin")}
                                             className="px-3 py-1.5 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition"
                                         >
                                             Admin
-                                        </Link>
+                                        </a>
                                     )}
                                     {mounted && realIsConnected && chainId && chainId !== activeArcChain.id && (
                                         <button

@@ -109,7 +109,7 @@ function formatGoogleErrorMessage(message: string): string {
     if (lower.includes("circle") || lower.includes("not configured") || lower.includes("isn't configured") || lower.includes("missing:")) {
         const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
         if (isLocal) {
-            return "Google sign-in is not configured locally. Please sign in with email OTP or connect a Web3 wallet.";
+            return "Google sign-in is not configured locally. Restore the local Circle and Google settings, then restart the local server.";
         }
         return "Google sign-in is temporarily unavailable. Please sign in with email or connect a Web3 wallet.";
     }

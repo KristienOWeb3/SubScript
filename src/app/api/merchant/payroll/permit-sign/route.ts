@@ -1,3 +1,6 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin, isTransactionPinAuthorizedRequest } from "@/lib/auth/transactionPin";
+import { authorizationDigest } from "@/lib/auth/transactionPinCrypto";
 /* Server-side Permit2 authorization for an EMBEDDED-wallet merchant (the only kind now). Since the
    merchant has no browser wallet to sign with, the server: (1) approves USDC -> Permit2 once on its
    behalf (gas sponsored), (2) reads the current on-chain Permit2 nonce, and (3) signs an exact,
@@ -32,7 +35,7 @@ const PERMIT2_ALLOWANCE_ABI = [
     "function allowance(address user, address token, address spender) view returns (uint160 amount, uint48 expiration, uint48 nonce)",
 ];
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const session = await getVerifiedSessionToken(request.headers);
         if (!session) {
@@ -95,11 +98,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: windowError.message }, { status: 400 });
         }
 
-        const stepUp = await authorizeFinancialStepUp({
+        const stepUp = isTransactionPinAuthorizedRequest(request) ? { ok: true as const } : await authorizeFinancialStepUp({
             headers: request.headers,
             wallet,
             session,
-            binding: { action: "payrollPermit", amount: totalAmount.toString() },
+            binding: { action: "payrollPermit", amount: totalAmount.toString(), contextDigest: authorizationDigest({
+                recipients: recipients.map(item => ({ employeeWallet: item.employeeWallet.toLowerCase(), salaryAmountUsdc: BigInt(String(item.salaryAmountUsdc)).toString() })),
+                frequencyDays,
+            }) },
         });
         if (!stepUp.ok) {
             return NextResponse.json({ error: stepUp.error }, { status: stepUp.status });
@@ -163,3 +169,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message || "Failed to authorize payroll" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "payroll-permit", bind: financialPinContext }, handlePOST);

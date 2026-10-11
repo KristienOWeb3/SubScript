@@ -1,3 +1,5 @@
+import { financialPinContext, capIncreaseRequiresPin } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin, isTransactionLimitIncreaseAuthorized } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
@@ -81,7 +83,7 @@ const MAX_SUB_USERS_PER_PARENT = 100;
 const CREATE_RATE_LIMIT = 10;
 const CREATE_RATE_WINDOW_SECONDS = 60;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -196,7 +198,7 @@ export async function POST(request: Request) {
 /* Re-cap an existing sub-user. Split from POST because creating a delegation and re-budgeting one
    are different authorities in the UI, and because this route must accept an explicit null to mean
    "uncapped" — a distinction POST's "field absent" convention cannot carry. */
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -230,7 +232,7 @@ export async function PATCH(request: Request) {
             }
         }
 
-        const subUser = await updateSubUserLimit(walletAddress, commitId, spendLimitUsdc);
+        const subUser = await updateSubUserLimit(walletAddress, commitId, spendLimitUsdc, await isTransactionLimitIncreaseAuthorized(request, walletAddress));
         return NextResponse.json({ subUser: serializeSubUser(subUser) });
     } catch (error) {
         if (error instanceof CommitAccessError) {
@@ -240,3 +242,7 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: "Could not update spend limit" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "delegate-create", bind: financialPinContext }, handlePOST);
+
+export const PATCH = withTransactionPin({ action: "delegate-limit", bind: financialPinContext, required: capIncreaseRequiresPin }, handlePATCH);

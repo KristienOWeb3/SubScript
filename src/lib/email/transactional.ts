@@ -7,6 +7,7 @@
  */
 
 import crypto from "crypto";
+import { isProd } from "@/lib/contracts/constants";
 import { pgMaybeOne } from "@/lib/serverPg";
 import {
     formatUsdc,
@@ -15,6 +16,7 @@ import {
     renderEmailLayout,
     safelySendEmail,
     sendTransactionalEmail,
+    sendImmediateEmail,
     shortAddress,
     type WalletEmailPreference,
 } from "./core";
@@ -50,7 +52,7 @@ type PaymentReceipt = {
 
 export async function sendAuthenticationCodeEmail(email: string, code: string) {
     const safeCode = htmlEscape(code);
-    return sendTransactionalEmail({
+    return sendImmediateEmail({
         to: email,
         category: "security",
         subject: "Your SubScript verification code",
@@ -62,7 +64,7 @@ export async function sendAuthenticationCodeEmail(email: string, code: string) {
                 <div style="margin:0 0 18px;padding:18px 24px;background:#f4f6f8;border-radius:14px;text-align:center;font-size:32px;font-weight:800;letter-spacing:10px;color:#08090a">${safeCode}</div>
                 <p style="margin:0;color:#6b7280;font-size:13px">It expires in 10 minutes. If you didn't request it, you can safely ignore this email.</p>`,
         }),
-        idempotencyKey: `otp:${email}:${code}`,
+        idempotencyKey: `otp:${crypto.createHash("sha256").update(`${email.toLowerCase()}:${code}`).digest("hex")}`,
     });
 }
 
@@ -192,7 +194,7 @@ async function getMerchantAliasName(merchantAddress: string): Promise<string | n
         const name = row?.display_name?.trim();
         return name || null;
     } catch (error) {
-        console.error("Merchant name lookup failed", error instanceof Error ? error.message : "Unknown error");
+        console.error("Merchant name lookup failed", "EMAIL_MERCHANT_LOOKUP_FAILED");
         return null;
     }
 }
@@ -206,8 +208,7 @@ export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "reci
             getWalletEmailPreference(input.merchantAddress),
         ]);
     } catch (error) {
-        console.error("Transactional email recipient lookup failed", error instanceof Error ? error.message : "Unknown error");
-        return;
+        throw new Error("EMAIL_RECIPIENT_LOOKUP_FAILED", { cause: error });
     }
 
     /* Resolved here rather than passed in by the caller, for the same reason the settlement
@@ -227,12 +228,12 @@ export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "reci
         const email = preference?.email?.toLowerCase();
         if (!email || preference?.email_enabled === false || sentTo.has(email)) return;
         sentTo.add(email);
-        await safelySendEmail(`payment receipt for ${recipientKind}`, () => sendPaymentReceiptEmail({
+        await sendPaymentReceiptEmail({
             ...input,
             merchantName: input.merchantName ?? merchantName,
             recipient: email,
             recipientKind,
-        }));
+        });
     }));
 }
 
@@ -262,7 +263,7 @@ export async function sendSubscriptionCancellationReasonEmail(input: {
     try {
         merchant = await getWalletEmailPreference(input.merchantAddress);
     } catch (error) {
-        console.error("Cancellation-reason email merchant lookup failed", error instanceof Error ? error.message : "Unknown error");
+        console.error("Cancellation-reason email merchant lookup failed", "EMAIL_RECIPIENT_LOOKUP_FAILED");
         return;
     }
     const email = merchant?.email?.toLowerCase();
@@ -473,14 +474,19 @@ function getNetworkBannerUrl(chainName: string): string {
 
 function getExplorerTxUrl(chainName: string, txHash: string): string {
     const s = chainName.toLowerCase();
-    const isProd = process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_VERCEL_ENV === "production";
     if (s.includes("eth")) return isProd ? `https://etherscan.io/tx/${txHash}` : `https://sepolia.etherscan.io/tx/${txHash}`;
     if (s.includes("sol")) return isProd ? `https://solscan.io/tx/${txHash}` : `https://solscan.io/tx/${txHash}?cluster=devnet`;
     if (s.includes("base")) return isProd ? `https://basescan.org/tx/${txHash}` : `https://sepolia.basescan.org/tx/${txHash}`;
     if (s.includes("arb")) return isProd ? `https://arbiscan.io/tx/${txHash}` : `https://sepolia.arbiscan.io/tx/${txHash}`;
     if (s.includes("poly") || s.includes("matic")) return isProd ? `https://polygonscan.com/tx/${txHash}` : `https://amoy.polygonscan.com/tx/${txHash}`;
     if (s.includes("avax")) return isProd ? `https://snowtrace.io/tx/${txHash}` : `https://testnet.snowtrace.io/tx/${txHash}`;
-    return isProd ? `https://arcscan.app/tx/${txHash}` : `https://testnet.arcscan.app/tx/${txHash}`;
+    return isProd ? `https://explorer.arc.io/tx/${txHash}` : `https://testnet.arcscan.app/tx/${txHash}`;
+}
+
+/** Bridge workers already format micros; other callers pass integer micros. */
+export function formatBridgeEmailAmount(value: bigint | string | number) {
+    if (typeof value === "string" && /^\d+\.\d{1,6}$/.test(value)) return value.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+    return formatUsdc(value);
 }
 
 function formatSpendaDateTime(d: Date = new Date()): string {
@@ -527,7 +533,7 @@ export type DepositEmailParams = {
 };
 
 export function buildDepositReceivedEmail(params: DepositEmailParams) {
-    const amount = formatUsdc(params.amountUsdc);
+    const amount = formatBridgeEmailAmount(params.amountUsdc);
     const chainName = params.originChainName || "External Chain";
     const dateStr = formatSpendaDateTime(params.receivedAt);
     const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
@@ -572,7 +578,7 @@ export function buildDepositReceivedEmail(params: DepositEmailParams) {
             `,
             cta: { label: "Go to Dashboard", url: "https://subscriptonarc.com/dashboard/user" },
         }),
-        idempotencyKey: `deposit:${params.txHash || params.recipientEmail.toLowerCase()}:${dateStr}`,
+        idempotencyKey: `deposit:${chainName}:${params.txHash?.toLowerCase() || params.referenceId || `${params.recipientEmail.toLowerCase()}:${dateStr}`}`,
     };
 }
 
@@ -593,7 +599,7 @@ export type WithdrawalEmailParams = {
 };
 
 export function buildWithdrawalCompletedEmail(params: WithdrawalEmailParams) {
-    const amount = formatUsdc(params.amountUsdc);
+    const amount = formatBridgeEmailAmount(params.amountUsdc);
     const destName = params.destinationChainName || "External Chain";
     const dateStr = formatSpendaDateTime(params.completedAt);
     const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
@@ -640,7 +646,7 @@ export function buildWithdrawalCompletedEmail(params: WithdrawalEmailParams) {
             `,
             cta: { label: "View Transactions", url: "https://subscriptonarc.com/dashboard/user/transactions" },
         }),
-        idempotencyKey: `withdrawal:${params.txHash || params.destinationAddress || params.recipientEmail.toLowerCase()}:${dateStr}`,
+        idempotencyKey: `withdrawal:${destName}:${params.txHash?.toLowerCase() || params.referenceId || `${params.recipientEmail.toLowerCase()}:${dateStr}`}`,
     };
 }
 
@@ -659,7 +665,7 @@ export type DepositInitiatedEmailParams = {
 };
 
 export function buildDepositInitiatedEmail(params: DepositInitiatedEmailParams) {
-    const amount = formatUsdc(params.amountUsdc);
+    const amount = formatBridgeEmailAmount(params.amountUsdc);
     const chainName = params.originChainName || "External Chain";
     const dateStr = formatSpendaDateTime(params.initiatedAt);
     const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
@@ -705,7 +711,7 @@ export function buildDepositInitiatedEmail(params: DepositInitiatedEmailParams) 
             `,
             cta: { label: "Track in Dashboard", url: "https://subscriptonarc.com/dashboard/user" },
         }),
-        idempotencyKey: `deposit-init:${params.txHash || params.recipientEmail.toLowerCase()}:${dateStr}`,
+        idempotencyKey: `deposit-init:${chainName}:${params.txHash?.toLowerCase() || params.referenceId || `${params.recipientEmail.toLowerCase()}:${dateStr}`}`,
     };
 }
 
@@ -726,7 +732,7 @@ export type WithdrawalInitiatedEmailParams = {
 };
 
 export function buildWithdrawalInitiatedEmail(params: WithdrawalInitiatedEmailParams) {
-    const amount = formatUsdc(params.amountUsdc);
+    const amount = formatBridgeEmailAmount(params.amountUsdc);
     const destName = params.destinationChainName || "External Chain";
     const dateStr = formatSpendaDateTime(params.initiatedAt);
     const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
@@ -774,7 +780,7 @@ export function buildWithdrawalInitiatedEmail(params: WithdrawalInitiatedEmailPa
             `,
             cta: { label: "View Transactions", url: "https://subscriptonarc.com/dashboard/user/transactions" },
         }),
-        idempotencyKey: `withdrawal-init:${params.txHash || params.destinationAddress || params.recipientEmail.toLowerCase()}:${dateStr}`,
+        idempotencyKey: `withdrawal-init:${destName}:${params.txHash?.toLowerCase() || params.referenceId || `${params.recipientEmail.toLowerCase()}:${dateStr}`}`,
     };
 }
 

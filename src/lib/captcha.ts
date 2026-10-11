@@ -12,18 +12,35 @@ export async function verifyCaptchaToken(
     turnstileToken: string | null | undefined,
     clientIp?: string | null | undefined
 ): Promise<boolean> {
+    const isNonProduction =
+        process.env.NODE_ENV !== "production" ||
+        process.env.VERCEL_ENV === "preview" ||
+        process.env.VERCEL_ENV === "development";
+
     const secret = process.env.TURNSTILE_SECRET_KEY;
     if (!secret) {
         // In local development or preview environments, if the secret is not configured, allow it to pass for easier testing
-        if (process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview" || process.env.VERCEL_ENV === "development") {
+        if (isNonProduction) {
             console.warn("Captcha verification bypassed: TURNSTILE_SECRET_KEY is missing in a non-production or preview environment.");
             return true;
         }
         console.error("Captcha verification failed: TURNSTILE_SECRET_KEY is not configured (failing closed).");
         return false;
     }
+
+    // In local development or preview environments, allow dev bypass tokens or missing tokens
+    if (isNonProduction && (!turnstileToken || turnstileToken === "dev-bypass" || turnstileToken === "XXXX.DUMMY.TOKEN.XXXX")) {
+        console.warn("Captcha verification bypassed for non-production environment.");
+        return true;
+    }
+
     if (!turnstileToken) {
         return false;
+    }
+
+    // Cloudflare dummy test keys always pass
+    if (secret.startsWith("1x000000000000") && (turnstileToken.startsWith("1x00000000") || turnstileToken === "XXXX.DUMMY.TOKEN.XXXX")) {
+        return true;
     }
 
     try {

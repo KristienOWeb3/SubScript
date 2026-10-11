@@ -8,9 +8,8 @@
  * editing shared code and risking the escaping or the limits drifting per template.
  */
 
-import { Resend } from "resend";
 import { pgMaybeOne } from "@/lib/serverPg";
-import { assertProviderRateLimit, ProviderRateLimitError } from "@/lib/providerRateLimit";
+import { ProviderRateLimitError } from "@/lib/providerRateLimit";
 
 /*
  * Send categories, and why they exist.
@@ -33,7 +32,7 @@ import { assertProviderRateLimit, ProviderRateLimitError } from "@/lib/providerR
  */
 export type EmailCategory = "security" | "transactional" | "lifecycle" | "ops";
 
-const RECIPIENT_HOURLY_LIMIT: Record<EmailCategory, number> = {
+export const RECIPIENT_HOURLY_LIMIT: Record<EmailCategory, number> = {
     security: 10,
     transactional: 20,
     lifecycle: 6,
@@ -235,40 +234,54 @@ export function formatUsdc(value: bigint | string | number) {
 }
 
 export async function sendTransactionalEmail(message: EmailMessage) {
+    const { enqueueEmail } = await import("./outbox");
+    return enqueueEmail(message);
+}
+
+/** Codes cannot wait for a retry worker: caller receives a provider failure explicitly. */
+export async function sendImmediateEmail(message: EmailMessage, options?: { reservedSlot?: boolean; reservedRecipient?: boolean; outboxId?: string; from?: string }) {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
 
-    assertProviderRateLimit({
-        provider: "resend",
-        key: "global",
-        limit: 120,
-        windowMs: 60 * 1000,
-    });
+    // Preferences cannot mute security codes, but permanent bounces/complaints must
+    // prevent further sends regardless of whether the message uses the outbox.
+    const suppression = await pgMaybeOne<{ suppressed: boolean }>(
+        "select exists(select 1 from email_suppressions where recipient = $1) as suppressed",
+        [message.to.trim().toLowerCase()],
+    );
+    if (suppression?.suppressed) throw Object.assign(new Error("EMAIL_RECIPIENT_SUPPRESSED"), { code: "EMAIL_RECIPIENT_SUPPRESSED" });
+
+    if (!options?.reservedSlot) {
+        const { reserveEmailProviderSlot } = await import("./outbox");
+        await reserveEmailProviderSlot();
+    }
     /* One bucket per category per recipient, so a burst in one category can't drop a send
        in another. See the EmailCategory note above. */
-    assertProviderRateLimit({
-        provider: "resend",
-        key: `recipient:${message.category}:${message.to.toLowerCase()}`,
-        limit: RECIPIENT_HOURLY_LIMIT[message.category],
-        windowMs: 60 * 60 * 1000,
-    });
+    const { reserveEmailRecipientSlot } = await import("./outbox");
+    if (!options?.reservedRecipient) await reserveEmailRecipientSlot(message, RECIPIENT_HOURLY_LIMIT[message.category]);
 
-    const resend = new Resend(apiKey);
-    const response = await resend.emails.send({
-        from: configuredSender(message.category),
+    const response = await fetch("https://api.resend.com/emails", {
+        method: "POST", signal: AbortSignal.timeout(15_000),
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json",
+            "Idempotency-Key": message.idempotencyKey },
+        body: JSON.stringify({
+        from: options?.from || configuredSender(message.category),
         to: message.to,
         subject: message.subject,
         html: message.html,
         text: message.text,
-    }, {
-        idempotencyKey: message.idempotencyKey,
+        ...(options?.outboxId ? { tags: [{ name: "outbox_id", value: options.outboxId }] } : {}),
+        }),
     });
-
-    if (response.error) {
-        throw new Error(response.error.message || "Resend rejected the email");
+    if (!response.ok) {
+        throw Object.assign(new Error("EMAIL_PROVIDER_REJECTED"), {
+            code: `PROVIDER_HTTP_${response.status}`,
+            retryAfterSeconds: Number(response.headers.get("retry-after")) || 0,
+        });
     }
-
-    return response.data?.id || null;
+    const data = await response.json() as { id?: string };
+    if (!data.id) throw Object.assign(new Error("EMAIL_PROVIDER_ID_MISSING"), { code: "EMAIL_PROVIDER_ID_MISSING" });
+    return data.id;
 }
 
 export type EmailSendOutcome = {
@@ -302,7 +315,7 @@ export async function safelySendEmail(action: string, send: () => Promise<unknow
             return { ok: false, rateLimited: true, retryAfterSeconds: error.retryAfterSeconds };
         }
         // Avoid logging recipient addresses or email content in server logs.
-        console.error(`Transactional email failed: ${action}`, error instanceof Error ? error.message : "Unknown error");
+        console.error(`Transactional email failed: ${action}`, "EMAIL_SEND_FAILED");
         return { ok: false, rateLimited: false, retryAfterSeconds: null };
     }
 }
@@ -314,7 +327,9 @@ export type WalletEmailPreference = {
 
 export async function getWalletEmailPreference(walletAddress: string) {
     return pgMaybeOne<WalletEmailPreference>(
-        `select nullif(coalesce(customer.email, embedded.email, auth_id.current_email, merchant.email), '') as email,
+        `select coalesce(nullif(trim(customer.email), ''),
+                         nullif(trim(embedded.email), ''),
+                         nullif(trim(auth_id.current_email), '')) as email,
                 coalesce(customer.email_enabled, merchant.email_enabled, true) as email_enabled
          from (select $1::text as wallet_address) w
          left join customers customer on lower(customer.wallet_address) = lower(w.wallet_address)
@@ -337,12 +352,14 @@ export async function getWalletEmailPreference(walletAddress: string) {
 export async function resolveRecipient(
     walletAddress: string,
     category: EmailCategory,
+    strict = false,
 ): Promise<string | null> {
     let preference: WalletEmailPreference | null = null;
     try {
         preference = await getWalletEmailPreference(walletAddress);
     } catch (error) {
-        console.error("Email recipient lookup failed", error instanceof Error ? error.message : "Unknown error");
+        if (strict) throw new Error("EMAIL_RECIPIENT_LOOKUP_FAILED");
+        console.error("Email recipient lookup failed", "EMAIL_RECIPIENT_LOOKUP_FAILED");
         return null;
     }
     const email = preference?.email?.toLowerCase();

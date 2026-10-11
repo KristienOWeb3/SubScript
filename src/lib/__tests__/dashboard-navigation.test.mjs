@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import test from "node:test";
+import vm from "node:vm";
+import ts from "typescript";
 
 function source(path) {
     return readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
@@ -112,7 +114,7 @@ test("every literal user-visible internal navigation target resolves", () => {
     }
 });
 
-test("authentication return paths reject external and browser-normalized redirects", () => {
+test("authentication return paths allow platform URLs and reject untrusted redirects", () => {
     const navigation = source("src/utils/navigation.ts");
     const signin = source("src/app/signin/page.tsx");
     const signup = source("src/app/signup/page.tsx");
@@ -120,8 +122,17 @@ test("authentication return paths reject external and browser-normalized redirec
     assert.match(navigation, /!value\.startsWith\("\/"\) \|\| value\.startsWith\("\/\/"\)/);
     assert.match(navigation, /value\.includes\("\\\\"\)/);
     assert.match(navigation, /[\\u0000-\\u0020\\u007f]/);
-    assert.match(signin, /getSafeRelativePath\(searchParams\?\.get\("next"\)/);
-    assert.match(signup, /getSafeRelativePath\(searchParams\?\.get\("next"\)/);
+    assert.match(signin, /getSafeRedirectUrl\(searchParams\?\.get\("next"\)/);
+    assert.match(signup, /getSafeRedirectUrl\(searchParams\?\.get\("next"\)/);
+    const context = vm.createContext({ module: { exports: {} }, URL });
+    context.exports = context.module.exports;
+    vm.runInContext(ts.transpileModule(navigation, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
+    const redirect = context.module.exports.getSafeRedirectUrl;
+    assert.equal(redirect("/user?tab=dns"), "/user?tab=dns");
+    assert.equal(redirect("https://admin.subscriptonarc.com/admin"), "https://admin.subscriptonarc.com/admin");
+    for (const value of ["//evil.example", "/\\evil.example", "/\nevil.example", "https://evil.example", "https://subscriptonarc.com.evil.example", "javascript:alert(1)"]) {
+        assert.equal(redirect(value), "", value);
+    }
 });
 
 test("account deletion requires a recent authenticated session and retains the dialog on failure", () => {

@@ -24,8 +24,8 @@ function load(path, modules, extra = {}) {
   return context.module.exports;
 }
 
-function routeHarness({ early = true, recipients = [{ receiverAddress: receiver, amountUsdc: "1" }], state = "confirmed", timeout = false, delegated = false, executionError, failAt, reused = false } = {}) {
-  const effects = { callbacks: [], sent: [], receipts: [], fees: [], finalized: [], released: [], retained: [], bound: [], delegatedReleased: [], reservations: [] };
+function routeHarness({ early = true, recipients = [{ receiverAddress: receiver, amountUsdc: "1" }], state = "confirmed", timeout = false, delegated = false, executionError, failAt, acceptedTimeout = false, reused = false, receiptStorageFailure = false, jobs = new Map() } = {}) {
+  const effects = { events: [], callbacks: [], sent: [], receipts: [], fees: [], finalized: [], released: [], retained: [], bound: [], delegatedReleased: [], reservations: [] };
   class PolicyError extends Error {}
   const spend = {
     checkAndReserveSpendingLimit: async (...args) => { effects.reservations.push(args); return { allowed: true, operationId: "operation", reused }; },
@@ -38,19 +38,35 @@ function routeHarness({ early = true, recipients = [{ receiverAddress: receiver,
     "next/server": { NextResponse: { json: (body, options = {}) => ({ body, status: options.status || 200 }) }, after: callback => effects.callbacks.push(callback) },
     ethers: { ethers },
     "@/lib/auth": { getSessionWallet: async () => sender },
+    "@/lib/auth/transactionPin": { withTransactionPin: (_options,handler) => handler },
+    "@/lib/auth/financialPinPolicy": { financialPinContext: async () => null },
+    "@/lib/payments/settlementReceiptRecovery": {
+      prepareSettlementReceiptJob: async input => {
+        if (receiptStorageFailure) throw new Error("receipt storage unavailable");
+        effects.events.push("prepared");
+        if (!jobs.has(input.identity)) jobs.set(input.identity,{...input,id:input.identity});
+        return input.identity;
+      },
+      recordSettlementReceiptSubmission: async (id,providerId) => { effects.events.push("provider-persisted");jobs.get(id).providerId=providerId; },
+      confirmSettlementReceiptJob: async (id,txHash) => { effects.events.push("confirmed");jobs.get(id).txHash=txHash; },
+      dispatchSettlementReceipts: async () => { for (const job of jobs.values()) if(job.txHash && !job.enqueued) {job.enqueued=true;effects.receipts.push(job);} },
+    },
     "@/lib/accounts/roles": { requireAccountRole: async () => ({ ok: true }) },
     "@/lib/custody": { CirclePaymasterPolicyError: PolicyError, deterministicIdempotencyKey: x => x,
       getCircleTransactionStatus: async () => ({ status: state, txHash: state === "confirmed" || state === "failed" ? hash : undefined }),
       getWalletCustody: async () => ({ executeContract: async call => {
+        effects.events.push("submitted");
         effects.sent.push(call);
         if (executionError === "policy") throw new PolicyError("policy rejected before submission");
         if (executionError === "unknown") throw new Error("connection dropped during submission");
         if (failAt === effects.sent.length) throw new Error("recipient execution failed");
+        await call.onSubmitted?.(circleId);
+        if (acceptedTimeout) throw new Error("confirmation timeout after provider acceptance");
         return { txHash: call.waitForConfirmation ? hash : "", circleTxId: circleId };
       } }) },
     "@/lib/dms/system": { parseUsdcToMicros: value => ethers.parseUnits(value, 6) },
     "@/lib/serverPg": { withPgClient: async callback => callback({ query: async () => ({ rows: [{ circle_wallet_id: "wallet", provider: "circle" }] }) }) },
-    "@/lib/contracts/constants": { USDC_NATIVE_GAS_ADDRESS: token }, "@/lib/contracts/abis": { USDC_ERC20_ABI: [] },
+    "@/lib/contracts/constants": { USDC_NATIVE_GAS_ADDRESS: token, ARC_MAINNET_CHAIN_ID:5042, ARC_TESTNET_CHAIN_ID:5042002, isProd:true }, "@/lib/contracts/abis": { USDC_ERC20_ABI: [] },
     "@/lib/prisma": { prisma: {} },
     "@/lib/commitId": { CommitAccessError: class extends Error {}, resolveSpendingAuthority: async () => ({ fundingWallet: sender, delegated, commitId: "commit" }),
       recordSubUserSpend: async () => ({ allowed: true }), releaseSubUserSpend: async (...args) => effects.delegatedReleased.push(args) },
@@ -72,6 +88,21 @@ function routeHarness({ early = true, recipients = [{ receiverAddress: receiver,
     return result;
   } };
 }
+
+test("subset and reordered batch replays share receipt identity with custody idempotency", async () => {
+  const jobs = new Map();
+  const batch = [{ receiverAddress: receiver, amountUsdc: "1" }, { receiverAddress: receiver2, amountUsdc: "2" }];
+  const first = routeHarness({ early: false, recipients: batch, jobs });
+  await first.run();
+  assert.equal(first.effects.receipts.length, 2);
+  for (const recipients of [[batch[1]], [...batch].reverse()]) {
+    const replay = routeHarness({ early: false, recipients, jobs });
+    await replay.run();
+    assert.equal(replay.effects.receipts.length, 0);
+    assert.equal(jobs.size, 2);
+    for (const call of replay.effects.sent) assert.ok(jobs.has(call.idempotencyKey));
+  }
+});
 
 test("accepted confirmation timeout retains spending without fees or success receipts", async () => {
   const { effects, run } = routeHarness({ timeout: true, state: "pending" });
@@ -118,7 +149,7 @@ test("batch requesting early submission waits every leg and preserves every sett
   const result = await run();
   assert.equal(result.body.status, "confirmed");
   assert.ok(effects.sent.every(call => call.waitForConfirmation));
-  assert.equal(effects.retained.length, 0);
+  assert.equal(effects.retained.length, 1);
   assert.equal(effects.finalized[0][1], 3000000n);
   assert.deepEqual(effects.receipts.map(x => x.payeeAddress), [receiver, receiver2]);
 });
@@ -152,7 +183,7 @@ test("delegated single send requesting early acceptance retains synchronous allo
   const { effects, run } = routeHarness({ delegated: true });
   assert.equal((await run()).body.status, "confirmed");
   assert.equal(effects.sent[0].waitForConfirmation, true);
-  assert.equal(effects.retained.length, 0);
+  assert.equal(effects.retained.length, 1);
   assert.equal(effects.finalized[0][1], 1000000n);
   assert.equal(effects.delegatedReleased.length, 0);
   const failed = routeHarness({ delegated: true, executionError: "policy" });
@@ -161,12 +192,14 @@ test("delegated single send requesting early acceptance retains synchronous allo
   assert.deepEqual(failed.effects.released, ["operation"]);
 });
 
-test("partially failed batch charges, finalizes and receipts only its settled prefix", async () => {
+test("ambiguous batch tail retains full cap while fees and receipts cover only its settled prefix", async () => {
   const { effects, run } = routeHarness({ failAt: 2, recipients: [{ receiverAddress: receiver, amountUsdc: "1" }, { receiverAddress: receiver2, amountUsdc: "2" }] });
   const result = await run();
   assert.equal(result.status, 207);
   assert.equal(result.body.transfers.length, 1);
-  assert.equal(effects.finalized[0][1], 1000000n);
+  assert.equal(effects.finalized.length, 0);
+  assert.equal(effects.released.length, 0);
+  assert.equal(result.body.status, "pending");
   assert.deepEqual(effects.receipts.map(x => x.payeeAddress), [receiver]);
   assert.equal(effects.fees.length, 1);
 });
@@ -179,6 +212,7 @@ function event(name, values, address = token) { return { ...eventInterface.encod
 function custodyHarness({ receipt, txState = "CONFIRMED", owner = "wallet", rpcError = false, hasHash = true } = {}) {
   const reconciled = [];
   const custody = load("../../custody/index.ts", {
+    "@/lib/auth/financialAuthorizationContext": { assertFinancialAuthorizationCurrent: async()=>{} },
     "node:crypto": { randomUUID: () => circleId, createHash: () => {} }, ethers: { ethers },
     "@/lib/serverPg": { pgMaybeOne: async () => ({ circle_wallet_id: "wallet" }) },
     "@/lib/circle/devWallets": { getDevWalletsClient: () => ({ getTransaction: async () => ({ data: { transaction: { state: txState, txHash: hasHash ? hash : undefined, walletId: owner } } }) }) },
@@ -226,7 +260,8 @@ test("broadcast transaction relies on chain evidence even when Circle reports fa
 test("browser transfer status verifies inner execution and actual sender rather than outer success", async () => {
   const { custody } = custodyHarness({ receipt: { status: 1, logs: [event("UserOperationEvent", [hash, sender, receiver, 0n, false, 0n, 0n])] } });
   const { GET } = load("../../../app/api/user/wallet/send/status/route.ts", {
-    "next/server": { NextResponse: { json: (body, options = {}) => ({ body, status: options.status || 200 }) } },
+    "next/server": { NextResponse: { json: (body, options = {}) => ({ body, status: options.status || 200 }) }, after:()=>{} },
+    "@/lib/payments/settlementReceiptRecovery": { dispatchSettlementReceipts:async()=>{} },
     "@/lib/auth": { getSessionWallet: async () => sender },
     "@/lib/accounts/roles": { requireAccountRole: async () => ({ ok: true }) },
     "@/lib/custody": custody,
@@ -353,4 +388,22 @@ test("real Postgres request replay shares one durable reservation and terminal a
     await api.checkAndReserveSpendingLimit(sender, 2000000000n);
     assert.equal((await api.checkAndReserveSpendingLimit(sender, 1000000000n, "DIRECT_SEND", expiredId)).allowed, false);
   } finally { await db.close(); }
+});
+
+test("receipt intent persists before custody and owned provider ID before polling; storage failure touches no funds",async()=>{
+ const working=routeHarness();await working.run();
+ assert.ok(working.effects.events.indexOf('prepared')<working.effects.events.indexOf('submitted'));
+ assert.ok(working.effects.events.indexOf('provider-persisted')<working.effects.events.indexOf('confirmed'));
+ const unavailable=routeHarness({receiptStorageFailure:true});await unavailable.run();
+ assert.equal(unavailable.effects.sent.length,0);assert.equal(unavailable.effects.fees.length,0);
+ assert.deepEqual(unavailable.effects.released,['operation']);
+});
+
+test("accepted synchronous confirmation timeout preserves delegated and wallet spending reservations",async()=>{
+ for(const delegated of [false,true]){
+   const {effects,run}=routeHarness({early:false,delegated,acceptedTimeout:true});const result=await run();
+   assert.equal(result.body.status,'pending');assert.deepEqual(Array.from(result.body.circleTxIds),[circleId]);
+   assert.equal(effects.released.length+effects.delegatedReleased.length+effects.finalized.length+effects.fees.length,0);
+   assert.deepEqual(effects.retained,['operation']);assert.deepEqual(effects.bound,[['operation',circleId]]);
+ }
 });

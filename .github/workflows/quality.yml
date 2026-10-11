@@ -47,8 +47,13 @@ jobs:
       - name: Session recovery regressions
         run: node --test --test-isolation=none src/lib/auth/__tests__/session-persistence.test.mjs
 
+      - name: Transaction authorization and receipt recovery regressions
+        run: npx tsx --test --test-concurrency=2 "src/lib/auth/__tests__/*.test.mjs" "src/lib/payments/__tests__/*.test.mjs" "src/lib/client/*.test.mjs" "src/lib/accounts/*.test.mjs" "src/lib/__tests__/dashboard-navigation.test.mjs"
+
       - name: Production dependency audit
-        run: npm run audit:production
+        run: |
+          node --test scripts/__tests__/audit-production.test.mjs
+          npm run audit:production
 
       - name: Documentation contract
         run: npm run test:docs

@@ -1,3 +1,5 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -29,7 +31,7 @@ import {
 const ROTATE_RATE_LIMIT = 5;
 const ROTATE_RATE_WINDOW_SECONDS = 60;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -122,3 +124,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Could not issue a new commit ID" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "delegate-rotate", bind: financialPinContext }, handlePOST);

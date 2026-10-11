@@ -1,3 +1,5 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { CommitAccessError, claimSubUser, isCommitId, resolveDisplayName } from "@/lib/commitId";
@@ -5,7 +7,7 @@ import { CommitAccessError, claimSubUser, isCommitId, resolveDisplayName } from 
 /* The invitee binds their own wallet. Authority is the caller's authenticated session, never the
    parent's request, so a wallet is only ever attached by whoever controls it. POST
    /api/user/commit/sub-users deliberately refuses to accept a wallet address for this reason. */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -44,3 +46,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Could not claim that invite" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "delegate-claim", bind: financialPinContext }, handlePOST);

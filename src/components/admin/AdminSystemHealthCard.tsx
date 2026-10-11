@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Activity,
@@ -120,7 +122,7 @@ export function AdminSystemHealthCard() {
   const loadSettings = useCallback(async () => {
     setSettingsError(null);
     try {
-      const res = await fetch("/api/admin/system/settings");
+      const res = await adminFetch("/api/admin/system/settings");
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Could not read the operational breakers");
       setSettingsData(json);
@@ -134,7 +136,7 @@ export function AdminSystemHealthCard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/system/health");
+      const res = await adminFetch("/api/admin/system/health");
       if (!res.ok) throw new Error("Failed to load system health");
       const json = await res.json();
       setData(json);

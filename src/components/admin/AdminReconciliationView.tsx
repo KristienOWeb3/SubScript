@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   RefreshCw,
@@ -41,7 +43,7 @@ export function AdminReconciliationView() {
       const url = statusFilter
         ? `/api/admin/payment-reconciliation?status=${statusFilter}`
         : `/api/admin/payment-reconciliation`;
-      const res = await fetch(url);
+      const res = await adminFetch(url);
       if (!res.ok) throw new Error("Failed to load reconciliation events");
       const json = await res.json();
       setEvents(json.events || []);

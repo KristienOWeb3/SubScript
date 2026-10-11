@@ -150,7 +150,7 @@ test("the user Commit flow asks for a merchant Commit name without DNS fallback"
 
     assert.match(dashboard, /Field label=\{vaultActionMode === "commit" \? "Merchant commit name"/);
     assert.match(dashboard, /merchantCommitOnly=true/);
-    assert.match(aliasRoute, /if \(merchantCommitOnly\)[\s\S]*address: null/);
+    assert.match(aliasRoute, /!merchantCommitOnly && \(USER_ALIAS_REGEX/);
     assert.doesNotMatch(commitRoute, /prisma\.addressAlias/);
 });
 

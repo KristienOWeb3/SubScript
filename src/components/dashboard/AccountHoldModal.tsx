@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchWithTransactionPin } from "@/lib/client/transactionPin";
+
 import React, { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Shield, X, AlertCircle } from "@/components/icons";
@@ -64,7 +66,7 @@ export default function AccountHoldModal({ isOpen, onClose, onHoldChange }: Acco
         setBusy(true);
         setError(null);
         try {
-            const res = await fetch("/api/user/commit/halt", { method });
+            const res = await fetchWithTransactionPin("/api/user/commit/halt", { method });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || "That didn't work");
             await load();
@@ -72,6 +74,7 @@ export default function AccountHoldModal({ isOpen, onClose, onHoldChange }: Acco
                 onHoldChange(method === "POST");
             }
         } catch (err: unknown) {
+            if (err instanceof Error && err.name === "AbortError") return;
             setError(err instanceof Error ? err.message : "That didn't work");
         } finally {
             setBusy(false);

@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchWithTransactionPin } from "@/lib/client/transactionPin";
+
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DepositModal from "@/components/DepositModal";
@@ -186,7 +188,7 @@ export default function CommitClient({
         try {
             let res: Response;
             try {
-                res = await fetch("/api/user/vault/commit", {
+                res = await fetchWithTransactionPin("/api/user/vault/commit", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -198,9 +200,10 @@ export default function CommitClient({
                         acknowledgeUnverified: acknowledgedUnverified || undefined,
                     }),
                 });
-            } catch {
+            } catch (error) {
+                if (error instanceof Error && error.name === "AbortError") throw error;
                 try {
-                    res = await fetch("/api/user/vault/commit", {
+                    res = await fetchWithTransactionPin("/api/user/vault/commit", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
@@ -212,7 +215,8 @@ export default function CommitClient({
                             acknowledgeUnverified: acknowledgedUnverified || undefined,
                         }),
                     });
-                } catch {
+                } catch (error) {
+                    if (error instanceof Error && error.name === "AbortError") throw error;
                     const outcome = await pollCommitIntent(requestId);
                     if (!applyCommitOutcome(outcome)) {
                         setCommitPendingNote("The connection dropped before the network confirmed this commit. Your money is safe. Try again to resume confirmation.");
@@ -244,6 +248,7 @@ export default function CommitClient({
             writeStoredRequestId(null);
             setCommittedTxHash(data.txHash || "confirmed");
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             setCommitError(err.message || "Failed to commit funds.");
         } finally {
             commitInFlight.current = false;

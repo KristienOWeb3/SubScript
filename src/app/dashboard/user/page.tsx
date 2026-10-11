@@ -1,8 +1,14 @@
-/* Mobile-first user dashboard: wallet home, system-DM chat, DNS, payment links, and batch send. */
 "use client";
 
+/* Mobile-first user dashboard: wallet home, system-DM chat, DNS, payment links, and batch send. */
+
+import { ensureTransactionPinSetup, fetchWithTransactionPin } from "@/lib/client/transactionPin";
+import TransactionPinCard from "@/components/dashboard/TransactionPinCard";
+import TransactionPinSettings from "@/components/TransactionPinSettings";
+import { cancelTransactionPinPrompt } from "@/components/TransactionPinPrompt";
+
 import { ethers } from "ethers";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -30,6 +36,7 @@ import {
 } from "@/lib/contracts/constants";
 import { calculateBridgeFee, formatFeeBps, formatMicros, listBridgeRoutes } from "@/lib/cctp/feeEngine";
 import { createSendQuote, microsToUsdc, nativeGasToMicros, quoteEmbeddedArcReceipt, usdcToMicros, type SendQuoteRequest, type SendResult } from "@/lib/payments/sendQuote";
+import { resolveSendRecipient } from "@/lib/payments/resolveSendRecipient";
 import { isSolanaAddress, getSolanaRecipientAta, solanaAddressToBytes32 } from "@/lib/cctp/circleBridge";
 import { QRCode } from "react-qrcode-logo";
 import jsQR from "jsqr";
@@ -62,7 +69,7 @@ import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
 import AccountHoldModal from "@/components/dashboard/AccountHoldModal";
-import { APP_ROUTES, getDashboardUrl } from "@/utils/navigation";
+import { APP_ROUTES, getDashboardUrl, getAdminUrl } from "@/utils/navigation";
 import { compressAvatarImage } from "@/utils/imageCompression";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
@@ -126,7 +133,6 @@ import {
   EyeOff,
   RefreshCw,
   Gift,
-  KeyRound,
   Lock,
   BarChart3,
   TrendingUp,
@@ -297,6 +303,7 @@ type AccountSubView =
   | "transactions"
   | "notifications"
   | "security"
+  | "transaction-pin"
   | "support"
   | "spend-analysis";
 
@@ -1062,6 +1069,7 @@ export default function UserDashboard() {
   const { theme, setTheme } = useTheme();
   const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [accountSubView, setAccountSubView] = useState<AccountSubView>("menu");
+  useLayoutEffect(() => () => cancelTransactionPinPrompt(), [activeTab, accountSubView]);
   const [spendSearchQuery, setSpendSearchQuery] = useState("");
   const [spendCategory, setSpendCategory] = useState("all");
   const [spendStatus, setSpendStatus] = useState("all");
@@ -1117,7 +1125,7 @@ export default function UserDashboard() {
         goToAccountSubView("dns", "spend-analysis");
       } else if (urlTab) {
         setActiveTab(urlTab);
-        if (urlSubView) setAccountSubView(urlSubView);
+        if (urlSubView) goToAccountSubView(urlTab, urlSubView);
       }
     }
   }, [goToAccountSubView]);
@@ -1215,7 +1223,7 @@ export default function UserDashboard() {
       const [res, haltRes] = await Promise.all([
         fetch("/api/user/vault/config", { cache: "no-store" }).catch(() => null),
         includeHalt
-          ? fetch("/api/user/commit/halt", { cache: "no-store" }).catch(() => null)
+          ? fetchWithTransactionPin("/api/user/commit/halt", { cache: "no-store" }).catch(() => null)
           : Promise.resolve(null),
       ]);
       if (res && res.ok) {
@@ -1235,6 +1243,7 @@ export default function UserDashboard() {
         }
       }
     } catch (err) {
+            if (err instanceof Error && err.name === "AbortError") return;
       console.error("Failed to load metered vaults:", err);
     } finally {
       vaultRefreshInFlightRef.current = false;
@@ -1246,7 +1255,7 @@ export default function UserDashboard() {
     if (comingSoonUserSettings.has(field)) return;
     setSavingSettingsField(field);
     try {
-      const res = await fetch("/api/user/settings", {
+      const res = await fetchWithTransactionPin("/api/user/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: !currentValue }),
@@ -1256,6 +1265,7 @@ export default function UserDashboard() {
         setUserSettings((prev: any) => ({ ...prev, [field]: !currentValue }));
       }
     } catch (err) {
+            if (err instanceof Error && err.name === "AbortError") return;
       console.error(`Error saving user setting ${field}:`, err);
     } finally {
       setSavingSettingsField(null);
@@ -1282,6 +1292,8 @@ export default function UserDashboard() {
   const [singleAmount, setSingleAmount] = useState("");
   const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null; hasAccount: boolean } | null>(null);
   const [singleResolving, setSingleResolving] = useState(false);
+  const [singleResolutionError, setSingleResolutionError] = useState<string | null>(null);
+  const [singleResolutionAttempt, setSingleResolutionAttempt] = useState(0);
   const [singleSendStatus, setSingleSendStatus] = useState<string | null>(null);
   const [singleSendLoading, setSingleSendLoading] = useState(false);
   const [singleSendFiguresPaused, setSingleSendFiguresPaused] = useState(false);
@@ -1297,6 +1309,10 @@ export default function UserDashboard() {
   const writeContractAsync: typeof writeConnectedWalletContract = useCallback(async (...args) => {
     const connectedWallet = getAccount(walletConfig).address;
     if (!userWallet || connectedWallet?.toLowerCase() !== userWallet.toLowerCase()) {
+      throw new Error("Connect the wallet for your signed-in SubScript account before sending.");
+    }
+    if (args[0].functionName !== "cancelSubscription") await ensureTransactionPinSetup();
+    if (getAccount(walletConfig).address?.toLowerCase() !== userWallet.toLowerCase()) {
       throw new Error("Connect the wallet for your signed-in SubScript account before sending.");
     }
     return Reflect.apply(writeConnectedWalletContract, undefined, args) as ReturnType<typeof writeConnectedWalletContract>;
@@ -1896,7 +1912,7 @@ export default function UserDashboard() {
         setDeleteAccountLoading(true);
         setConfirmModal((current) => current ? { ...current, isLoading: true } : current);
         try {
-          const res = await fetch("/api/user/account", { method: "DELETE" });
+          const res = await fetchWithTransactionPin("/api/user/account", { method: "DELETE" });
           const data = await res.json().catch(() => ({}));
           if (!res.ok || !data.success) {
             triggerToast(data.error || "Account deletion failed.");
@@ -1906,7 +1922,8 @@ export default function UserDashboard() {
           clearSensitiveClientState();
           disconnect();
           redirectTo(getDashboardUrl("USER", APP_ROUTES.accountDeletionComplete), "Closing your account...");
-        } catch {
+        } catch (cancelError) {
+            if (cancelError instanceof Error && cancelError.name === "AbortError") return;
           triggerToast("Account deletion failed. Please try again.");
         } finally {
           setDeleteAccountLoading(false);
@@ -1932,7 +1949,7 @@ export default function UserDashboard() {
     earlySubmission?: boolean;
   }) => {
     const { requestKey, ...body } = payload;
-    const res = await fetch("/api/user/wallet/send", {
+    const res = await fetchWithTransactionPin("/api/user/wallet/send", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2098,11 +2115,11 @@ export default function UserDashboard() {
         await runAction(`resume-sub-${subscription.subscriptionId}`, async () => {
           setPlanManagerStatus("Restoring your subscription on-chain...");
           setPlanManagerError(null);
-          const res = await fetch("/api/user/subscription/resume", {
+          const res = await fetchWithTransactionPin("/api/user/subscription/resume", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ subscriptionId: subscription.subscriptionId }),
-          });
+          }, { operation: "Resume subscription spending authorization", details: { merchant: subscription.merchantAddress, merchantName: subscription.merchantName, subscriptionId: subscription.subscriptionId, recurringAmountCapUsdcMicros: subscription.amountCapUsdc, billingIntervalSeconds: subscription.billingIntervalSeconds, nextBillingDate: subscription.nextBillingDate, chargeTodayUsdc: "0" } });
           const data = await res.json().catch(() => ({}));
           if (!res.ok || !data.success) {
             /* The period is ending or has ended, so no free bridge exists. Say that rather than
@@ -2121,6 +2138,7 @@ export default function UserDashboard() {
           triggerToast("Subscription resumed — no charge today");
           await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
         }).catch((err: any) => {
+          if (err instanceof Error && err.name === "AbortError") { setPlanManagerStatus(null); return; }
           setPlanManagerError(err?.message || "Could not resume this subscription.");
           triggerToast(err?.message || "Could not resume this subscription.");
         });
@@ -2212,7 +2230,7 @@ export default function UserDashboard() {
           await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
             setPlanManagerStatus("Cancelling subscription...");
             setPlanManagerError(null);
-            const res = await fetch("/api/user/subscription/cancel", {
+            const res = await fetchWithTransactionPin("/api/user/subscription/cancel", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
@@ -2239,6 +2257,7 @@ export default function UserDashboard() {
             }
             await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
           }).catch((err: any) => {
+            if (err instanceof Error && err.name === "AbortError") return;
             setPlanManagerError(err.message || "Cancel transaction failed.");
           });
           resolve();
@@ -2355,7 +2374,7 @@ export default function UserDashboard() {
       }
       triggerToast(`Sent ${humanAmount} USDC`);
       await Promise.all([loadDms(), refetchUsdc().catch(() => {})]);
-    }).catch((err: any) => triggerToast(err?.message || "Could not complete the payment."));
+    }).catch((err: any) => { if (err instanceof Error && err.name === "AbortError") return; triggerToast(err?.message || "Could not complete the payment."); });
   };
 
   const handleConfirmSubscription = async () => {
@@ -2364,14 +2383,14 @@ export default function UserDashboard() {
     setSubscribeReviewError(null);
     try {
       const subscribeEndpoint = ["/api/user/subscription", "subscribe"].join("/");
-      const res = await fetch(subscribeEndpoint, {
+      const res = await fetchWithTransactionPin(subscribeEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           planId: subscribeReviewDm.paymentLinkId,
           checkoutSessionId: subscribeReviewDm.paymentLinkId,
         }),
-      });
+      }, { operation: "Authorize subscription", details: { sender: subscribeReviewDm.senderAddress, recipient: subscribeReviewDm.receiverAddress, amountUsdcMicros: subscribeReviewDm.amountUsdc, title: subscribeReviewDm.title, terms: subscribeReviewDm.description, planId: subscribeReviewDm.paymentLinkId } });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(json?.error || json?.message || "Could not complete subscription.");
@@ -2382,6 +2401,7 @@ export default function UserDashboard() {
       await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
       setSubscribeReviewDm(null);
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
       setSubscribeReviewError(err?.message || "Something went wrong. Please try again.");
     } finally {
       setSubscribeReviewBusy(false);
@@ -2558,7 +2578,7 @@ export default function UserDashboard() {
     setVaultReclaimBusyId(String(vault.id || vault.merchantAddress));
     try {
       if (isEmbeddedWalletSession) {
-        const res = await fetch("/api/user/vault/reclaim", {
+        const res = await fetchWithTransactionPin("/api/user/vault/reclaim", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
@@ -2580,7 +2600,7 @@ export default function UserDashboard() {
         if (reclaimReceipt.status !== "success") {
           throw new Error("The reclaim transaction reverted. Your vault remains unchanged.");
         }
-        const syncRes = await fetch("/api/user/vault/sync", {
+        const syncRes = await fetchWithTransactionPin("/api/user/vault/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
@@ -2591,6 +2611,7 @@ export default function UserDashboard() {
       }
       await loadVaults();
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
       setVaultActionError(err?.message || "Reclaim failed.");
       setVaultActionOpen(true);
       setVaultActionMode("withdraw");
@@ -2619,7 +2640,7 @@ export default function UserDashboard() {
         const id = String(vault.id || vault.merchantAddress);
         setVaultCancelBusyId(id);
         try {
-          const res = await fetch("/api/user/vault/cancel-service", {
+          const res = await fetchWithTransactionPin("/api/user/vault/cancel-service", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
@@ -2629,6 +2650,7 @@ export default function UserDashboard() {
           triggerToast("Service paused — the merchant has been notified.");
           await Promise.all([loadVaults(), loadDms()]);
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
           triggerToast(err?.message || "Could not stop the service.");
         } finally {
           setVaultCancelBusyId(null);
@@ -2645,7 +2667,7 @@ export default function UserDashboard() {
     if (vaultResumeBusyId) return;
     setVaultResumeBusyId(merchantAddress);
     try {
-      const res = await fetch("/api/user/vault/resume-service", {
+      const res = await fetchWithTransactionPin("/api/user/vault/resume-service", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ merchantAddress }),
@@ -2660,6 +2682,7 @@ export default function UserDashboard() {
       triggerToast("Service resumed — the merchant has been notified.");
       await Promise.all([loadVaults(), loadDms()]);
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
       triggerToast(err?.message || "Could not resume the service.");
     } finally {
       setVaultResumeBusyId(null);
@@ -2765,7 +2788,7 @@ export default function UserDashboard() {
             }));
           } catch { /* the in-memory ref still guards this tab */ }
         }
-        const res = await fetch(endpoint, {
+        const res = await fetchWithTransactionPin(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -2830,7 +2853,7 @@ export default function UserDashboard() {
         }
 
         // Refresh the off-chain mirror from chain (read-only on the server).
-        await fetch("/api/user/vault/sync", {
+        await fetchWithTransactionPin("/api/user/vault/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ merchantAddress }),
@@ -2840,6 +2863,7 @@ export default function UserDashboard() {
       setVaultActionOpen(false);
       await loadVaults().catch(() => {});
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
       if (err.message?.includes("User rejected the request")) {
         setVaultActionError("Transaction signature was rejected by user.");
       } else {
@@ -3039,6 +3063,7 @@ export default function UserDashboard() {
     const controller = new AbortController();
     let cancelled = false;
     setSingleResolved(null);
+    setSingleResolutionError(null);
     if (!raw) {
       setSingleResolving(false);
       return;
@@ -3051,39 +3076,25 @@ export default function UserDashboard() {
       return;
     }
 
-    const trimmed = raw.toLowerCase();
     setSingleResolving(true);
     const timer = setTimeout(async () => {
-      const isAddress = /^0x[a-f0-9]{40}$/.test(trimmed);
-      if (!isAddress && !trimmed.endsWith(".sub")) {
-        if (!cancelled) setSingleResolving(false);
-        return;
-      }
       try {
-        const query = isAddress ? `address=${trimmed}` : `alias=${encodeURIComponent(trimmed)}`;
-        const response = await fetch(`/api/merchant/alias?${query}`, { signal: controller.signal });
-        const data = await response.json();
+        const target = await resolveSendRecipient(raw, controller.signal);
         if (cancelled) return;
-        /* hasAccount drives the recipient avatar: a wallet with no registered SubScript account
-           gets the wallet logo, an account gets its photo or its name's first letter. For an
-           address lookup, "has an account" means the lookup returned a name or photo; for a .sub
-           lookup, it means the name actually resolved to a wallet. */
-        setSingleResolved(isAddress
-          ? { address: trimmed, alias: data.success ? data.alias || null : null, profilePic: data.success ? data.profile_pic || null : null, hasAccount: Boolean(data.success && (data.alias || data.profile_pic)) }
-          : { address: data.success ? data.address || null : null, alias: data.alias || trimmed, profilePic: data.success ? data.profile_pic || null : null, hasAccount: Boolean(data.success && data.address) });
-      } catch {
-        if (!cancelled) setSingleResolved({ address: isAddress ? trimmed : null, alias: isAddress ? null : trimmed, profilePic: null, hasAccount: false });
+        setSingleResolved(target);
+      } catch (error) {
+        if (!cancelled) setSingleResolutionError(error instanceof Error ? error.message : "Recipient lookup is unavailable. Try again.");
       } finally {
         if (!cancelled) setSingleResolving(false);
       }
-    }, 400);
+    }, 150);
 
     return () => {
       cancelled = true;
       controller.abort();
       clearTimeout(timer);
     };
-  }, [singleRecipient]);
+  }, [singleRecipient, singleResolutionAttempt]);
 
   /* Idempotency keys for money-moving sends: minted per logical attempt, reused verbatim on a
      retry after a failure (so the server dedupes at Circle), cleared only on success so an
@@ -3318,7 +3329,7 @@ export default function UserDashboard() {
     let registered = false;
     for (let attempt = 0; attempt < 3 && !registered; attempt++) {
       try {
-        const res = await fetch("/api/user/cctp/withdraw/register", {
+        const res = await fetchWithTransactionPin("/api/user/cctp/withdraw/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -3331,7 +3342,8 @@ export default function UserDashboard() {
         });
         registered = res.ok;
         if (!registered) await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch {
+      } catch (cancelError) {
+            if (cancelError instanceof Error && cancelError.name === "AbortError") throw cancelError;
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
@@ -3386,7 +3398,7 @@ export default function UserDashboard() {
         let settledQuote;
 
         if (isEmbeddedWalletSession) {
-          const res = await fetch("/api/user/cctp/withdraw", {
+          const res = await fetchWithTransactionPin("/api/user/cctp/withdraw", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -3629,6 +3641,7 @@ export default function UserDashboard() {
       }
       return { ...settledQuote, txHash, recipientAddress: recipientAddr, networkId: "arc", status: "confirmed", explorerUrl: getExplorerTxUrl(txHash) };
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") { setSingleSendStatus(null); throw err; }
       if (err.message?.includes("User rejected the request")) {
         setSingleSendStatus("Transaction signature was rejected by user.");
       } else {
@@ -3754,6 +3767,7 @@ export default function UserDashboard() {
       void loadDms().catch(() => {});
       void refetchUsdc().catch(console.error);
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") { setBatchProgress(null); setBatchSendStatus(null); return; }
       const settled = Array.isArray(err.settledTransfers) ? err.settledTransfers : [];
       if (err.partial && settled.length > 0) {
         /* Transfers settle in order and the API stops at the first failure, so the first
@@ -5828,8 +5842,8 @@ export default function UserDashboard() {
                           is its own route; visibility is cosmetic, since the /admin layout re-checks
                           admin status server-side on every request. */}
                       {isAdmin && (
-                        <Link
-                          href="/admin"
+                        <a
+                          href={getAdminUrl("/admin")}
                           className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                         >
                           <div className="flex items-center gap-3">
@@ -5842,7 +5856,7 @@ export default function UserDashboard() {
                             </div>
                           </div>
                           <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
-                        </Link>
+                        </a>
                       )}
 
                       <button
@@ -5951,7 +5965,7 @@ export default function UserDashboard() {
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-black uppercase tracking-wide">Security</span>
-                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Change privacy settings and export private key</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Review your account status and wallet security</span>
                           </div>
                         </div>
                         <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
@@ -7498,7 +7512,7 @@ export default function UserDashboard() {
                   </div>
                 )}
 
-                {/* 6. SECURITY & KEY EXPORT VIEW */}
+                {/* 6. SECURITY VIEW */}
                 {accountSubView === "security" && (
                   <div className="space-y-6">
                     <div className="flex items-center gap-4">
@@ -7508,8 +7522,9 @@ export default function UserDashboard() {
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-black">Security & Keys</h2>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-black">Security</h2>
                     </div>
+
 
                     {/* Account Standing / Hold Status Card */}
                     <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-4 shadow-sm">
@@ -7546,112 +7561,12 @@ export default function UserDashboard() {
                       )}
                     </div>
 
-                    {/* Wallet Security Card */}
-                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-4 shadow-sm">
-                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
-                        <Wallet className="h-4 w-4 text-[#2775CA]" /> Wallet Security &amp; Compatibility
-                      </h3>
-                      
-                      {isEmbeddedWalletSession || (userSettings?.walletSecurity && userSettings.walletSecurity.provider !== "external") || userSettings?.walletBackup ? (
-                        <div className="space-y-3">
-                          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-50 px-4 py-3 flex items-start gap-3">
-                            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-                            <div>
-                              <h4 className="text-xs font-bold text-emerald-950">Server-Signed Wallet (Embedded)</h4>
-                              <p className="text-[10px] text-emerald-800/80 leading-relaxed mt-1">
-                                Your account is secured with a server-signed embedded wallet generated via email/social login.
-                              </p>
-                              <span className="inline-block mt-2 rounded-md bg-emerald-500/20 text-emerald-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
-                                Mobile App Compatible
-                              </span>
-                            </div>
-                          </div>
-                          <p className="text-[10px] text-black/50 leading-relaxed">
-                            This wallet will be automatically portable to our upcoming mobile app. All transaction signatures are co-signed by the SubScript server.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="rounded-2xl border border-amber-500/30 bg-amber-50 px-4 py-3 flex items-start gap-3">
-                            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                            <div>
-                              <h4 className="text-xs font-bold text-amber-950">Client-Connected Wallet (Web3)</h4>
-                              <p className="text-[10px] text-amber-800/80 leading-relaxed mt-1">
-                                Your account uses an external browser/Web3 wallet (e.g. MetaMask, WalletConnect).
-                              </p>
-                              <span className="inline-block mt-2 rounded-md bg-amber-500/20 text-amber-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
-                                Web Only (No Mobile App Support)
-                              </span>
-                            </div>
-                          </div>
-                          <p className="text-[10px] text-black/50 leading-relaxed">
-                            Note: External Web3 wallets are compatible with our web dashboard only. Our upcoming mobile app will strictly support email/Apple/Google login (Server-Signed wallets). To use the mobile app, we recommend creating a new account using your email.
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                    <TransactionPinCard onManage={() => openSubView("transaction-pin")} />
 
-                    {/* Transaction PIN Card (Coming Soon) */}
-                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-4 shadow-sm">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
-                              <KeyRound className="h-4 w-4 text-[#2775CA]" /> Transaction PIN
-                            </h3>
-                            <span className="rounded-full border border-purple-500/30 bg-purple-500/15 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-700">
-                              Coming soon
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-black/50 leading-relaxed">
-                            Require a 6-digit security PIN to authorize high-value transfers, subscriptions, and vault withdrawals.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4 flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <span className="block text-xs font-bold text-black/80">PIN Protection</span>
-                          <span className="block text-[10px] text-black/45">Prompt on outgoing payments</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600/80">In Development</span>
-                          <div className="h-5 w-9 rounded-full bg-black/10 p-0.5 cursor-not-allowed opacity-60">
-                            <div className="h-4 w-4 rounded-full bg-white shadow-sm" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Non-Custodial MPC Security Architecture */}
-                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="space-y-2">
-                          <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
-                            <Shield className="h-4 w-4 text-[#2775CA]" /> Non-Custodial Wallet Security
-                          </h3>
-                          <p className="text-[10px] text-black/50 leading-relaxed max-w-xl">
-                            SubScript email accounts are protected by non-custodial multi-party computation (MPC) and verified email authentication. Monolithic raw private keys are never generated, stored in plaintext, or exposed.
-                          </p>
-                        </div>
-                        <span className="rounded-full border border-[#2775CA]/30 bg-[#2775CA]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#2775CA]">
-                          MPC Protected
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4">
-                          <div className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50 mb-1">Account Email</div>
-                          <div className="font-mono text-[11px] text-black/80 truncate">{userSettings?.walletSecurity?.email || userEmail || "Not linked"}</div>
-                        </div>
-                        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4">
-                          <div className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50 mb-1">Key Exposure Surface</div>
-                          <div className="font-semibold text-emerald-700">Zero Raw Key Exposure</div>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 )}
+
+                {accountSubView === "transaction-pin" && <TransactionPinSettings embedded onBack={() => setAccountSubView("security")} />}
 
                 {/* 7. SUPPORT VIEW */}
                 {accountSubView === "support" && (
@@ -7864,7 +7779,7 @@ export default function UserDashboard() {
       </div>
 
       {/* Mobile-only Floating Bottom Navigation Bar */}
-      {isMobile && userWallet && !isActiveMobileDm && (
+      {isMobile && userWallet && !isActiveMobileDm && !(activeTab === "dns" && accountSubView === "transaction-pin") && (
         <MobileFloatingNav
           tabs={userBottomTabs}
           activeTab={activeTab}
@@ -8427,7 +8342,9 @@ export default function UserDashboard() {
         onSubmit={handleSingleSend}
         getQuote={getSingleSendQuote}
         recipient={singleRecipient}
-        onRecipientChange={(value) => { setSingleResolved(null); setSingleResolving(Boolean(value.trim())); setSingleRecipient(value); }}
+        onRecipientChange={(value) => { setSingleResolved(null); setSingleResolutionError(null); setSingleResolving(Boolean(value.trim())); setSingleRecipient(value); setSingleResolutionAttempt((attempt) => attempt + 1); }}
+        resolutionError={singleResolutionError}
+        onRetryResolution={() => { setSingleResolutionError(null); setSingleResolving(true); setSingleResolutionAttempt((attempt) => attempt + 1); }}
         amount={singleAmount}
         onAmountChange={setSingleAmount}
         resolving={singleResolving}
@@ -10905,7 +10822,7 @@ function SendFundsModal({
     try {
       if (isEmbeddedWalletSession) {
         sendRequestKey.current ||= crypto.randomUUID();
-        const response = await fetch("/api/user/wallet/send", {
+        const response = await fetchWithTransactionPin("/api/user/wallet/send", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-request-id": sendRequestKey.current },
           body: JSON.stringify({
@@ -10955,6 +10872,7 @@ function SendFundsModal({
       setStatus("success");
       refetchUsdc();
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") { setStatus(null); return; }
       if (err.message?.includes("User rejected the request")) {
         setStatus("Transaction signature was rejected by user.");
       } else {
@@ -11530,7 +11448,7 @@ function ConfigureVaultModal({
       /* Signs an on-chain approve, so the same stable-request-id contract as a commit applies:
          a retry after an ambiguous response must not grant a second allowance. */
       const requestId = `autotopup-${editingVault.merchantAddress}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      const res = await fetch("/api/user/vault/auto-topup", {
+      const res = await fetchWithTransactionPin("/api/user/vault/auto-topup", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-request-id": requestId },
         body: JSON.stringify({
@@ -11556,6 +11474,7 @@ function ConfigureVaultModal({
         setStatus(data.error || "Failed to save auto top-up.");
       }
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
       setStatus(err.message || "Failed to save auto top-up.");
     } finally {
       setLoading(false);
@@ -11743,7 +11662,7 @@ function TopupVaultModal({
     setStatus(null);
 
     try {
-      const res = await fetch("/api/user/vault/topup", {
+      const res = await fetchWithTransactionPin("/api/user/vault/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -11761,6 +11680,7 @@ function TopupVaultModal({
         setStatus(data.error || "Top-up failed.");
       }
     } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
       setStatus(err.message || "Failed to execute top-up.");
     } finally {
       setLoading(false);

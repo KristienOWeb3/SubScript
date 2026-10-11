@@ -6,10 +6,10 @@ import { AlertTriangle, RefreshCw, Home } from "@/components/icons";
 
 export default function AdminError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     console.error("[admin] Uncaught error in admin view:", error);
@@ -39,7 +39,7 @@ export default function AdminError({
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
           <button
             type="button"
-            onClick={reset}
+            onClick={retry}
             className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-[#2775ca] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#1d61a8]"
           >
             <RefreshCw className="h-3.5 w-3.5" />

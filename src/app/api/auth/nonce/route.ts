@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { setSiweNonceCookie } from "@/lib/authCookies";
 import { pgQuery } from "@/lib/serverPg";
+import { localAuthenticationConfigurationError } from "@/lib/auth/localConfiguration";
 
 /* Nonces are short-lived: long enough for a wallet prompt, short enough that a captured
    signature has a tight replay window even before single-use consumption kills it. */
 const SIWE_NONCE_TTL_MS = 10 * 60 * 1000;
 
 export async function GET(request: Request) {
+    const configurationError = localAuthenticationConfigurationError();
+    if (configurationError) return configurationError;
     try {
         const nonce = crypto.randomBytes(16).toString("hex");
 

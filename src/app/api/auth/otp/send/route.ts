@@ -1,16 +1,18 @@
 import { after, NextResponse } from "next/server";
 import crypto from "crypto";
+import { authorizationDigest } from "@/lib/auth/transactionPinCrypto";
 import { sanitizeInput } from "@/utils/security";
 import { isConnectionError, storeLocalOtpCode } from "@/lib/offlineDb";
 import { sendAuthenticationCodeEmail } from "@/lib/email/transactional";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
-import { getSessionWallet } from "@/lib/auth";
+import { getSessionWallet, getVerifiedSessionToken } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { normalizeFinancialStepUpBinding } from "@/lib/auth/stepUp";
+import { normalizeFinancialStepUpBinding, financialStepUpBindingDigest } from "@/lib/auth/stepUp";
 
 import { verifyCaptchaToken } from "@/lib/captcha";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
+import { localAuthenticationConfigurationError } from "@/lib/auth/localConfiguration";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const GENERIC_OTP_MESSAGE = "If this email can sign in, a verification code has been sent.";
@@ -29,11 +31,9 @@ function allowOfflineAuth() {
     return process.env.NODE_ENV !== "production" && process.env.ENABLE_LOCAL_OFFLINE_AUTH === "true";
 }
 
-function allowDevOtpFallback() {
-    return process.env.NODE_ENV !== "production";
-}
-
 export async function POST(request: Request) {
+    const configurationError = localAuthenticationConfigurationError();
+    if (configurationError) return configurationError;
     try {
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {
@@ -52,6 +52,7 @@ export async function POST(request: Request) {
         const isFinancialStepUpRequest = purpose === "financial_step_up";
         const isSignInRequest = authFlow === "signin";
         let bindingWallet: string | null = null;
+        let bindingSessionDigest: string | null = null;
         if (isFinancialStepUpRequest && !normalizeFinancialStepUpBinding(stepUp)) {
             return NextResponse.json({ error: "A valid financial authorization binding is required." }, { status: 400 });
         }
@@ -67,6 +68,11 @@ export async function POST(request: Request) {
                 }
             }
             bindingWallet = sessionWallet.toLowerCase();
+            if (isFinancialStepUpRequest) {
+                const session = await getVerifiedSessionToken(request.headers);
+                if (!session) return NextResponse.json({error:"Unauthorized"},{status:401});
+                bindingSessionDigest = authorizationDigest(session.token);
+            }
         }
         /* IP limit is charged up front (cheap DoS guard). The per-email limit is deliberately NOT
            charged here — it is charged just before the code is actually sent, so a request that
@@ -124,6 +130,25 @@ export async function POST(request: Request) {
 
         /* Charge the per-email quota only now that all validation/CAPTCHA/wallet-only gates have
            passed and we're about to actually issue a code. */
+        const isPinCodeRequest = isFinancialStepUpRequest
+            && ["transaction-pin:enroll", "transaction-pin:change", "transaction-pin:reset"].includes(stepUp?.action);
+        if (isPinCodeRequest) {
+            try {
+                const cooldown = await consumeDistributedRateLimit({
+                    scope: "transaction-pin-code-cooldown",
+                    key: bindingWallet!,
+                    limit: 1,
+                    windowSeconds: 60,
+                    mode: "cooldown",
+                });
+                if (!cooldown.ok) return NextResponse.json(
+                    { error: "Please wait before requesting a fresh code.", retryAfterSeconds: cooldown.retryAfterSeconds },
+                    { status: 429, headers: { "Retry-After": String(cooldown.retryAfterSeconds) } },
+                );
+            } catch {
+                return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+            }
+        }
         let emailLimit;
         try {
             emailLimit = await consumeDistributedRateLimit({
@@ -149,72 +174,15 @@ export async function POST(request: Request) {
         let challengeId: string | null = null;
         const persistOtp = async () => {
             const res = await withPgClient(async (client) => {
-                try {
-                    return await client.query(
-                        `insert into otp_codes (email, code, expires_at, purpose, wallet_address)
-                         values ($1, $2, $3, $4, $5)
-                         on conflict (email)
-                         do update set
-                            code = excluded.code,
-                            expires_at = excluded.expires_at,
-                            purpose = excluded.purpose,
-                            wallet_address = excluded.wallet_address,
-                            challenge_id = gen_random_uuid(),
-                            failed_attempts = 0,
-                            created_at = now()
-                         returning challenge_id`,
-                        [
-                            emailLower,
-                            codeHash,
-                            expiresAt,
-                            isEmailBindingRequest ? "BIND_WALLET_EMAIL" : "LOGIN",
-                            bindingWallet,
-                        ]
-                    );
-                } catch (dbErr: any) {
-                    if (dbErr.message?.includes('challenge_id') || dbErr.message?.includes('column')) {
-                        await client.query(`ALTER TABLE public.otp_codes ADD COLUMN IF NOT EXISTS challenge_id UUID NOT NULL DEFAULT gen_random_uuid()`).catch(() => {});
-                        await client.query(`ALTER TABLE public.otp_codes ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()`).catch(() => {});
-                        try {
-                            return await client.query(
-                                `insert into otp_codes (email, code, expires_at, purpose, wallet_address)
-                                 values ($1, $2, $3, $4, $5)
-                                 on conflict (email)
-                                 do update set
-                                    code = excluded.code,
-                                    expires_at = excluded.expires_at,
-                                    purpose = excluded.purpose,
-                                    wallet_address = excluded.wallet_address,
-                                    challenge_id = gen_random_uuid(),
-                                    failed_attempts = 0,
-                                    created_at = now()
-                                 returning challenge_id`,
-                                [
-                                    emailLower,
-                                    codeHash,
-                                    expiresAt,
-                                    isEmailBindingRequest ? "BIND_WALLET_EMAIL" : "LOGIN",
-                                    bindingWallet,
-                                ]
-                            );
-                        } catch (_retryErr) {
-                            /* A financial step-up code must remain bound to the live wallet.
-                               The legacy-column fallback cannot represent that guarantee. */
-                            if (isFinancialStepUpRequest) throw _retryErr;
-                            return await client.query(
-                                `insert into otp_codes (email, code, expires_at)
-                                 values ($1, $2, $3)
-                                 on conflict (email)
-                                 do update set
-                                    code = excluded.code,
-                                    expires_at = excluded.expires_at,
-                                    created_at = now()`,
-                                [emailLower, codeHash, expiresAt]
-                            );
-                        }
-                    }
-                    throw dbErr;
-                }
+                return client.query(
+                    `insert into otp_codes (email, code, expires_at, purpose, wallet_address, binding_digest, session_digest)
+                     values($1,$2,$3,$4,$5,$6,$7) on conflict(email) do update set
+                     code=excluded.code, expires_at=excluded.expires_at, purpose=excluded.purpose,
+                     wallet_address=excluded.wallet_address,binding_digest=excluded.binding_digest,
+                     session_digest=excluded.session_digest,challenge_id=gen_random_uuid(),failed_attempts = 0,created_at=now()
+                     returning challenge_id`,
+                    [emailLower,codeHash,expiresAt,isEmailBindingRequest ? "BIND_WALLET_EMAIL" : "LOGIN",bindingWallet,
+                     isFinancialStepUpRequest ? financialStepUpBindingDigest(stepUp) : null,bindingSessionDigest]);
             });
             challengeId = res.rows[0]?.challenge_id || null;
             return challengeId;
@@ -225,7 +193,7 @@ export async function POST(request: Request) {
         } catch (err: any) {
             console.error("OTP send database insert error:", err);
             if (isConnectionError(err)) {
-                if (!allowOfflineAuth()) {
+                if (isFinancialStepUpRequest || !allowOfflineAuth()) {
                     return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
                 }
                 storeLocalOtpCode(emailLower, codeHash, expiresAt);
@@ -243,12 +211,25 @@ export async function POST(request: Request) {
         /* Production anonymous OTP work continues after the uniform HTTP response. Known and
            unknown sign-in emails therefore have the same request latency; only the mailbox owner
            can observe whether a code was delivered. */
-        if (process.env.NODE_ENV === "production" && !isEmailBindingRequest) {
+        if (process.env.NODE_ENV === "production" && !isEmailBindingRequest && !isFinancialStepUpRequest) {
             after(async () => {
-                try {
-                    await sendAuthenticationCodeEmail(emailLower, code);
-                } catch (error) {
-                    console.error("Deferred OTP issue failed:", error instanceof Error ? error.message : error);
+                const deadline = Date.now() + 15_000;
+                for (let attempt = 0; attempt < 6; attempt++) {
+                    try {
+                        await sendAuthenticationCodeEmail(emailLower, code);
+                        return;
+                    } catch (error) {
+                        const failure = error as { code?: string; retryAfterSeconds?: number };
+                        // These rejections did not accept the message. Reuse the same code
+                        // and provider idempotency key; never retry ambiguous provider errors.
+                        const throttled = failure?.code === "EMAIL_PROVIDER_THROTTLED" || failure?.code === "PROVIDER_HTTP_429";
+                        const delay = Math.max(1, Number(failure?.retryAfterSeconds) || 1) * 1000;
+                        if (!throttled || attempt === 5 || !Number.isFinite(delay) || Date.now() + delay >= deadline) {
+                            console.error("Deferred OTP issue failed:", "EMAIL_DELIVERY_FAILED");
+                            return;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
                 }
             });
             return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower, challengeId: formattedChallengeId });
@@ -257,17 +238,14 @@ export async function POST(request: Request) {
         try {
             await sendAuthenticationCodeEmail(emailLower, code);
         } catch (mailErr) {
-            console.error("Verification email send error:", mailErr instanceof Error ? mailErr.message : "Unknown error");
-            if (allowDevOtpFallback()) {
-                return NextResponse.json({
-                    success: true,
-                    message: GENERIC_OTP_MESSAGE,
-                    email: emailLower,
-                    challengeId: formattedChallengeId,
-                    devOtpCode: code,
-                });
-            }
-            return NextResponse.json({ error: "We could not send a verification email. Please try again." }, { status: 502 });
+            const errorCode = mailErr && typeof mailErr === "object" && "code" in mailErr ? String(mailErr.code) : "EMAIL_SEND_FAILED";
+            console.error("Verification email send error:", errorCode);
+            const retryAfter = mailErr && typeof mailErr === "object" && "retryAfterSeconds" in mailErr ? Number(mailErr.retryAfterSeconds) : 0;
+            const throttled = errorCode === "EMAIL_PROVIDER_THROTTLED" || errorCode === "EMAIL_RECIPIENT_THROTTLED" || errorCode === "PROVIDER_HTTP_429";
+            return NextResponse.json({
+                error: throttled ? "The email service is busy. Please wait before requesting another code." : "We could not send a verification email. Please try again.",
+                code: "EMAIL_DELIVERY_FAILED",
+            }, { status: throttled ? 429 : 502, headers: Number.isFinite(retryAfter) && retryAfter > 0 ? { "Retry-After": String(Math.ceil(retryAfter)) } : {} });
         }
 
         return NextResponse.json({
@@ -275,7 +253,7 @@ export async function POST(request: Request) {
             message: GENERIC_OTP_MESSAGE,
             email: emailLower,
             challengeId: formattedChallengeId,
-            ...(allowDevOtpFallback() ? { devOtpCode: code } : {})
+            ...(isPinCodeRequest ? { retryAfterSeconds: 60 } : {}),
         });
     } catch (err: any) {
         console.error("OTP send error:", err);

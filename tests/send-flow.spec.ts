@@ -112,6 +112,35 @@ async function slide(page: Page) {
 
 test.describe("send flow uses platform data", () => {
   test.setTimeout(180_000);
+  for (const mobile of [true, false]) {
+    test(`recipient lookup failures offer retry without submitting a transfer (${mobile ? "mobile" : "desktop"})`, async ({ browser }) => {
+      const { page, context, state } = await fixture(browser, mobile ? 390 : 1280);
+      let failed = true;
+      let lookups = 0;
+      await page.route("**/api/merchant/alias?alias=*", async route => {
+        lookups++;
+        await route.fulfill({ status: failed ? 503 : 200, contentType: "application/json", body: JSON.stringify(failed ? { success: false, error: "Invalid API key" } : { success: true, address: recipient, alias: "nora.sub" }) });
+      });
+      const dialog = await openSend(page, mobile);
+      await expect(dialog.getByRole("alert")).toContainText("Recipient lookup is unavailable");
+      expect(state.sent).toHaveLength(0);
+      failed = false;
+      await dialog.getByRole("button", { name: "Retry lookup" }).click();
+      await expect(dialog.getByRole("alert")).toHaveCount(0);
+      await expect.poll(() => lookups).toBe(2);
+      await expect(dialog.locator('[aria-label="nora.sub"]').first()).toBeVisible();
+      // Selecting an unchanged beneficiary must initiate a fresh lookup, not leave resolving stuck.
+      const beneficiary = dialog.getByText("Recent recipients", { exact: true }).locator("..").getByRole("button").first();
+      await beneficiary.click();
+      await expect.poll(() => lookups).toBe(3);
+      await expect(dialog.locator('[aria-label="nora.sub"]').first()).toBeVisible();
+      await beneficiary.click();
+      await expect.poll(() => lookups).toBe(4);
+      await expect(dialog.locator('[aria-label="nora.sub"]').first()).toBeVisible();
+      expect(state.sent).toHaveLength(0);
+      await context.close();
+    });
+  }
   test("mobile wallet buttons stay bounded through landscape and desktop", async ({ browser }, info) => {
     const { page, context } = await fixture(browser, 390);
     const actions = page.getByTestId("wallet-actions");

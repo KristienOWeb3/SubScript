@@ -5,7 +5,9 @@ import { sanitizeInput } from "@/utils/security";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
+import { localAuthenticationConfigurationError } from "@/lib/auth/localConfiguration";
 import crypto from "crypto";
+import { authorizationDigest } from "@/lib/auth/transactionPinCrypto";
 import { 
     isConnectionError, 
     retrieveLocalOtpCode,
@@ -19,6 +21,7 @@ import { createSessionToken, getVerifiedSessionToken } from "@/lib/auth";
 import {
     createFinancialStepUpToken,
     normalizeFinancialStepUpBinding,
+    financialStepUpBindingDigest,
 } from "@/lib/auth/stepUp";
 
 function hashOtp(email: string, code: string) {
@@ -43,6 +46,8 @@ function allowOfflineAuth() {
 const MAX_OTP_FAILED_ATTEMPTS = 5;
 
 export async function POST(request: Request) {
+    const configurationError = localAuthenticationConfigurationError();
+    if (configurationError) return configurationError;
     try {
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {
@@ -136,11 +141,11 @@ export async function POST(request: Request) {
                        lock is held, so parallel guesses cannot outrun the five-attempt budget. */
                     const result = challengeIdVal
                         ? await client.query(
-                            "select code, expires_at, failed_attempts from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN' and wallet_address is not distinct from $3 limit 1 for update",
+                            "select code, expires_at, failed_attempts, binding_digest, session_digest from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN' and wallet_address is not distinct from $3 limit 1 for update",
                             [emailVal, challengeIdVal, otpWallet]
                           )
                         : await client.query(
-                            "select code, expires_at, failed_attempts from otp_codes where email = $1 and purpose = 'LOGIN' and wallet_address is not distinct from $2 limit 1 for update",
+                            "select code, expires_at, failed_attempts, binding_digest, session_digest from otp_codes where email = $1 and purpose = 'LOGIN' and wallet_address is not distinct from $2 limit 1 for update",
                             [emailVal, otpWallet]
                           );
                     const locked = result.rows[0] || null;
@@ -149,6 +154,11 @@ export async function POST(request: Request) {
                         return false;
                     }
 
+                    if (isFinancialStepUpRequest && (locked.binding_digest !== financialStepUpBindingDigest(stepUpBinding)
+                        || locked.session_digest !== authorizationDigest(activeSession!.token))) {
+                        await client.query("COMMIT");
+                        return false;
+                    }
                     const expired = new Date() > new Date(locked.expires_at);
                     const spent = Number(locked.failed_attempts || 0) >= MAX_OTP_FAILED_ATTEMPTS;
                     if (expired || spent) {
@@ -219,7 +229,7 @@ export async function POST(request: Request) {
         } catch (err: any) {
             console.error("OTP verify query error:", err);
             if (isConnectionError(err)) {
-                if (!allowOfflineAuth()) {
+                if (isFinancialStepUpRequest || !allowOfflineAuth()) {
                     return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
                 }
                 isOfflineMode = true;

@@ -395,6 +395,7 @@ export async function updateSubUserLimit(
     parentWalletAddress: string,
     subCommitId: string,
     spendLimitUsdc: bigint | null,
+    allowIncrease = false,
 ) {
     const subUser = await requireOwnedSubUser(parentWalletAddress, subCommitId);
 
@@ -411,10 +412,19 @@ export async function updateSubUserLimit(
         );
     }
 
-    return prisma.userCommit.update({
-        where: { id: subUser.id },
-        data: { spendLimitUsdc },
-    });
+    const changed = await prisma.$queryRaw<{ id: string }[]>`
+        UPDATE user_commits SET spend_limit_usdc = ${spendLimitUsdc}::bigint
+         WHERE id = ${subUser.id}::uuid AND commit_id = ${subUser.commitId}
+           AND parent_commit_id = ${subUser.parentCommitId}::uuid AND status <> 'REVOKED'
+           AND (${spendLimitUsdc}::bigint IS NULL OR spent_usdc <= ${spendLimitUsdc}::bigint)
+           AND (${allowIncrease}::boolean OR spend_limit_usdc IS NULL
+                OR (${spendLimitUsdc}::bigint IS NOT NULL AND spend_limit_usdc >= ${spendLimitUsdc}::bigint))
+           AND EXISTS (SELECT 1 FROM user_commits p WHERE p.id=user_commits.parent_commit_id
+                       AND lower(p.wallet_address)=${parentWalletAddress.toLowerCase()})
+         RETURNING id
+    `;
+    if (!changed.length) throw new CommitAccessError("The current cap or authority changed. Verify your transaction PIN before raising it.", 409);
+    return prisma.userCommit.findUniqueOrThrow({ where: { id: subUser.id } });
 }
 
 export type SpendValidation =

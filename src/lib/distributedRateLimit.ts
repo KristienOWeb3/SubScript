@@ -6,6 +6,7 @@ type DistributedRateLimitOptions = {
     key: string;
     limit: number;
     windowSeconds: number;
+    mode?: "fixed-window" | "cooldown";
 };
 
 type RateLimitRow = {
@@ -30,7 +31,8 @@ export function rateLimitKeyDigest(value: string) {
 }
 
 /**
- * Atomically consumes a shared Postgres fixed-window counter.
+ * Atomically consumes a shared Postgres counter. Cooldown mode starts the
+ * window on the accepted request; rejected attempts do not extend it.
  *
  * This intentionally fails by throwing when Postgres is unavailable. Public
  * payment-status routes catch that error and fail closed with 503 so a database
@@ -41,14 +43,25 @@ export async function consumeDistributedRateLimit({
     key,
     limit,
     windowSeconds,
+    mode = "fixed-window",
 }: DistributedRateLimitOptions): Promise<DistributedRateLimitResult> {
     if (!scope || scope.length > 120) throw new Error("Invalid rate-limit scope");
     if (!key) throw new Error("Invalid rate-limit key");
     validatePositiveInteger(limit, "limit");
     validatePositiveInteger(windowSeconds, "windowSeconds");
+    if (mode === "cooldown" && limit !== 1) throw new Error("Cooldown limit must be one");
 
     const row = await pgMaybeOne<RateLimitRow>(
-        `with params as (
+        mode === "cooldown" ? `insert into public.api_rate_limit_windows
+            (scope,key_hash,window_started_at,request_count,expires_at)
+            values($1,$2,to_timestamp(0),1,statement_timestamp() + make_interval(secs => $3::integer))
+            on conflict(scope,key_hash,window_started_at) do update set
+                request_count = case when api_rate_limit_windows.expires_at <= statement_timestamp()
+                    then 1 else api_rate_limit_windows.request_count + 1 end,
+                expires_at = case when api_rate_limit_windows.expires_at <= statement_timestamp()
+                    then statement_timestamp() + make_interval(secs => $3::integer)
+                    else api_rate_limit_windows.expires_at end
+            returning request_count, expires_at` : `with params as (
             select to_timestamp(
                 floor(extract(epoch from statement_timestamp()) / $3::integer) * $3::integer
             ) as window_start

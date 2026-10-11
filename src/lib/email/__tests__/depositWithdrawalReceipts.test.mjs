@@ -6,8 +6,23 @@ import {
     buildDepositInitiatedEmail,
     buildWithdrawalCompletedEmail,
     buildWithdrawalInitiatedEmail,
+    formatBridgeEmailAmount,
 } from "../transactional.ts";
 import { renderEmailLayout } from "../core.ts";
+
+test("formatted bridge amounts do not throw or become micro-unit dust", () => {
+    assert.equal(formatBridgeEmailAmount("10.00"), "10");
+    assert.equal(formatBridgeEmailAmount("0.123400"), "0.1234");
+    assert.equal(formatBridgeEmailAmount("10000000"), "10");
+    assert.equal(buildDepositReceivedEmail({ recipientEmail: "test@example.com", amountUsdc: "10.00", originChainName: "Arc Network" }).subject,
+        "Deposit confirmed: 10 USDC on Arc Network");
+});
+
+test("a transaction's bridge receipt identity is stable across rendering days", () => {
+    const params = { recipientEmail: "test@example.com", amountUsdc: "10.00", originChainName: "Arc Network", txHash: "0xabc" };
+    assert.equal(buildDepositReceivedEmail({ ...params, receivedAt: new Date("2026-10-09") }).idempotencyKey,
+        buildDepositReceivedEmail({ ...params, receivedAt: new Date("2026-10-10") }).idempotencyKey);
+});
 
 test("renderEmailLayout supports dark theme with centered logo and dark card", () => {
     const html = renderEmailLayout({

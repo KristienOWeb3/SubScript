@@ -1,3 +1,5 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 import { NextResponse, after } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
@@ -5,7 +7,8 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { getWalletCustody, getCircleTransactionStatus, deterministicIdempotencyKey, CirclePaymasterPolicyError } from "@/lib/custody";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
-import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { USDC_NATIVE_GAS_ADDRESS, ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID, isProd } from "@/lib/contracts/constants";
+import { dispatchSettlementReceipts, prepareSettlementReceiptJob, confirmSettlementReceiptJob, recordSettlementReceiptSubmission } from "@/lib/payments/settlementReceiptRecovery";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { prisma } from "@/lib/prisma";
 import {
@@ -21,7 +24,6 @@ import { assertNotBlocked } from "@/lib/dms/blocks";
 import { createClient } from "@supabase/supabase-js";
 import { bindTxToReceipt } from "@/lib/receipts/binding";
 import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
-import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import {
     checkAndReserveSpendingLimit,
     finalizeSpendingLimitOperation,
@@ -82,7 +84,7 @@ function normalizeRecipients(body: any): SendRecipient[] {
     }];
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     /* Hoisted above the try so the catch can hand back allowance that was reserved and then
        stranded by a throw between the debit and the transfer loop (a custody lookup that fails,
        for instance). Cleared once the in-band release path has settled the accounting. */
@@ -292,7 +294,7 @@ export async function POST(request: Request) {
         }
         const reservationDurationMs = Math.round(performance.now() - reservationStart);
 
-        if (!walletRecord?.encrypted_private_key && !walletRecord?.circle_wallet_id) {
+        if (walletRecord?.provider === "external_wallet" || (!walletRecord?.encrypted_private_key && !walletRecord?.circle_wallet_id)) {
             /* Nothing moved, so hand the whole reservation back — otherwise a parent with a
                browser-only wallet would burn a sub-user's allowance on every failed attempt. */
             if (authority.delegated && reservedMicros > BigInt(0)) {
@@ -313,7 +315,7 @@ export async function POST(request: Request) {
         // Execution goes through the custody provider (legacy AES key or Circle MPC), which
         // waits for each transfer to confirm and throws on revert.
         const custody = await getWalletCustody(fundingWallet);
-        if (earlySubmission && spendingOperationId) {
+        if (spendingOperationId) {
             await retainSubmittedSpendingLimitOperation(spendingOperationId);
         }
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
@@ -340,7 +342,14 @@ export async function POST(request: Request) {
         for (let i = 0; i < parsedRecipients.length; i++) {
             const item = parsedRecipients[i];
             try {
-                if (earlySubmission) submissionMayHaveMovedFunds = true;
+                const receiptJobId = await prepareSettlementReceiptJob({
+                    identity: `wallet-send:${normalizedSender}:${requestId}:${item.receiver}:${item.amountMicros.toString()}`,
+                    kind: "wallet_transfer", fundingWallet, payerAddress: normalizedSender,
+                    payeeAddress: item.receiver, amountUsdc: item.amountMicros,
+                    contractAddress: USDC_NATIVE_GAS_ADDRESS,
+                    chainId: isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID,
+                });
+                submissionMayHaveMovedFunds = true;
                 /* USER→USER transfer: the sender pays Arc network gas via fee-recovery after the
                    batch settles. No requireSponsoredGas — this must never consume the merchant-
                    commerce sponsorship budget. gasPayer:"wallet" marks the call user-paid. */
@@ -354,13 +363,17 @@ export async function POST(request: Request) {
                     ),
                     gasPayer: "wallet",
                     waitForConfirmation: !earlySubmission,
+                    onSubmitted: async id => {
+                        circleTxIds.push(id);
+                        if (spendingOperationId && parsedRecipients.length === 1) {
+                            await bindSubmittedSpendingLimitOperation(spendingOperationId, id);
+                        }
+                        await recordSettlementReceiptSubmission(receiptJobId, id);
+                    },
                 });
                 const { txHash } = execResult;
-                if (earlySubmission && spendingOperationId && execResult.circleTxId) {
-                    await bindSubmittedSpendingLimitOperation(spendingOperationId, execResult.circleTxId)
-                        .catch((err) => console.error("Failed to bind submitted spending reservation:", err));
-                }
-                if (execResult.circleTxId) circleTxIds.push(execResult.circleTxId);
+                if (execResult.circleTxId && !circleTxIds.includes(execResult.circleTxId)) circleTxIds.push(execResult.circleTxId);
+                if (txHash) await confirmSettlementReceiptJob(receiptJobId, txHash).catch(() => null);
                 if (execResult.submissionDurationMs) totalSubmissionMs += execResult.submissionDurationMs;
                 if (execResult.confirmationDurationMs) totalConfirmationMs += execResult.confirmationDurationMs;
 
@@ -370,8 +383,10 @@ export async function POST(request: Request) {
                    positive evidence of an inner revert; any ambiguity (plain EOA send, RPC hiccup)
                    falls through so a real transfer is never dropped. See embeddedTransferReverted. */
                 if (txHash && await embeddedTransferReverted(txHash, fundingWallet)) {
+                    submissionMayHaveMovedFunds = false;
                     throw new Error("The transfer was mined but its USDC transfer reverted on Arc, so the recipient was not credited. Please try again.");
                 }
+                if (!earlySubmission) submissionMayHaveMovedFunds = false;
                 settledMicros += item.amountMicros;
                 txs.push({
                     receiverAddress: item.receiver,
@@ -381,12 +396,12 @@ export async function POST(request: Request) {
                 settledForReceipts.push({ receiver: item.receiver, amountMicros: item.amountMicros, txHash: txHash || "" });
             } catch (err: any) {
                 // Circle rejects a missing paymaster policy before accepting a transaction.
-                if (earlySubmission && !reusedSpendingOperation && err instanceof CirclePaymasterPolicyError) submissionMayHaveMovedFunds = false;
+                if ((!earlySubmission || !reusedSpendingOperation) && err instanceof CirclePaymasterPolicyError) submissionMayHaveMovedFunds = false;
                 failure = {
                     index: i,
                     receiverAddress: item.receiver,
                     amountUsdc: formatAmount(item.amountMicros),
-                    error: earlySubmission && submissionMayHaveMovedFunds
+                    error: submissionMayHaveMovedFunds
                         ? "The submission outcome is uncertain. Your spending reservation is retained; do not resend until this operation is reconciled."
                         : err?.message || "Transfer failed",
                     code: err instanceof CirclePaymasterPolicyError ? err.code : undefined,
@@ -402,7 +417,7 @@ export async function POST(request: Request) {
            is logged rather than thrown: the ledger over-counts (fails safe, toward less spending)
            and the parent can re-cap. */
         if (authority.delegated) {
-            const unspent = earlySubmission && submissionMayHaveMovedFunds ? 0n : reservedMicros - settledMicros;
+            const unspent = submissionMayHaveMovedFunds ? 0n : reservedMicros - settledMicros;
             if (unspent > BigInt(0)) {
                 try {
                     await releaseSubUserSpend(authority.commitId, unspent);
@@ -419,7 +434,7 @@ export async function POST(request: Request) {
         }
 
         // Finalize or release spending limit reservation based on settled amount (only if not earlySubmission)
-        if (spendingOperationId && (!earlySubmission || !submissionMayHaveMovedFunds)) {
+        if (spendingOperationId && !submissionMayHaveMovedFunds) {
             if (settledMicros > BigInt(0)) {
                 await finalizeSpendingLimitOperation(spendingOperationId, settledMicros).catch((err) => {
                     console.error("Failed to finalize spending limit operation:", err);
@@ -508,14 +523,6 @@ export async function POST(request: Request) {
                 if (confirmedTxHash && txs[0] && !txs[0].txHash) {
                     txs[0].txHash = confirmedTxHash;
                 }
-                if (feeToChargeMicros > BigInt(0) && (!earlySubmission || confirmedTxHash)) {
-                    await chargeNetworkFee({
-                        wallet: fundingWallet,
-                        feeMicros: feeToChargeMicros,
-                        requestKey: `wallet-send-fee:${normalizedSender}:${requestId}`,
-                        parentTransactionHashes: txs.map((tx) => tx.txHash).filter(Boolean),
-                    }).catch((err) => console.error("Deferred Arc network fee recovery failed:", err));
-                }
                 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
                 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
                 const supabase = supabaseUrl && supabaseServiceKey ? createClient(supabaseUrl, supabaseServiceKey) : null;
@@ -524,7 +531,9 @@ export async function POST(request: Request) {
                     ? [{ receiver: parsedRecipients[0].receiver, amountMicros: parsedRecipients[0].amountMicros, txHash: confirmedTxHash }]
                     : settledForReceipts.filter((s) => Boolean(s.txHash));
 
-                for (const settled of receiptsToBind) {
+                const chainId = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
+                for (let idx = 0; idx < receiptsToBind.length; idx++) {
+                    const settled = receiptsToBind[idx];
                     if (supabase) {
                         await bindTxToReceipt(supabase, {
                             txHash: settled.txHash,
@@ -535,13 +544,32 @@ export async function POST(request: Request) {
                             sourceType: "WALLET_TRANSFER",
                         }).catch((err) => console.error("Failed to bind transfer receipt:", err));
                     }
-                    await sendSettlementReceipts({
+                    const jobId = await prepareSettlementReceiptJob({
+                        identity: `wallet-send:${normalizedSender}:${requestId}:${settled.receiver}:${settled.amountMicros.toString()}`,
                         kind: "wallet_transfer",
-                        amountUsdc: settled.amountMicros,
-                        txHash: settled.txHash,
+                        fundingWallet,
                         payerAddress: normalizedSender,
                         payeeAddress: settled.receiver,
-                    }).catch((err) => console.error("Failed to send settlement receipts:", err));
+                        amountUsdc: settled.amountMicros,
+                        contractAddress: USDC_NATIVE_GAS_ADDRESS,
+                        chainId,
+                    }).catch(() => null);
+                    if (jobId) {
+                        await confirmSettlementReceiptJob(jobId, settled.txHash).catch(() => null);
+                    }
+                    await dispatchSettlementReceipts().catch(() => null);
+                }
+
+                /* Deferred fee recovery: idempotent by request key and never user-facing,
+                   so it settles after the response instead of making the sender wait on a second
+                   on-chain confirmation. Logged, never thrown — the primary sends are irreversible. */
+                if (feeToChargeMicros > BigInt(0) && (!earlySubmission || confirmedTxHash)) {
+                    await chargeNetworkFee({
+                        wallet: fundingWallet,
+                        feeMicros: feeToChargeMicros,
+                        requestKey: `wallet-send-fee:${normalizedSender}:${requestId}`,
+                        parentTransactionHashes: txs.map((tx) => tx.txHash).filter(Boolean),
+                    }).catch((err) => console.error("Deferred Arc network fee recovery failed:", err));
                 }
             });
         }
@@ -562,7 +590,7 @@ export async function POST(request: Request) {
                 || failure.error.includes("gas sponsorship");
             return NextResponse.json({
                 success: false,
-                status: earlySubmission && submissionMayHaveMovedFunds ? "pending" : "failed",
+                status: submissionMayHaveMovedFunds ? "pending" : "failed",
                 partial: sent > 0,
                 transfers: txs,
                 networkFee,
@@ -579,7 +607,7 @@ export async function POST(request: Request) {
                     confirmationMs: totalConfirmationMs,
                     totalMs: totalDurationMs,
                 },
-                error: earlySubmission && submissionMayHaveMovedFunds
+                error: submissionMayHaveMovedFunds
                     ? failure.error
                     : sent > 0
                         ? `Sent ${sent} of ${total} transfers, then recipient ${failure.index + 1} failed: ${failure.error}. The ${sent} completed transfer(s) were already settled on-chain — do not resend them; retry only the remaining recipients.`
@@ -644,3 +672,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message || "Failed to send USDC" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "wallet-send", bind: financialPinContext }, handlePOST);

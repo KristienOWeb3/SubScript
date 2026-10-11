@@ -1,7 +1,9 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* User reclaims the full escrow from an abandoned vault: the cycle matured, the keeper
    never settled it within the 7-day grace, and the contract's liveness escape hatch
    (reclaimAbandonedEscrow) is now open. Server-signed from the user's embedded wallet. */
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
@@ -11,12 +13,13 @@ import { estimateArcNetworkFeeMicros, chargeNetworkFee } from "@/lib/sponsor/use
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
-import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import crypto from "crypto";
+import { prepareSettlementReceiptJob, recordSettlementReceiptSubmission, confirmSettlementReceiptJob, dispatchSettlementReceipts } from "@/lib/payments/settlementReceiptRecovery";
 
 export const maxDuration = 120;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         assertFinancialNetworkReady();
 
@@ -43,7 +46,15 @@ export async function POST(request: Request) {
         /* Reclaiming the user's own abandoned escrow is user-paid. No gas sponsorship is requested;
            the Arc network fee is recovered from the wallet after the reclaimed funds land there. */
         const reqId = request.headers.get("x-request-id")?.trim() || crypto.randomUUID();
-        const txHash = await reclaimAbandonedFromEmbedded(wallet, merchantAddress);
+        const receiptJobId = await prepareSettlementReceiptJob({
+            identity: `vault-reclaim:${reqId}:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
+            kind: "vault_reclaim", fundingWallet: wallet, payerAddress: null,
+            payeeAddress: wallet, contractAddress: SUBSCRIPT_VAULT_ADDRESS, chainId: SUBSCRIPT_VAULT_CHAIN_ID,
+        });
+        const txHash = await reclaimAbandonedFromEmbedded(wallet, merchantAddress,
+            id => recordSettlementReceiptSubmission(receiptJobId, id), `vault-reclaim:${reqId}:${wallet.toLowerCase()}`);
+        await confirmSettlementReceiptJob(receiptJobId, txHash).catch(() => null);
+        after(async () => { await dispatchSettlementReceipts().catch(() => null); });
         await chargeNetworkFee({
             wallet: wallet.toLowerCase(),
             feeMicros: (await estimateArcNetworkFeeMicros(1)).feeMicros,
@@ -90,3 +101,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: message }, { status });
     }
 }
+
+export const POST = withTransactionPin({ action: "vault-reclaim", bind: financialPinContext }, handlePOST);

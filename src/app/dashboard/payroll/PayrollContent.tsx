@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchWithTransactionPin } from "@/lib/client/transactionPin";
+
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount, useSignTypedData, useConnect, useDisconnect, useWriteContract, useSwitchChain, useSignMessage } from "wagmi";
@@ -486,7 +488,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 }
                 headers["x-request-id"] = withdrawRequestIdsRef.current[withdrawIdKey];
             }
-            const res = await fetch("/api/execute-tx", {
+            const res = await fetchWithTransactionPin("/api/execute-tx", {
                 method: "POST",
                 headers,
                 body: JSON.stringify({ action, args: serializedArgs }),
@@ -522,6 +524,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             setTimeout(() => setWithdrawSuccess(false), 4000);
             refetchBalancesAndTier();
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error("Withdraw failed:", err);
             showToastMessage(err.message || "Withdrawal failed", "error");
         } finally {
@@ -566,7 +569,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             if (embeddedWallet) {
                 /* Embedded merchant (the only kind now): the server approves USDC -> Permit2 and signs
                    the authorization from the embedded key. */
-                const res = await fetch("/api/merchant/payroll/permit-sign", {
+                const res = await fetchWithTransactionPin("/api/merchant/payroll/permit-sign", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -621,6 +624,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             setPermit2Expiration(new Date(Number(window.expiration) * 1000).toISOString());
             showToastMessage("Payroll authorization signed", "success");
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             showToastMessage(err?.shortMessage || err?.message || "Signing failed", "error");
         } finally {
             setIsSigning(false);
@@ -686,7 +690,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 })),
             };
 
-            const res = await fetch("/api/merchant/payroll", {
+            const res = await fetchWithTransactionPin("/api/merchant/payroll", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
@@ -701,6 +705,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             resetCreateForm();
             fetchCampaigns();
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             showToastMessage(err.message || "Failed to create campaign", "error");
         } finally {
             setIsSubmitting(false);
@@ -717,7 +722,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             const newStatus = campaign.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
             let authorization: Record<string, unknown> = {};
             if (newStatus === "ACTIVE") {
-                const permitRes = await fetch("/api/merchant/payroll/permit-sign", {
+                const permitRes = await fetchWithTransactionPin("/api/merchant/payroll/permit-sign", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -740,7 +745,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     permit2Expiration: permit.permit2Expiration,
                 };
             }
-            const res = await fetch("/api/merchant/payroll", {
+            const res = await fetchWithTransactionPin("/api/merchant/payroll", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -763,6 +768,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 "success"
             );
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             showToastMessage(err.message || "Failed to toggle campaign", "error");
         } finally {
             setTogglingIds((prev) => {

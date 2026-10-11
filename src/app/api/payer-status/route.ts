@@ -33,7 +33,7 @@ export async function GET(request: Request) {
         let isExternalWallet = false;
 
         // Check wallet emails regardless of whether they have finished picking a role
-        const [embeddedWallet, customer, merchant, custody] = await Promise.all([
+        const [embeddedWallet, customer, identity, custody] = await Promise.all([
             pgMaybeOne<WalletEmailRecord>(
                 "select email, provider from user_embedded_wallets where wallet_address = $1 limit 1",
                 [normalized],
@@ -43,13 +43,13 @@ export async function GET(request: Request) {
                 [normalized],
             ),
             pgMaybeOne<{ email: string | null }>(
-                "select email from merchants where wallet_address = $1 limit 1",
+                "select current_email as email from auth_identities where wallet_address = $1 and disabled_at is null limit 1",
                 [normalized],
             ),
             getWalletCustody(normalized),
         ]);
 
-        hasEmail = Boolean(embeddedWallet?.email || customer?.email || merchant?.email);
+        hasEmail = Boolean(embeddedWallet?.email?.trim() || customer?.email?.trim() || identity?.email?.trim());
         isExternalWallet = !isCustodialWallet(custody);
 
         return NextResponse.json({

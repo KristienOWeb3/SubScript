@@ -1,3 +1,5 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSessionWallet } from "@/lib/auth";
@@ -254,7 +256,7 @@ export async function POST(request: Request) {
     }
 }
 
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -308,3 +310,5 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: "Could not lift the hold" }, { status: 500 });
     }
 }
+
+export const DELETE = withTransactionPin({ action: "account-resume", bind: financialPinContext }, handleDELETE);

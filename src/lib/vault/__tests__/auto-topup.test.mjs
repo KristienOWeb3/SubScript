@@ -244,7 +244,7 @@ test("the merchant branch never receives the customer's funding mandate", () => 
 
 test("the config modal posts to the real endpoint, not the 410 tombstone", () => {
     const dashboard = source("src/app/dashboard/user/page.tsx");
-    assert.match(dashboard, /fetch\("\/api\/user\/vault\/auto-topup"/);
+    assert.match(dashboard, /(?:fetch|fetchWithTransactionPin)\("\/api\/user\/vault\/auto-topup"/);
 
     /* POST /api/user/vault/config is a deliberate 410 for off-chain balance writes. */
     const configRoute = source("src/app/api/user/vault/config/route.ts");

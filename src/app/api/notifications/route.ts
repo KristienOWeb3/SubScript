@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
 import { jsonOk } from "@/lib/http/json";
+import { ensurePinSetupNotification, pinSetupNotificationId } from "@/lib/notifications/pinSetup";
 
 /* The notification bell's read/dismiss API, for both dashboards.
  *
@@ -45,6 +46,9 @@ export async function GET(request: Request) {
         const recipientAddress = wallet.toLowerCase();
         const where = { recipientAddress, audience };
         const targetBroadcastAudience = audience === "USER" ? ["users", "both"] : ["merchants", "both"];
+        await ensurePinSetupNotification(recipientAddress, audience).catch(() => {
+            console.warn("[notifications] PIN setup reminder unavailable");
+        });
 
         /* 1. Fetch existing account notifications for this user that are not dismissed */
         const [notifications, unreadCount, broadcasts, allUserBroadcastRows] = await Promise.all([
@@ -211,26 +215,28 @@ export async function DELETE(request: Request) {
         const audience = parseAudience(url.searchParams.get("audience"));
 
         const recipientAddress = wallet.toLowerCase();
+        const pinReminderIds = (["USER", "MERCHANT"] as const).map(value => pinSetupNotificationId(recipientAddress, value));
 
         // 1. Bulk delete/dismiss all read notifications for this audience on panel close
         if (allRead) {
             const scope = { recipientAddress, ...(audience ? { audience } : {}) };
 
-            // For broadcasts, mark as DISMISSED so they won't resurrect on the next GET
+            // Preserve broadcast and onboarding markers so dismissed notices do not reappear.
             await prisma.accountNotification.updateMany({
                 where: {
                     ...scope,
-                    broadcastId: { not: null },
+                    OR: [{ broadcastId: { not: null } }, { id: { in: pinReminderIds } }],
                     readAt: { not: null },
                 },
                 data: { source: "DISMISSED" },
             });
 
-            // For non-broadcast rows that are read, delete them from the database
+            // Other read notifications can be removed normally.
             const { count } = await prisma.accountNotification.deleteMany({
                 where: {
                     ...scope,
                     broadcastId: null,
+                    id: { notIn: pinReminderIds },
                     readAt: { not: null },
                 },
             });
@@ -243,12 +249,12 @@ export async function DELETE(request: Request) {
         }
 
         // 2. Single item dismissal
-        // If the item has a broadcastId, mark DISMISSED instead of plain delete so GET won't resurrect it
+        // Broadcasts and the stable PIN reminder retain a dismissal marker for future loads.
         const target = await prisma.accountNotification.findFirst({
             where: { id, recipientAddress },
         });
 
-        if (target?.broadcastId) {
+        if (target?.broadcastId || (target && pinReminderIds.includes(target.id))) {
             await prisma.accountNotification.updateMany({
                 where: { id, recipientAddress },
                 data: { source: "DISMISSED" },

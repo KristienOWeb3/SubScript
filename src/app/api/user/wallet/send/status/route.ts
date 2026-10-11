@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { dispatchSettlementReceipts } from "@/lib/payments/settlementReceiptRecovery";
+import { NextResponse, after } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { getArcTransferStatus, getCircleTransactionStatus } from "@/lib/custody";
@@ -29,6 +30,7 @@ export async function GET(request: Request) {
         // 1. If circleTxId is provided, check Circle status and cross-reference Arc RPC
         if (circleTxId) {
             const status = await getCircleTransactionStatus(circleTxId, fundingWallet);
+            if (status.status === "confirmed") after(async () => { await dispatchSettlementReceipts().catch(() => null); });
             return NextResponse.json({
                 status: status.status,
                 txHash: status.txHash || null,

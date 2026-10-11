@@ -1,3 +1,6 @@
+import { assertAuthorizedFinancialRecord } from "@/lib/auth/financialAuthorizationContext";
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* User subscribes to a merchant plan from within a DM. Server-signed from the embedded
    wallet; gas covered by SubScript (Pay For Me). Takes the first payment immediately. */
 import { NextResponse } from "next/server";
@@ -76,7 +79,7 @@ async function deactivateConsumedApiPlan({
     });
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -146,6 +149,19 @@ export async function POST(request: Request) {
             checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
         }
 
+        if (merchantPlan) assertAuthorizedFinancialRecord("plans", {
+            id: merchantPlan.id, merchant_address: merchantPlan.merchantAddress,
+            amount_usdc: merchantPlan.amountUsdc.toString(), period_seconds: merchantPlan.periodSeconds.toString(),
+            min_commitment_seconds: merchantPlan.minCommitmentSeconds.toString(),
+            source_checkout_id: merchantPlan.sourceCheckoutId, active: merchantPlan.active, target_subscriber: merchantPlan.targetSubscriber, updated_at: merchantPlan.updatedAt,
+        });
+        if (checkout) assertAuthorizedFinancialRecord("links", {
+            id: checkout.id, merchant_address: checkout.merchantAddress, beneficiary_address: checkout.beneficiaryAddress,
+            amount_usdc: checkout.amountUsdc.toString(), state_snapshot: checkout.stateSnapshot,
+            active: checkout.active, expires_at: checkout.expiresAt, max_uses: checkout.maxUses,
+            settlement_chain_id: checkout.settlementChainId.toString(), deleted_at: checkout.deletedAt,
+            link_kind: checkout.linkKind, sandbox_mode: checkout.sandboxMode, simulation_only: checkout.simulationOnly,
+        });
         const isCheckoutMode = Boolean(checkout && checkoutMeta);
         if (isCheckoutMode) {
             if (!checkout!.active || !["PENDING", "PROCESSING"].includes(checkout!.status)) {
@@ -893,3 +909,5 @@ function isTerminalCircleError(error: any): boolean {
     }
     return true;
 }
+
+export const POST = withTransactionPin({ action: "subscription-create", bind: financialPinContext }, handlePOST);

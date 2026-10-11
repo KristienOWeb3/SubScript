@@ -16,11 +16,9 @@
  *      settlement reference). No hash and no reference means no send: an unstable key can
  *      double-send, and a receipt for a payment that later fails is worse than silence.
  *
- *   2. Callers flush inline at settlement, never on the next cron pass. See the header of
- *      src/lib/subscriptions/webhookDelivery.ts: subscription webhooks reached merchants only
- *      when the reconcile cron drained, with measured latency of 3 to 55 minutes, precisely
- *      because payments flushed inline and subscriptions didn't. Email lands in the same trap
- *      in the same place, so it flushes where the money moves.
+ *   2. Callers persist intent at settlement before fee work. The durable worker records
+ *      provider acceptance separately from delivery, with bounded eager dispatch and cron
+ *      recovery so a serverless cutoff cannot silently discard a receipt.
  *
  * Receipt links: `sendPaymentReceiptEmails` puts a "View private receipt" button in the mail,
  * which only works when a `receipts` row exists for the settlement. Payment links mint one;
@@ -40,7 +38,6 @@ import {
     htmlEscape,
     renderEmailLayout,
     resolveRecipient,
-    safelySendEmail,
     sendTransactionalEmail,
 } from "./core";
 import { sendPaymentReceiptEmails } from "./transactional";
@@ -54,6 +51,9 @@ export type SettlementKind =
     | "vault_topup"
     | "vault_draw"
     | "vault_claim"
+    | "vault_withdraw"
+    | "vault_reclaim"
+    | "router_withdraw"
     | "payroll_payout"
     | "wallet_transfer";
 
@@ -64,6 +64,9 @@ const DEFAULT_TITLE: Record<SettlementKind, string> = {
     vault_topup: "Usage balance top-up",
     vault_draw: "Usage settled for this cycle",
     vault_claim: "Vault payout",
+    vault_withdraw: "Escrow refund",
+    vault_reclaim: "Escrow reclaim",
+    router_withdraw: "Balance withdrawal",
     payroll_payout: "Payroll",
     /* Both sides of a wallet-to-wallet send get this same string, so it names neither of them.
        See the paymentTitle note on SettlementReceiptInput. */
@@ -159,10 +162,8 @@ export function receiptReference(input: {
 /**
  * Email both sides of a settlement that has already settled.
  *
- * Never throws and never returns a failure: email is a side effect of money that has already
- * moved, so a dead Resend key must not turn a completed charge into a failed keeper run. On a
- * request path, call this inside `after()` from "next/server"; on a keeper path, await it where
- * the charge is confirmed.
+ * Persists intent before returning. Database failures propagate so reconciliation can retry;
+ * provider outages are handled by the durable worker and never undo a settled payment.
  */
 export async function sendSettlementReceipts(input: SettlementReceiptInput): Promise<void> {
     const reference = receiptReference(input);
@@ -236,7 +237,7 @@ async function sendReceiptsWithoutCta(input: SettlementReceiptInput & {
     const sent = new Set<string>();
     for (const { address, side } of sides) {
         if (!address) continue;
-        const recipient = await resolveRecipient(address, "transactional");
+        const recipient = await resolveRecipient(address, "transactional", true);
         if (!recipient || sent.has(recipient)) continue;
         sent.add(recipient);
 
@@ -248,7 +249,7 @@ async function sendReceiptsWithoutCta(input: SettlementReceiptInput & {
             hasTxHash: input.reference.isTxHash,
         });
 
-        await safelySendEmail(`${input.kind} receipt for ${side}`, () => sendTransactionalEmail({
+        await sendTransactionalEmail({
             to: recipient,
             category: "transactional",
             subject: message.subject,
@@ -260,7 +261,7 @@ async function sendReceiptsWithoutCta(input: SettlementReceiptInput & {
                other. The recipient is hashed rather than inlined so no address reaches the
                provider-visible Idempotency-Key header. */
             idempotencyKey: `settlement-receipt:${input.kind}:${side}:${input.reference.key}:${hashRecipient(recipient)}`,
-        }));
+        });
     }
 }
 

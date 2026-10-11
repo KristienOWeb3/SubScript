@@ -11,9 +11,9 @@ async function runAudit() {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       console.log(`[audit:production] Running production dependency audit (attempt ${attempt}/${MAX_RETRIES})...`);
-      const output = execSync("npm audit --omit=dev --audit-level=critical", {
+      const output = execSync("npm audit --omit=dev --audit-level=critical --json", {
         encoding: "utf8",
-        timeout: 25000,
+        timeout: 60000,
         stdio: ["ignore", "pipe", "pipe"],
       });
       if (output && output.trim()) console.log(output.trim());
@@ -24,15 +24,16 @@ async function runAudit() {
       const stderr = error.stderr ? error.stderr.toString() : "";
       const combined = `${stdout}\n${stderr}\n${error.message}`;
 
-      const isRegistryOutage =
-        combined.includes("503") ||
-        combined.includes("502") ||
-        combined.includes("504") ||
-        combined.includes("ETIMEDOUT") ||
-        combined.includes("network timeout") ||
-        combined.includes("audit endpoint returned an error") ||
-        combined.includes("ENOTFOUND") ||
-        combined.includes("ECONNRESET");
+      let report;
+      try { report = JSON.parse(stdout); } catch { /* npm may fail before emitting JSON. */ }
+      // Vulnerability data can contain arbitrary version/advisory text such as "503".
+      // A real critical finding always wins over an accompanying network warning.
+      const hasCritical = Number(report?.metadata?.vulnerabilities?.critical) > 0;
+      const isRegistryOutage = !hasCritical && (
+        ["E502", "E503", "E504", "ETIMEDOUT", "ENOTFOUND", "ECONNRESET"].includes(report?.error?.code || error.code) ||
+        /\b(?:ETIMEDOUT|ENOTFOUND|ECONNRESET)\b/.test(combined) ||
+        /audit endpoint returned an error/.test(stderr)
+      );
 
       if (isRegistryOutage) {
         console.warn(`[audit:production] npm registry advisory endpoint unavailable: ${stderr.trim() || error.message}`);
@@ -41,7 +42,7 @@ async function runAudit() {
           await sleep(RETRY_DELAY_MS);
           continue;
         }
-        if (process.env.STRICT_AUDIT === "true" || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet") {
+        if (process.env.CI === "true" || process.env.STRICT_AUDIT === "true" || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet") {
           console.error("[audit:production] ✗ npm registry advisory service unavailable in STRICT_AUDIT/mainnet mode. Failing closed.");
           process.exit(1);
         }

@@ -1,3 +1,5 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* A user resumes a paused (cancel-requested) metered service.
  *
  * Resume is only allowed while the escrowed commit still meets the platform minimum
@@ -24,7 +26,7 @@ import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 /* Platform-fixed standard commitment (2 USDC in micro-USDC), mirroring the vault contract. */
 const STANDARD_COMMIT_MICROS = BigInt(2_000_000);
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
@@ -129,3 +131,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "vault-resume", bind: financialPinContext }, handlePOST);

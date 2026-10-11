@@ -1,3 +1,5 @@
+import { financialPinContext, payrollChangeRequiresPin } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* API route for managing merchant payroll campaigns and recipients */
 
 import { NextResponse } from "next/server";
@@ -161,7 +163,7 @@ export async function GET(request: Request) {
  * POST - Create a new payroll campaign with recipients.
  * Sets next_payday to current time + frequencyDays.
  */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -378,7 +380,7 @@ export async function POST(request: Request) {
  * PUT - Update campaign status (PAUSE/RESUME) or update Permit2 signature fields.
  * The merchant can only modify their own campaigns.
  */
-export async function PUT(request: Request) {
+async function handlePUT(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -631,3 +633,7 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "payroll-create", bind: financialPinContext }, handlePOST);
+
+export const PUT = withTransactionPin({ action: "payroll-change", bind: financialPinContext, required: payrollChangeRequiresPin }, handlePUT);

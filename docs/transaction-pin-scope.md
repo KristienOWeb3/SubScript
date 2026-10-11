@@ -1,5 +1,11 @@
 # Transaction PIN: where it should be required
 
+> Historical proposal. Use [the mainnet email/PIN audit](mainnet/EMAIL_AND_TRANSACTION_PIN_AUDIT.md) for current implementation and release status. Server-enforced transaction PIN and recovery are now implemented locally; final review and deployment remain pending. The discussion below describes the earlier baseline.
+
+Current wallet scope: transaction PINs apply only to wallets SubScript can sign for, using the stored Circle wallet or encrypted-key custody markers and the existing explicit `external_wallet` opt-out. Provider labels alone cannot establish custody. External wallets authorize through their connected wallet and are exempt from PIN enrollment, management, and transaction challenges; existing endpoint authentication, wallet signatures, and email verification requirements remain in place. A successful custody lookup with no embedded-wallet record is external; lookup failures return an unavailable response before execution. Client flags cannot override this decision. The status endpoint exposes `required` alongside `configured`; clients treat older responses without `required` as requiring a PIN.
+
+PIN scope follows the signed-in account. An external-wallet sub-user can spend from a custodial parent's previously granted allowance without a transaction PIN or a per-send browser signature. Such delegated sends use the authenticated session and stored parent authorization: authority resolution selects the funding parent, owner pause/revocation and caps remain enforced, the allowance debit is reserved atomically, and funding-account spending limits, halt and withdrawal holds still apply. This exemption does not let an external account request server signing for its own wallet; the custody signer rejects the explicit external-wallet opt-out even when stale Circle markers exist.
+
 There is no PIN, passcode, or step-up authentication anywhere in SubScript today. This lists where one should be required, where it shouldn't, and what makes it real rather than decorative.
 
 ---

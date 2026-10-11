@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback, useRef, Fragment } from "react";
+import { ensureTransactionPinSetup, fetchWithTransactionPin } from "@/lib/client/transactionPin";
+import { cancelTransactionPinPrompt } from "@/components/TransactionPinPrompt";
+
+import { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef, Fragment } from "react";
 import { ethers } from "ethers";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,7 +15,7 @@ import DashboardSkeleton from "@/components/DashboardSkeleton";
 import Skeleton from "@/components/ui/Skeleton";
 import Toast from "@/components/ui/Toast";
 import { SkeletonCard, SkeletonRows, SkeletonStatGrid } from "@/components/ui/skeletons";
-import { APP_ROUTES, getDashboardUrl } from "@/utils/navigation";
+import { APP_ROUTES, getDashboardUrl, getAdminUrl } from "@/utils/navigation";
 import { compressAvatarImage } from "@/utils/imageCompression";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
@@ -26,7 +29,8 @@ import MerchantPreviewModal from "@/components/dashboard/MerchantPreviewModal";
 import DurationPicker from "@/components/DurationPicker";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import SupportChatModal from "@/components/support/SupportChatModal";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
+import { useAccount, useConfig, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
+import { getAccount } from "wagmi/actions";
 import { injected } from "wagmi/connectors";
 import {
     createPublicClient,
@@ -197,6 +201,7 @@ export default function DashboardPage() {
     const { connect, connectors, error: connectError, isError: isConnectError, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
+    const walletConfig = useConfig();
     const { switchChain, switchChainAsync } = useSwitchChain();
     /* Soulbound Access Key (SBT) State removed because SBT infrastructure is deleted */
 
@@ -332,7 +337,7 @@ export default function DashboardPage() {
                 }
                 headers["x-request-id"] = pendingRequestIdsRef.current[action];
             }
-            const res = await fetch("/api/execute-tx", {
+            const res = await fetchWithTransactionPin("/api/execute-tx", {
                 method: "POST",
                 headers,
                 body: JSON.stringify({ action, args: serializedArgs }),
@@ -344,6 +349,10 @@ export default function DashboardPage() {
             delete pendingRequestIdsRef.current[action];
             return data.txHash as string;
         } else {
+            if (!sessionWallet || getAccount(walletConfig).address?.toLowerCase() !== sessionWallet.toLowerCase()) {
+                throw new Error("Connect the wallet for your signed-in SubScript account before sending.");
+            }
+            if (functionName !== "cancelSubscription") await ensureTransactionPinSetup();
             if (chainId !== activeArcChain.id) {
                 if (switchChainAsync) {
                     await switchChainAsync({ chainId: activeArcChain.id });
@@ -351,7 +360,11 @@ export default function DashboardPage() {
                     switchChain({ chainId: activeArcChain.id });
                 }
             }
+            if (getAccount(walletConfig).address?.toLowerCase() !== sessionWallet.toLowerCase()) {
+                throw new Error("Connect the wallet for your signed-in SubScript account before sending.");
+            }
             return await writeContractAsync({
+                account: sessionWallet as `0x${string}`,
                 address: contractAddress as `0x${string}`,
                 abi: contractAbi,
                 functionName,
@@ -677,6 +690,7 @@ export default function DashboardPage() {
         }
     };
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
+    useLayoutEffect(() => () => cancelTransactionPinPrompt(), [activeTab, subTab, merchantSubView]);
     const paymentSubTabsSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
@@ -783,7 +797,7 @@ export default function DashboardPage() {
         setIsClaimingVault(true);
         setVaultOpsStatus(null);
         try {
-            const res = await fetch("/api/merchant/vault/claim", {
+            const res = await fetchWithTransactionPin("/api/merchant/vault/claim", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" }
             });
@@ -800,6 +814,7 @@ export default function DashboardPage() {
                 setVaultOpsStatus({ text: data?.error || "Failed to claim settled funds.", type: "error" });
             }
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             setVaultOpsStatus({ text: err.message || "Failed to claim settled funds.", type: "error" });
         } finally {
             setIsClaimingVault(false);
@@ -867,7 +882,7 @@ export default function DashboardPage() {
         if (comingSoonMerchantSettings.has(field)) return;
         setSavingSettingsField(field);
         try {
-            const res = await fetch("/api/user/settings", {
+            const res = await fetchWithTransactionPin("/api/user/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ [field]: !currentValue })
@@ -877,6 +892,7 @@ export default function DashboardPage() {
                 setUserSettings((prev: any) => ({ ...prev, [field]: !currentValue }));
             }
         } catch (err) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error(`Error saving setting ${field}:`, err);
         } finally {
             setSavingSettingsField(null);
@@ -886,7 +902,7 @@ export default function DashboardPage() {
     const handleUpdateChurnSurveyQuestion = async (question: string) => {
         setSavingSettingsField("churnSurveyQuestion");
         try {
-            const res = await fetch("/api/user/settings", {
+            const res = await fetchWithTransactionPin("/api/user/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ churnSurveyQuestion: question })
@@ -904,6 +920,7 @@ export default function DashboardPage() {
                 setTimeout(() => setShowToast(false), 3000);
             }
         } catch (err) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error("Error updating churn survey question:", err);
         } finally {
             setSavingSettingsField(null);
@@ -927,7 +944,7 @@ export default function DashboardPage() {
                 setSavingSettingsField("payoutDestination");
                 setPayoutDestinationError(null);
                 try {
-                    const res = await fetch("/api/user/settings", {
+                    const res = await fetchWithTransactionPin("/api/user/settings", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ payoutDestination: normalized })
@@ -942,6 +959,7 @@ export default function DashboardPage() {
                         setPayoutDestinationError(data.error || "Could not save the payout destination.");
                     }
                 } catch (err) {
+            if (err instanceof Error && err.name === "AbortError") return;
                     console.error("Error updating payout destination:", err);
                     setPayoutDestinationError("Network error. Your previous payout destination is still saved.");
                 } finally {
@@ -965,7 +983,7 @@ export default function DashboardPage() {
 
         try {
             const compressedDataUrl = await compressAvatarImage(file, 512, 0.85);
-            const res = await fetch("/api/user/settings", {
+            const res = await fetchWithTransactionPin("/api/user/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ profilePic: compressedDataUrl })
@@ -977,6 +995,7 @@ export default function DashboardPage() {
                 setUploadError(data.error || "Upload failed");
             }
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error("Error uploading profile pic:", err);
             setUploadError(err.message || "Upload failed");
         } finally {
@@ -1981,6 +2000,7 @@ export default function DashboardPage() {
             await refetchBalancesAndTier();
             setRefreshTrigger((prev) => prev + 1);
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error("Error retrying subscription charge:", err);
             setToastMessage(err.message || "Failed to execute subscription payment.");
             setShowToast(true);
@@ -2073,6 +2093,7 @@ export default function DashboardPage() {
             refetchVaultBalance();
             refetchWalletBalance();
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error("Withdraw failed:", err);
             throw err;
         } finally {
@@ -2100,6 +2121,7 @@ export default function DashboardPage() {
             setTimeout(() => setRerouteSuccess(false), 4000);
             refetchPayoutDest();
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error("Reroute failed:", err);
             setAdvancedError(formatWalletError(err));
         } finally {
@@ -2215,6 +2237,7 @@ export default function DashboardPage() {
             /* Refresh settings */
             await refetchBalancesAndTier();
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error("Save confidentiality error:", err);
             setAdvancedError(err.message || "Failed to register View Key");
         } finally {
@@ -3173,6 +3196,7 @@ Please complete the following implementation tasks:
                             </span>
                             <div>
                                 <h1 className="text-xl font-bold text-[#082824] sm:text-2xl">Merchant Settings</h1>
+                                <a href="/dashboard/transaction-pin" className="mt-2 inline-block text-sm font-bold text-[#2775CA]">Manage transaction PIN</a>
                                 <p className="text-sm sm:text-base text-black/70 mt-1">Manage your business profile, merchant identity, payments and payouts, webhooks, advanced controls, and account safety.</p>
                             </div>
                         </div>
@@ -3182,8 +3206,8 @@ Please complete the following implementation tasks:
                         {/* Settings Menu Options List */}
                         <div className="border border-black/10 bg-[#FFFFF0] rounded-[34px] p-4 space-y-2 shadow-sm">
                             {isAdmin && (
-                                <Link
-                                    href="/admin"
+                                <a
+                                    href={getAdminUrl("/admin")}
                                     className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                                 >
                                     <div className="flex items-center gap-3.5">
@@ -3196,7 +3220,7 @@ Please complete the following implementation tasks:
                                         </div>
                                     </div>
                                     <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
-                                </Link>
+                                </a>
                             )}
 
                             {/* Profile & Branding */}
@@ -6400,7 +6424,7 @@ function LocalCustomerVaultRow({
         setStatus(null);
 
         try {
-            const res = await fetch("/api/user/vault/report-usage", {
+            const res = await fetchWithTransactionPin("/api/user/vault/report-usage", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -6428,6 +6452,7 @@ function LocalCustomerVaultRow({
                 setStatus({ text: data.error || "Usage report failed.", type: "error" });
             }
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             setStatus({ text: err.message || "Failed to report usage.", type: "error" });
         } finally {
             usageInFlight.current = false;

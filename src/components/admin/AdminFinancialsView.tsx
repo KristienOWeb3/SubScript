@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   DollarSign,
@@ -137,7 +139,7 @@ export function AdminFinancialsView() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/financials");
+      const res = await adminFetch("/api/admin/financials");
       if (!res.ok) throw new Error("Failed to load financials");
       const json = await res.json();
       setData(json);

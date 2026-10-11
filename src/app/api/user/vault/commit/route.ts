@@ -1,14 +1,18 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
+import { assertAuthorizedMerchantDestination } from "@/lib/auth/financialAuthorizationContext";
 /* User commits (escrows) USDC into a (user → merchant) vault. Clears any owed debt
    first, then restores the commit; the merchant's service activates for the cycle.
    Server-signed from the user's embedded wallet. */
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, readUsdcBalance, syncVaultMirror } from "@/lib/vault/onchain";
-import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
+import { dispatchSettlementReceipts, prepareSettlementReceiptJob, recordSettlementReceiptSubmission, confirmSettlementReceiptJob } from "@/lib/payments/settlementReceiptRecovery";
 import { CirclePaymasterPolicyError, deterministicIdempotencyKey } from "@/lib/custody";
 import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
@@ -20,7 +24,7 @@ import crypto from "crypto";
 
 export const maxDuration = 120;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
@@ -66,6 +70,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid merchant commit name or address" }, { status: 400 });
         }
         const merchantAddress = targetMerchant;
+        assertAuthorizedMerchantDestination(merchantAddress);
         let merchant = await prisma.merchant.findUnique({
             where: { walletAddress: targetMerchant },
             select: { tier: true, verified: true }
@@ -206,9 +211,24 @@ export async function POST(request: Request) {
             throw sponsorError;
         }
 
+        const receiptJobId = await prepareSettlementReceiptJob({
+            identity: `vault-commit:${requestId}:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
+            kind: "vault_topup",
+            fundingWallet: wallet.toLowerCase(),
+            payerAddress: wallet.toLowerCase(),
+            payeeAddress: merchantAddress.toLowerCase(),
+            amountUsdc: amount,
+            contractAddress: SUBSCRIPT_VAULT_ADDRESS,
+            chainId: SUBSCRIPT_VAULT_CHAIN_ID,
+        });
+
         let txHash: string;
         try {
-            txHash = await commitFromEmbedded(wallet, merchantAddress, amount, custodyIdempotencyKey);
+            txHash = await commitFromEmbedded(wallet, merchantAddress, amount, custodyIdempotencyKey, id => recordSettlementReceiptSubmission(receiptJobId, id));
+            if (receiptJobId && txHash) {
+                await confirmSettlementReceiptJob(receiptJobId, txHash).catch(() => null);
+                after(async () => { await dispatchSettlementReceipts().catch(() => null); });
+            }
         } catch (commitError: any) {
             /* Circle rejects this before accepting a transaction, so unlike polling timeouts it is
                definitive: close the intent and tell the client no funds moved. */
@@ -298,6 +318,10 @@ export async function POST(request: Request) {
             transitionKey: `vault_commit:${txHash.toLowerCase()}`,
         }).catch(err => console.error("[vault/commit] webhook dispatch error:", err));
 
+        after(async () => {
+            await dispatchSettlementReceipts().catch(() => null);
+        });
+
         return NextResponse.json({
             success: true,
             txHash,
@@ -352,3 +376,5 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Unable to read commit intent" }, { status: 503 });
     }
 }
+
+export const POST = withTransactionPin({ action: "vault-commit", bind: financialPinContext }, handlePOST);

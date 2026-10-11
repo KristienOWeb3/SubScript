@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     AlertCircle,
@@ -147,7 +149,7 @@ export function AdminAuditLogView({ viewerWallet }: AdminAuditLogViewProps) {
                 if (to) params.set("to", to);
                 if (cursor) params.set("cursor", cursor);
 
-                const res = await fetch(`/api/admin/audit-log?${params.toString()}`);
+                const res = await adminFetch(`/api/admin/audit-log?${params.toString()}`);
 
                 if (res.status === 404) {
                     if (seq === requestSeq.current) {

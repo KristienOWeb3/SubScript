@@ -1,6 +1,9 @@
 "use client";
 
+import { fetchWithTransactionPin } from "@/lib/client/transactionPin";
+
 import { useState, useEffect, useRef } from "react";
+import { formatUnits } from "viem";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -331,7 +334,7 @@ export default function SubscribeClient({
             /* An upgrade is a different transaction, not a subscribe with extra fields: it revokes the
                old authorization and mints a new one at the new plan's terms. Routing it through
                /subscribe would hit that route's ACTIVE_MERCHANT_SUBSCRIPTION guard and refuse. */
-            const res = await fetch(
+            const res = await fetchWithTransactionPin(
                 isUpgrade ? "/api/user/subscription/upgrade" : "/api/user/subscription/subscribe",
                 {
                     method: "POST",
@@ -344,6 +347,13 @@ export default function SubscribeClient({
                                 : { planId: plan.id },
                     ),
                 },
+                { operation: isUpgrade ? "Upgrade subscription" : "Authorize recurring subscription", details: {
+                    merchant: plan.merchantAddress, plan: plan.name,
+                    chargeTodayUsdc: isUpgrade ? upgradePreview?.chargedNowUsdc : formatUnits(BigInt(plan.promotion?.introductoryAmountUsdc || plan.amountUsdc), 6),
+                    recurringAmountUsdc: formatUnits(BigInt(plan.amountUsdc), 6), periodSeconds: plan.periodSeconds,
+                    minimumCommitmentSeconds: plan.minCommitmentSeconds,
+                    introductoryCycles: plan.promotion?.introductoryCycles,
+                } },
             );
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) {
@@ -357,6 +367,7 @@ export default function SubscribeClient({
             localStorage.removeItem(requestStorageKey);
             setResult({ txHash: data.txHash, subscriptionId: data.subscriptionId, planName: data.planName });
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             setSubscribeError({
                 message: friendlyError(err?.message || "Failed to subscribe."),
                 code: typeof err?.code === "string" ? err.code : null,

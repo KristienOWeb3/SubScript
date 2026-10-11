@@ -1,7 +1,3 @@
-const KNOWN_SUPABASE_POOLER_HOSTS: Record<string, string> = {
-    jkrlsjpsytzffwjpixue: "aws-1-eu-central-1.pooler.supabase.com",
-};
-
 const BUILD_TIME_DATABASE_URL = ["postgresql:", "", "postgres:postgres@localhost:5432/postgres"].join("/");
 
 type DatabaseUrlOptions = {
@@ -9,62 +5,30 @@ type DatabaseUrlOptions = {
     forPrisma?: boolean;
 };
 
-function getPoolerHost(projectRef: string) {
-    return process.env.SUPABASE_POOLER_HOST || KNOWN_SUPABASE_POOLER_HOSTS[projectRef] || null;
-}
-
 export function normalizeDatabaseUrl(rawUrl: string | undefined | null) {
     if (!rawUrl) return rawUrl || "";
-
     let parsed: URL;
     try {
         parsed = new URL(rawUrl);
     } catch {
         return rawUrl;
     }
+    // A configured connection is authoritative: direct uses postgres, shared pooler
+    // uses role.project. Never guess a region, rewrite ports, or substitute projects.
+    if (!/(^|\.)pooler\.supabase\.com$/i.test(parsed.hostname)) return rawUrl;
+    if (/^[^.]+\.[a-z0-9]+$/i.test(decodeURIComponent(parsed.username))) return rawUrl;
 
-    const directHostMatch = parsed.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+    const projectUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     let projectRef = "";
-    
-    if (directHostMatch) {
-        projectRef = directHostMatch[1];
-    } else if (parsed.hostname.includes("pooler.supabase.com")) {
-        // Extract project reference from username if it exists (e.g., postgres.ref)
-        const userMatch = parsed.username.match(/^postgres\.([a-z0-9]+)$/i);
-        if (userMatch) {
-            projectRef = userMatch[1];
-        } else {
-            // Attempt to retrieve from other env variables
-            const sUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-            const sMatch = sUrl.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/i);
-            if (sMatch) {
-                projectRef = sMatch[1];
-            } else {
-                // Default fallback to the current project reference
-                projectRef = "jkrlsjpsytzffwjpixue";
-            }
-        }
-    } else {
-        return rawUrl;
+    if (projectUrl) {
+        try {
+            projectRef = new URL(projectUrl).hostname.match(/^([a-z0-9]+)\.supabase\.co$/i)?.[1] || "";
+        } catch { /* Incomplete configuration must fail without exposing credentials. */ }
     }
-
-    const poolerHost = getPoolerHost(projectRef);
-    if (!poolerHost) {
-        // Ensure username is correct even if we don't rewrite the host
-        if (parsed.username === "postgres" && projectRef) {
-            parsed.username = `postgres.${projectRef}`;
-            return parsed.toString();
-        }
-        return rawUrl;
+    if (!projectRef || !parsed.username) {
+        throw new Error("Supabase pooler username must include an explicit project reference (role.project).");
     }
-
-    parsed.hostname = poolerHost;
-    parsed.port = process.env.SUPABASE_POOLER_PORT || "6543";
-
-    if (parsed.username === "postgres" || !parsed.username.includes(".")) {
-        parsed.username = `postgres.${projectRef}`;
-    }
-
+    parsed.username = `${decodeURIComponent(parsed.username)}.${projectRef}`;
     return parsed.toString();
 }
 
@@ -76,7 +40,7 @@ function addPrismaPoolerOptions(connectionString: string) {
         return connectionString;
     }
 
-    if (parsed.hostname.includes("pooler.supabase.com")) {
+    if (/(^|\.)pooler\.supabase\.com$/i.test(parsed.hostname)) {
         parsed.searchParams.set("pgbouncer", "true");
     }
 

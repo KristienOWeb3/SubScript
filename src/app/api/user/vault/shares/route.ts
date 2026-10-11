@@ -1,3 +1,5 @@
+import { financialPinContext, capIncreaseRequiresPin } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin, isTransactionLimitIncreaseAuthorized } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -177,7 +179,7 @@ export async function GET(request: Request) {
     }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -281,7 +283,7 @@ export async function POST(request: Request) {
 /* Re-cap an existing share. Accepts an explicit null to mean "remove the cap", which the create
    path forbids — raising or lowering a number for someone already trusted is a smaller act than
    handing out uncapped authority at invite time. */
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -305,7 +307,7 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ error: parsed.error }, { status: 400 });
         }
 
-        const share = await updateVaultShareLimit(walletAddress, body.commitId, parsed.value);
+        const share = await updateVaultShareLimit(walletAddress, body.commitId, parsed.value, await isTransactionLimitIncreaseAuthorized(request, walletAddress));
 
         return NextResponse.json({ share: serializeShare(share) });
     } catch (error) {
@@ -316,3 +318,7 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: "Could not update this share" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "vault-share-create", bind: financialPinContext }, handlePOST);
+
+export const PATCH = withTransactionPin({ action: "vault-share-limit", bind: financialPinContext, required: capIncreaseRequiresPin }, handlePATCH);

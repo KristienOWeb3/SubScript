@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState } from "react";
 import {
   Search,
@@ -99,7 +101,7 @@ export function AdminTransactionInspectorModal({
     setResult(null);
 
     try {
-      const res = await fetch(`/api/admin/transactions/inspect?query=${encodeURIComponent(query.trim())}`);
+      const res = await adminFetch(`/api/admin/transactions/inspect?query=${encodeURIComponent(query.trim())}`);
       const json = await res.json();
       if (!res.ok) {
         if (res.status === 404) {

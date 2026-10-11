@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchWithTransactionPin } from "@/lib/client/transactionPin";
+
 import React, { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { createPortal } from "react-dom";
@@ -200,7 +202,7 @@ export default function VaultShareManager({
 
         setCreating(true);
         try {
-            const res = await fetch(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}`, {
+            const res = await fetchWithTransactionPin(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
@@ -208,7 +210,7 @@ export default function VaultShareManager({
                     displayName: trimmed,
                     spendLimitUsdc: capMicros,
                 }),
-            });
+            }, { operation: "Create shared vault spending permission", details: { vaultId, displayName: trimmed, spendLimitUsdc: formatUsdc(capMicros) } });
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || "Could not create shared commit key");
 
@@ -221,6 +223,7 @@ export default function VaultShareManager({
                 setSuccessMsg(null);
             }, 1200);
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             setFormError(err.message || "Failed to add user to commit");
         } finally {
             setCreating(false);
@@ -260,7 +263,7 @@ export default function VaultShareManager({
     const executeAction = async (commitId: string, action: "pause" | "resume" | "rotate" | "revoke") => {
         setActionRunning(`${commitId}-${action}`);
         try {
-            const res = await fetch(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}&commitId=${encodeURIComponent(commitId)}&action=${action}`, {
+            const res = await fetchWithTransactionPin(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}&commitId=${encodeURIComponent(commitId)}&action=${action}`, {
                 method: "PATCH",
                 credentials: "include",
             });
@@ -277,6 +280,7 @@ export default function VaultShareManager({
                 }
             }
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             alert(err.message || `Failed to ${action} user access`);
         } finally {
             setActionRunning(null);
@@ -295,12 +299,12 @@ export default function VaultShareManager({
         }
 
         try {
-            const res = await fetch(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}&commitId=${encodeURIComponent(share.commitId)}`, {
+            const res = await fetchWithTransactionPin(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}&commitId=${encodeURIComponent(share.commitId)}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
                 body: JSON.stringify({ spendLimitUsdc: capMicros }),
-            });
+            }, { operation: "Change shared vault spending limit", details: { vaultId, commitId: share.commitId, user: share.displayName, previousLimitUsdc: formatUsdc(share.spendLimitUsdc), newLimitUsdc: formatUsdc(capMicros) } });
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || "Could not update spend limit");
 
@@ -310,6 +314,7 @@ export default function VaultShareManager({
                 setSelectedShare({ ...selectedShare, spendLimitUsdc: capMicros });
             }
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             alert(err.message || "Failed to update cap");
         }
     };

@@ -1,3 +1,5 @@
+import { financialPinContext, shareStatusRequiresPin } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
@@ -29,7 +31,7 @@ const ROTATE_RATE_WINDOW_SECONDS = 60;
 const STATUS_RATE_LIMIT = 30;
 const STATUS_RATE_WINDOW_SECONDS = 60;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -133,3 +135,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Could not update this share" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "vault-share-status", bind: financialPinContext, required: shareStatusRequiresPin }, handlePOST);

@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { financialPinContext, executeActionRequiresPin } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin, isTransactionPinAuthorizedRequest } from "@/lib/auth/transactionPin";
+import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAddress, isAddress } from "ethers";
 import crypto from "crypto";
@@ -14,7 +16,10 @@ import {
     CONFIDENTIAL_CONTRACT_ADDRESS,
     STANDARD_CONTRACT_ADDRESS,
     SUBSCRIPT_ROUTER_ADDRESS,
-    USDC_NATIVE_GAS_ADDRESS
+    USDC_NATIVE_GAS_ADDRESS,
+    ARC_MAINNET_CHAIN_ID,
+    ARC_TESTNET_CHAIN_ID,
+    isProd,
 } from "@/lib/contracts/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { classifyGasPayer } from "@/lib/sponsor/policy";
@@ -26,6 +31,7 @@ import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdr
 import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
 import { bindTxToReceipt } from "@/lib/receipts/binding";
 import { authorizeFinancialStepUp } from "@/lib/auth/stepUp";
+import { dispatchSettlementReceipts, prepareSettlementReceiptJob, recordSettlementReceiptSubmission, confirmSettlementReceiptJob } from "@/lib/payments/settlementReceiptRecovery";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
    whose tx hash only exists once confirmed), so give the route enough headroom. */
@@ -159,7 +165,7 @@ const CONFIDENTIAL_ABI = [
     }
 ];
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
         const wallet = await getSessionWallet(request.headers);
@@ -409,7 +415,7 @@ export async function POST(request: Request) {
                         : null;
                     const isPreauthorizedDestination = normalizedTarget === wallet.toLowerCase()
                         || normalizedTarget === registeredPayout;
-                    if (!isPreauthorizedDestination) {
+                    if (!isPreauthorizedDestination && !isTransactionPinAuthorizedRequest(request)) {
                         const stepUp = await authorizeFinancialStepUp({
                             headers: request.headers,
                             wallet,
@@ -452,7 +458,7 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "Payout address cannot be the zero address." }, { status: 400 });
                 }
 
-                const stepUp = await authorizeFinancialStepUp({
+                const stepUp = isTransactionPinAuthorizedRequest(request) ? { ok: true as const } : await authorizeFinancialStepUp({
                     headers: request.headers,
                     wallet,
                     binding: { action: "configurePayoutDestination", recipient: normalizedPayout },
@@ -546,6 +552,37 @@ export async function POST(request: Request) {
                 });
             }
 
+            let receiptJobId: string | null = null;
+            const chainId = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
+            if (action === "transferUsdc" && args.to && userPaidTransferAmount) {
+                receiptJobId = await prepareSettlementReceiptJob({
+                    identity: `execute-tx:transferUsdc:${requestId}:${wallet.toLowerCase()}`,
+                    kind: "wallet_transfer",
+                    fundingWallet: wallet,
+                    payerAddress: wallet,
+                    payeeAddress: String(args.to),
+                    amountUsdc: userPaidTransferAmount,
+                    contractAddress: USDC_NATIVE_GAS_ADDRESS,
+                    chainId,
+                });
+            } else if (action === "withdraw") {
+                const withdrawTarget = (args?.to && typeof args.to === "string" && isAddress(args.to))
+                    ? getAddress(args.to).toLowerCase()
+                    : null;
+                receiptJobId = await prepareSettlementReceiptJob({
+                    identity: `execute-tx:withdraw:${requestId}:${wallet.toLowerCase()}`,
+                    kind: "router_withdraw",
+                    fundingWallet: wallet,
+                    payerAddress: null,
+                    payeeAddress: withdrawTarget,
+                    // The mined PayoutDelivered event determines net amount and the
+                    // current destination; a preflight balance can change before mining.
+                    amountUsdc: null,
+                    contractAddress: SUBSCRIPT_ROUTER_ADDRESS,
+                    chainId,
+                });
+            }
+
             /* Custody routing: execute through Circle's contract-execution API. */
             const custody = await getWalletCustody(wallet.toLowerCase());
 
@@ -558,8 +595,13 @@ export async function POST(request: Request) {
                    (client can reuse x-request-id to make a retry dedupe). */
                 idempotencyKey: durableIdempotencyKey ?? deterministicIdempotencyKey(`req:${requestId}:${action}`),
                 gasPayer: isUserPaidTransfer ? "wallet" : "platform",
+                onSubmitted: receiptJobId ? id => recordSettlementReceiptSubmission(receiptJobId!, id) : undefined,
             });
             console.log(`[execute-tx] executed ${functionName} via ${custody.kind} custody: ${txHash}`);
+            if (receiptJobId && txHash) {
+                await confirmSettlementReceiptJob(receiptJobId, txHash).catch(() => null);
+                after(async () => { await dispatchSettlementReceipts().catch(() => null); });
+            }
 
             /* User-paid peer transfer: recover the Arc network fee from the sender after it settled.
                Logged-not-thrown on failure inside chargeNetworkFee — the transfer is irreversible. */
@@ -584,6 +626,7 @@ export async function POST(request: Request) {
                         isShielded: body.isShielded || false,
                     });
                     boundReceiptId = bound.receiptId;
+                    // Receipt dispatch was registered before post-settlement fee and binding work.
                 }
             } catch (bindingErr) {
                 console.error(`[execute-tx] Non-fatal receipt binding error for tx ${txHash}:`, bindingErr);
@@ -600,6 +643,7 @@ export async function POST(request: Request) {
                     txHash,
                     dedupeKey: `withdraw-activity:${txHash}`,
                 }).catch((err) => console.error("Failed to record withdrawal DM:", err));
+
             }
 
             return NextResponse.json({ success: true, txHash, receiptId: boundReceiptId, networkFeeUsdc }, { status: 200 });
@@ -629,3 +673,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "execute-transaction", bind: financialPinContext, required: executeActionRequiresPin }, handlePOST);

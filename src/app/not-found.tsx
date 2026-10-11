@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Compass, Home, HelpCircle, Shield } from "lucide-react";
+
+const publicOrigin = process.env.NODE_ENV === "production" ? "https://www.subscriptonarc.com" : "";
+const dashboardOrigin = process.env.NODE_ENV === "production" ? "https://dashboard.subscriptonarc.com" : "";
 
 export const metadata: Metadata = {
     title: "Page Not Found | SubScript",
@@ -39,21 +41,21 @@ export default function NotFound() {
 
                     {/* Action Buttons */}
                     <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-                        <Link
-                            href="/"
+                        <a
+                            href={`${publicOrigin}/`}
                             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#2775CA] px-6 py-3.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm hover:bg-[#1d61a8] active:scale-[0.98] transition-all"
                         >
                             <Home className="h-4 w-4" />
                             <span>Return Home</span>
-                        </Link>
+                        </a>
 
-                        <Link
-                            href="/dashboard-router"
+                        <a
+                            href={`${dashboardOrigin}/dashboard-router`}
                             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-6 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-800 hover:bg-black/5 hover:border-black/20 active:scale-[0.98] transition-all shadow-sm"
                         >
                             <Compass className="h-4 w-4 text-[#2775CA]" />
                             <span>Open Dashboard</span>
-                        </Link>
+                        </a>
                     </div>
 
                     {/* Card Footer */}
@@ -62,13 +64,13 @@ export default function NotFound() {
                             <Shield className="h-3.5 w-3.5 text-[#2775CA]" />
                             <span>SubScript</span>
                         </div>
-                        <Link
-                            href="/support"
+                        <a
+                            href={`${publicOrigin}/support`}
                             className="flex items-center gap-1 text-slate-500 hover:text-[#2775CA] transition-colors font-medium"
                         >
                             <HelpCircle className="h-3.5 w-3.5" />
                             <span>Help & Support</span>
-                        </Link>
+                        </a>
                     </div>
                 </div>
             </div>

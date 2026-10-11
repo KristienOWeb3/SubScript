@@ -1,3 +1,5 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { CommitAccessError, isCommitId, pauseSubUser, resumeSubUser } from "@/lib/commitId";
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
     }
 }
 
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -61,3 +63,5 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: "Could not resume sub-user" }, { status: 500 });
     }
 }
+
+export const DELETE = withTransactionPin({ action: "delegate-resume", bind: financialPinContext }, handleDELETE);

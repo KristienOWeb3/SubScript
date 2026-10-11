@@ -1,7 +1,9 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* User withdraws unused escrow from a vault back to their wallet. Allowed only when
    the vault carries no owed debt; dropping below the commit deactivates the service
    until the user re-commits. Server-signed from the user's embedded wallet. */
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
@@ -11,12 +13,13 @@ import { withdrawFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { estimateArcNetworkFeeMicros, chargeNetworkFee } from "@/lib/sponsor/userPaidTransfer";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
-import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
+import { dispatchSettlementReceipts, prepareSettlementReceiptJob, recordSettlementReceiptSubmission, confirmSettlementReceiptJob } from "@/lib/payments/settlementReceiptRecovery";
 import crypto from "crypto";
 
 export const maxDuration = 120;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
@@ -56,7 +59,22 @@ export async function POST(request: Request) {
         /* User withdrawal of their own escrow — user-paid. No gas sponsorship is requested; the Arc
            network fee is recovered from the wallet after the withdrawal settles (the withdrawn funds
            land in the wallet, so the fee is always covered). */
-        const txHash = await withdrawFromEmbedded(wallet, merchantAddress, amount);
+        const receiptJobId = await prepareSettlementReceiptJob({
+            identity: `vault-withdraw:${reqId}:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
+            kind: "vault_withdraw",
+            fundingWallet: wallet.toLowerCase(),
+            payerAddress: null,
+            payeeAddress: wallet.toLowerCase(),
+            amountUsdc: amount,
+            contractAddress: SUBSCRIPT_VAULT_ADDRESS,
+            chainId: SUBSCRIPT_VAULT_CHAIN_ID,
+        });
+
+        const txHash = await withdrawFromEmbedded(wallet, merchantAddress, amount, id => recordSettlementReceiptSubmission(receiptJobId, id), `vault-withdraw:${reqId}:${wallet.toLowerCase()}`);
+        if (receiptJobId && txHash) {
+            await confirmSettlementReceiptJob(receiptJobId, txHash).catch(() => null);
+            after(async () => { await dispatchSettlementReceipts().catch(() => null); });
+        }
         await chargeNetworkFee({
             wallet: wallet.toLowerCase(),
             feeMicros: (await estimateArcNetworkFeeMicros(1)).feeMicros,
@@ -86,6 +104,10 @@ export async function POST(request: Request) {
             transitionKey: `vault_withdraw:${txHash.toLowerCase()}`,
         }).catch(err => console.error("[vault/withdraw] webhook dispatch error:", err));
 
+        after(async () => {
+            await dispatchSettlementReceipts().catch(() => null);
+        });
+
         return NextResponse.json({
             success: true,
             txHash,
@@ -107,3 +129,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message || "Failed to withdraw from vault" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "vault-withdraw", bind: financialPinContext }, handlePOST);

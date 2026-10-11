@@ -24,7 +24,7 @@ import {
   Sparkles,
   ExternalLink
 } from "@/components/icons";
-import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
+import { getDashboardUrl, getSafeRelativePath, getSafeRedirectUrl } from "@/utils/navigation";
 import Script from "next/script";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
@@ -88,7 +88,7 @@ function SignupContent() {
 
   const getSafeNext = useCallback(() => {
     if (typeof window === "undefined") return "";
-    return getSafeRelativePath(searchParams?.get("next") || searchParams?.get("redirect") || null);
+    return getSafeRedirectUrl(searchParams?.get("next") || searchParams?.get("redirect") || null);
   }, [searchParams]);
 
   const { address, isConnected, connector: activeConnector, chainId } = useAccount();
@@ -154,10 +154,17 @@ function SignupContent() {
 
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const isLocalHost = typeof window !== "undefined" && (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname.startsWith("192.168.") ||
+    window.location.hostname.endsWith(".local")
+  );
+  const isDevMode = process.env.NODE_ENV !== "production" || isLocalHost;
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
-  const captchaRequired = isTurnstileConfigured && !captchaToken;
+  const captchaRequired = isTurnstileConfigured && !captchaToken && !isDevMode;
 
-  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken);
+  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken) || isDevMode;
   const isAuthReady = platformFlagsLoaded && isCloudflareReady;
 
   useEffect(() => {
@@ -185,13 +192,23 @@ function SignupContent() {
         theme: "light",
         size: "flexible",
         callback: (token: string) => setCaptchaToken(token),
-        "expired-callback": () => setCaptchaToken(""),
-        "error-callback": () => setCaptchaToken(""),
+        "expired-callback": () => setCaptchaToken(isDevMode ? "dev-bypass" : ""),
+        "error-callback": (err: any) => {
+          console.warn("Turnstile render error on signup:", err);
+          if (isDevMode) {
+            setCaptchaToken("dev-bypass");
+          } else {
+            setCaptchaToken("");
+          }
+        },
       });
     } catch (e) {
       console.warn("Turnstile render error on signup:", e);
+      if (isDevMode) {
+        setCaptchaToken("dev-bypass");
+      }
     }
-  }, [turnstileLoaded, otpSent]);
+  }, [turnstileLoaded, otpSent, isDevMode]);
 
   useEffect(() => {
     router.prefetch("/signin");
@@ -283,7 +300,7 @@ function SignupContent() {
         clearPreselectedRole();
         triggerReferralLogging().finally(() => {
           const next = getSafeNext();
-          window.location.href = next && data.role === "USER"
+          window.location.href = next
             ? next
             : getDashboardUrl(data.role as any, "/dashboard");
         });
@@ -319,7 +336,7 @@ function SignupContent() {
         body: JSON.stringify({
           email,
           captchaCode: "",
-          captchaToken,
+          captchaToken: captchaToken || (isDevMode ? "dev-bypass" : ""),
           isSignup: activeTab === "signup",
           authFlow: activeTab,
         }),
@@ -544,7 +561,7 @@ function SignupContent() {
         clearPreselectedRole();
         triggerReferralLogging().finally(() => {
           const next = getSafeNext();
-          window.location.href = next && selectedRole === "USER"
+          window.location.href = next
             ? next
             : getDashboardUrl(selectedRole as any, "/dashboard");
         });
@@ -639,7 +656,7 @@ function SignupContent() {
   const handleGoToDashboard = () => {
     if (!activeSession) return;
     const safeNext = getSafeNext();
-    window.location.href = safeNext && activeSession.role === "USER"
+    window.location.href = safeNext
       ? safeNext
       : getDashboardUrl(activeSession.role as any, "/dashboard");
   };

@@ -34,6 +34,7 @@ test("notification CTAs resolve only to existing platform route families", () =>
         "/user?tab=inbox&chat=0xabc",
         "/merchant?tab=settings",
         "/dashboard/user",
+        "/dashboard/transaction-pin",
         "/support?ticket=ticket-1",
         "/receipt/receipt-1",
         "/pay/payment-1",

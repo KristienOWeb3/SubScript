@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   ShieldAlert,
@@ -48,7 +50,7 @@ export function AdminRiskSignalsCard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/risk/signals");
+      const res = await adminFetch("/api/admin/risk/signals");
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load risk signals");
       setData(json.signals);

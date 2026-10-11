@@ -103,8 +103,8 @@ test("vault config exposes the cancellation flag to both the user and merchant v
 
 test("dashboard surfaces Stop/Resume controls with the shimmer busy state", () => {
     const page = source("src/app/dashboard/user/page.tsx");
-    assert.match(page, /fetch\("\/api\/user\/vault\/cancel-service"/);
-    assert.match(page, /fetch\("\/api\/user\/vault\/resume-service"/);
+    assert.match(page, /(?:fetch|fetchWithTransactionPin)\("\/api\/user\/vault\/cancel-service"/);
+    assert.match(page, /(?:fetch|fetchWithTransactionPin)\("\/api\/user\/vault\/resume-service"/);
 
     /* Kristien 2026-07-18: the control is "Stop service" (not Cancel), the busy state uses
        the shimmer sweep, and the paused state reads as a pause with resume/top-up paths. */

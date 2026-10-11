@@ -1,9 +1,13 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* Merchant withdraws settled vault funds (drawn usage) from the escrow contract.
    Reads claimable via GET; server-signed merchantClaim() via POST. */
 import { after, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
+import crypto from "node:crypto";
+import { SUBSCRIPT_VAULT_ADDRESS, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { prepareSettlementReceiptJob, recordSettlementReceiptSubmission, confirmSettlementReceiptJob, dispatchSettlementReceipts } from "@/lib/payments/settlementReceiptRecovery";
 import { claimMerchantFromEmbedded, vaultReadContract } from "@/lib/vault/onchain";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 
@@ -27,7 +31,7 @@ export async function GET(request: Request) {
     }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
@@ -43,33 +47,16 @@ export async function POST(request: Request) {
            not also freeze the same person's unrelated consumer vault refunds. */
         await assertWithdrawalAllowed(wallet, "MERCHANT");
 
-        /* Read the balance BEFORE the claim: merchantClaim() sweeps the whole thing, so after it
-           lands the claimable figure is zero and the receipt would say nothing useful. A read that
-           fails must not block the payout, so it degrades to no receipt rather than an error. */
-        const claimedAmount: bigint = await vaultReadContract()
-            .merchantClaimable(wallet.toLowerCase())
-            .catch((error: unknown) => {
-                console.error("[vault-claim] pre-claim balance read failed; skipping receipt:", error);
-                return BigInt(0);
-            });
-
-        const txHash = await claimMerchantFromEmbedded(wallet);
-
-        /* claimMerchantFromEmbedded only returns once custody reports the transaction CONFIRMED,
-           so the funds have moved by the time we get here. Mailed in after() so a slow provider
-           can never hold up the response for a payout that already succeeded.
-
-           Payer is null: the counterparty is the escrow contract, not a person with an inbox. */
-        after(async () => {
-            await sendSettlementReceipts({
-                kind: "vault_claim",
-                amountUsdc: claimedAmount,
-                txHash,
-                payerAddress: null,
-                payeeAddress: wallet,
-                paymentTitle: "Vault payout to your wallet",
-            });
+        const requestId = request.headers.get("x-transaction-operation-id") || request.headers.get("x-request-id") || crypto.randomUUID();
+        const receiptJobId = await prepareSettlementReceiptJob({
+            identity: `vault-claim:${requestId}:${wallet.toLowerCase()}`,
+            kind: "vault_claim", fundingWallet: wallet, payerAddress: null, payeeAddress: wallet,
+            contractAddress: SUBSCRIPT_VAULT_ADDRESS, chainId: SUBSCRIPT_VAULT_CHAIN_ID,
         });
+        const txHash = await claimMerchantFromEmbedded(wallet,
+            id => recordSettlementReceiptSubmission(receiptJobId, id), `vault-claim:${requestId}:${wallet.toLowerCase()}`);
+        await confirmSettlementReceiptJob(receiptJobId, txHash).catch(() => null);
+        after(async () => { await dispatchSettlementReceipts().catch(() => null); });
 
         return NextResponse.json({ success: true, txHash }, { status: 200 });
     } catch (error: any) {
@@ -80,3 +67,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message || "Failed to claim" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "merchant-vault-claim", bind: financialPinContext }, handlePOST);
