@@ -47,8 +47,18 @@ jobs:
       - name: Session recovery regressions
         run: node --test --test-isolation=none src/lib/auth/__tests__/session-persistence.test.mjs
 
+      - name: Install Chromium for session regressions
+        timeout-minutes: 6
+        run: npx playwright install --with-deps chromium
+
       - name: Transaction authorization and receipt recovery regressions
         run: npx tsx --test --test-concurrency=2 "src/lib/auth/__tests__/*.test.mjs" "src/lib/payments/__tests__/*.test.mjs" "src/lib/client/*.test.mjs" "src/lib/accounts/*.test.mjs" "src/lib/__tests__/dashboard-navigation.test.mjs"
+
+      - name: PIN and recovery browser regressions
+        run: |
+          npx playwright test --config tests/transaction-pin-playwright.config.ts
+          npx playwright test --config tests/admin-recovery-playwright.config.ts
+          npx playwright test --config tests/not-found-navigation-playwright.config.ts
 
       - name: Production dependency audit
         run: |
