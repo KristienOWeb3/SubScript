@@ -9,8 +9,11 @@ import { clearSiweNonceCookie, setSessionCookie } from "@/lib/authCookies";
 import { buildWalletAuthMessage, walletAuthRequestContext } from "@/lib/walletAuthMessage";
 import { getPlatformFlags } from "@/lib/platform/flags";
 import { checkProviderRateLimit } from "@/lib/providerRateLimit";
+import { localAuthenticationConfigurationError } from "@/lib/auth/localConfiguration";
 
 export async function POST(request: Request) {
+    const configurationError = localAuthenticationConfigurationError();
+    if (configurationError) return configurationError;
     try {
         const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
         const ipLimit = checkProviderRateLimit({ provider: "siwe-verify-ip", key: requesterIp, limit: 30, windowMs: 60 * 1000 });

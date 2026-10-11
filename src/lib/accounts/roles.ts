@@ -1,4 +1,3 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { pgMaybeOne, pgQuery } from "@/lib/serverPg";
 
 export type AccountRoleName = "USER" | "ENTERPRISE";
@@ -7,20 +6,8 @@ export async function getAccountRole(address: string | null | undefined) {
     if (!address) return null;
     const normalizedAddress = address.toLowerCase();
 
-    if (supabaseAdmin) {
-        const { data, error } = await supabaseAdmin
-            .from("account_roles")
-            .select("role")
-            .eq("address", normalizedAddress)
-            .maybeSingle();
-
-        if (!error) {
-            return data?.role as AccountRoleName | undefined || null;
-        }
-
-        console.warn("Could not load account role from Supabase; falling back to pg:", error);
-    }
-
+    // Session and payment routes already use this database connection. Avoid an
+    // extra HTTP dependency (and its latency/failure mode) for every role check.
     const record = await pgMaybeOne<{ role: AccountRoleName }>(
         "select role from account_roles where address = $1 limit 1",
         [normalizedAddress]

@@ -41,7 +41,7 @@ test("payroll permit amount is recomputed from the same recipient items callers 
     assert.match(route, /const recipients = body\?\.recipients/);
     assert.match(route, /totalAmount \+= amount/);
     assert.match(route, /body\.totalAmountUsdc !== totalAmount\.toString\(\)/);
-    assert.match(route, /binding: \{ action: "payrollPermit", amount: totalAmount\.toString\(\) \}/);
+    assert.match(route, /binding:\s*\{\s*action:\s*"payrollPermit",\s*amount:\s*totalAmount\.toString\(\)/);
     assert.match(route, /custody\.address\.toLowerCase\(\) !== merchant/);
     assert.ok(
         route.indexOf("totalAmount += amount") < route.indexOf("usdc.allowance"),

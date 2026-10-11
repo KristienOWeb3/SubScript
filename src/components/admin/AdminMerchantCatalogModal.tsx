@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Building2,
@@ -99,7 +101,7 @@ export function AdminMerchantCatalogModal({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/merchants/${merchantAddress}`);
+      const res = await adminFetch(`/api/admin/merchants/${merchantAddress}`);
       if (!res.ok) throw new Error("Failed to load merchant details");
       const json = await res.json();
       setData(json);

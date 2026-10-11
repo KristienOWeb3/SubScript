@@ -246,7 +246,8 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
     assert.match(subscribeRoute, /subscribe-plan:\$\{subscriber\}:\$\{merchant\}:\$\{planId\}:generation:\$\{generation\}/);
 
     /* Vault commit (escrows funds): attempt-scoped key including wallet, merchant and amount. */
-    assert.match(vaultOnchain, /commitFromEmbedded\([^)]*idempotencyKey\?: string\)/);
+    assert.match(vaultOnchain, /commitFromEmbedded\([^)]*idempotencyKey\?: string,/);
+    assert.match(vaultOnchain, /functionName: "commit",\s*onSubmitted,/);
     assert.match(commitRoute, /x-request-id/);
     assert.match(commitRoute, /req:\$\{requestId\}:vault-commit:/);
 

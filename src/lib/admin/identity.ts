@@ -58,7 +58,7 @@ export async function listDelegatedAdmins(): Promise<
 }
 
 /** True for root admins and for wallets holding a LIVE (unexpired) admin_wallets grant. */
-export async function isAdminWallet(address: string | null | undefined): Promise<boolean> {
+export async function isAdminWallet(address: string | null | undefined, options: { throwOnDatabaseError?: boolean } = {}): Promise<boolean> {
     if (!address) return false;
     const wallet = address.trim().toLowerCase();
     if (!wallet) return false;
@@ -74,6 +74,7 @@ export async function isAdminWallet(address: string | null | undefined): Promise
     } catch (error) {
         /* Root-only degradation, deliberately. See the posture note above. */
         console.error("[admin] delegated admin lookup failed, falling back to root-only:", error);
+        if (options.throwOnDatabaseError) throw error;
         return false;
     }
 }

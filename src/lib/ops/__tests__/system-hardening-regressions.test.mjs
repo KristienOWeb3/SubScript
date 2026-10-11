@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import pgDriver from "pg";
+import { getDatabaseConnectionConfig } from "../../databaseConnection.js";
+import { SUPABASE_DB_CA_PEM } from "../../supabaseCa.js";
 
 const root = new URL("../../../../", import.meta.url);
 const source = (path) => readFile(new URL(path, root), "utf8");
@@ -12,7 +15,7 @@ test("OTP records are purpose- and wallet-bound across send, login, and email bi
         source("src/app/api/user/email/route.ts"),
     ]);
 
-    assert.match(send, /insert into otp_codes \(email, code, expires_at, purpose, wallet_address\)/);
+    assert.match(send, /insert into otp_codes \(email, code, expires_at, purpose, wallet_address/);
     assert.match(send, /"BIND_WALLET_EMAIL" : "LOGIN"/);
     assert.match(verify, /purpose = 'LOGIN'/);
     assert.match(bind, /purpose = 'BIND_WALLET_EMAIL'/);
@@ -63,7 +66,7 @@ test("login OTPs have a per-code guess budget", async () => {
     ]);
 
     assert.match(verify, /MAX_OTP_FAILED_ATTEMPTS = 5/);
-    assert.match(verify, /select code, expires_at, failed_attempts from otp_codes/);
+    assert.match(verify, /select code, expires_at, failed_attempts.*from otp_codes/);
     assert.match(verify, /for update/);
     const transaction = verify.slice(verify.indexOf('await client.query("BEGIN")'));
     assert.ok(transaction.indexOf("for update") < transaction.indexOf("safeHashMatch"));
@@ -164,10 +167,17 @@ test("Supabase TLS is verified against the supplied root CA, never disabled", as
     const embedded = caModule.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/)[0].trim();
     assert.equal(embedded, caFile.trim(), "embedded CA PEM must match config/supabase-db-ca.crt");
 
-    for (const [name, src] of [["serverPg", serverPg], ["apply-migrations", runner], ["migrateWallets", walletSweep]]) {
-        assert.match(src, /rejectUnauthorized: true, ca:/, `${name} must supply the CA with verification on`);
+    assert.match(serverPg, /new Pool\(getDatabaseConnectionConfig\(\)\)/);
+    const shared = await source("src/lib/databaseConnection.ts");
+    assert.match(shared, /rejectUnauthorized: true/);
+    assert.match(shared, /ca: supabaseDbCa\(\)/);
+    assert.match(runner, /new pg\.Client\(migrationConnectionConfig\(connectionString\)\)/);
+    assert.match(runner, /ca: supabaseDbCa\(\)/);
+    for (const [name, src] of [["shared-config", shared], ["apply-migrations", runner], ["migrateWallets", walletSweep]]) {
+        assert.match(src, /rejectUnauthorized: true/, `${name} must verify TLS`);
         assert.doesNotMatch(src, /rejectUnauthorized:\s*false/, `${name} must never disable TLS verification`);
     }
+    assert.match(walletSweep, /rejectUnauthorized: true, ca:/);
 });
 
 test("contract escape windows and payment-token liabilities fail closed", async () => {
@@ -215,10 +225,26 @@ test("public payment-link reads never leak the full row", async () => {
 
 test("raw Postgres access uses a bounded verified-TLS pool", async () => {
     const pg = await source("src/lib/serverPg.ts");
-    assert.match(pg, /new Pool/);
-    assert.match(pg, /max: 10/);
-    assert.match(pg, /rejectUnauthorized: true/);
+    assert.match(pg, /new Pool\(getDatabaseConnectionConfig\(\)\)/);
     assert.doesNotMatch(pg, /new Client/);
+    const previous = { DATABASE_URL: process.env.DATABASE_URL, PRISMA_CONNECTION_LIMIT: process.env.PRISMA_CONNECTION_LIMIT, SUPABASE_DB_SSL_CA: process.env.SUPABASE_DB_SSL_CA };
+    try {
+        process.env.DATABASE_URL = ["postgresql:", "", "postgres.testproject:fixture@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=disable"].join("/");
+        delete process.env.PRISMA_CONNECTION_LIMIT;
+        delete process.env.SUPABASE_DB_SSL_CA;
+        const config = getDatabaseConnectionConfig();
+        const actual = new pgDriver.Client(config).connectionParameters;
+        assert.equal(config.max, 10);
+        assert.equal(config.connectionTimeoutMillis, 10_000);
+        assert.equal(actual.statement_timeout, 15_000);
+        assert.equal(actual.query_timeout, 20_000);
+        assert.equal(actual.ssl.rejectUnauthorized, true);
+        assert.equal(actual.ssl.ca, SUPABASE_DB_CA_PEM);
+    } finally {
+        for (const [key, value] of Object.entries(previous)) {
+            if (value === undefined) delete process.env[key]; else process.env[key] = value;
+        }
+    }
 });
 
 test("checkout edge proxy allows /subscribe without corrupting path into /pay/subscribe", async () => {

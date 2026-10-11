@@ -6,6 +6,7 @@ import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
 import PostHogProvider from "@/components/providers/PostHogProvider";
 import PwaInstaller from "@/components/PwaInstaller";
 import OfflineIndicator from "@/components/OfflineIndicator";
+import TransactionPinLifecycle from "@/components/TransactionPinLifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -296,6 +297,7 @@ export default async function RootLayout({
                 />
                 <PostHogProvider>
                     <PrivyProviderWrapper>
+                        <TransactionPinLifecycle />
                         {children}
                         <OfflineIndicator />
                         <PwaInstaller />

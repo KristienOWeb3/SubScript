@@ -20,6 +20,80 @@ function source(path) {
 
 const commitIdSource = source("src/lib/commitId.ts");
 
+function externalAccountPinWrapper(handler) {
+    const compiled = ts.transpileModule(source("src/lib/auth/transactionPin.ts"), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const modules = {
+        'node:crypto': {},
+        './financialAuthorizationContext': {},
+        '@/lib/auth': { getVerifiedSessionToken: async () => ({ wallet: '0xchild', token: 'authenticated-external-session' }) },
+        '@/lib/serverPg': { withPgClient: async () => assert.fail('external delegate must not access PIN storage') },
+        './transactionPinCrypto': {},
+        './transactionPinEligibility': { transactionPinRequiredForWallet: async wallet => { assert.equal(wallet, '0xchild'); return false; } },
+    };
+    const context = vm.createContext({ exports: {}, Response, require: name => { assert.ok(name in modules, name); return modules[name]; } });
+    vm.runInContext(compiled, context);
+    return context.exports.withTransactionPin({ action: 'send' }, (request, routeContext) => handler(request, routeContext, context.exports));
+}
+
+test('external owner can raise or remove a delegate cap with scoped approval while ownership still applies', async () => {
+    const parent = { ...PARENT, walletAddress: '0xchild' };
+    const delegate = child({ walletAddress: '0xdelegate' });
+    const lib = loadCommitId([parent, delegate]);
+    const handler = externalAccountPinWrapper(async (request, _context, pin) => {
+        const { limit } = await request.json();
+        const allowIncrease = await pin.isTransactionLimitIncreaseAuthorized(request, '0xchild');
+        assert.equal(allowIncrease, true);
+        assert.equal(pin.isTransactionPinAuthorizedRequest(request), false);
+        await lib.updateSubUserLimit('0xchild', 'cmt_child00a', limit === null ? null : BigInt(limit), allowIncrease);
+        return Response.json({ ok: true });
+    });
+    for (const limit of ['200', null]) {
+        assert.equal((await handler(new Request('https://example.test/api/user/commit/sub-users', { method: 'PATCH', body: JSON.stringify({ limit }) }))).status, 200);
+        assert.equal(lib.store.get('cmt_child00a').spendLimitUsdc, limit === null ? null : 200n);
+    }
+    await assert.rejects(lib.updateSubUserLimit('0xstranger', 'cmt_child00a', 300n, true), /not found/i);
+});
+
+test('external delegated accounts stay PIN-exempt within the custodial parent standing allowance', async () => {
+    const lib = loadCommitId([PARENT, child()]);
+    let signed = 0;
+    const handler = externalAccountPinWrapper(async request => {
+        const authority = await lib.resolveSpendingAuthority('0xchild');
+        assert.equal(authority.delegated, true);
+        assert.equal(authority.fundingWallet, '0xparent');
+        const { amount } = await request.json();
+        const reserved = await lib.recordSubUserSpend(authority.commitId, BigInt(amount));
+        if (!reserved.allowed) return Response.json({ error: 'Allowance exceeded' }, { status: 403 });
+        signed++;
+        return Response.json({ ok: true });
+    });
+    const send = amount => handler(new Request('https://example.test/api/user/wallet/send', { method: 'POST', body: JSON.stringify({ amount }) }));
+    assert.equal((await send('40')).status, 200);
+    assert.equal((await send('61')).status, 403);
+    assert.equal(signed, 1);
+    await lib.pauseSubUser('0xparent', 'cmt_child00a');
+    assert.equal((await send('1')).status, 503); // The wrapper catches the refused authority; no signer runs.
+    await lib.resumeSubUser('0xparent', 'cmt_child00a');
+    await lib.updateSubUserLimit('0xparent', 'cmt_child00a', 40n);
+    assert.equal((await send('1')).status, 403);
+    await lib.revokeSubUser('0xparent', 'cmt_child00a');
+    assert.equal((await send('1')).status, 503);
+    assert.equal(signed, 1);
+    assert.equal(lib.store.get('cmt_child00a').spentUsdc, 40n);
+});
+
+test('PIN exemption retains send funding-account holds, limits and delegated debit before custody signing', () => {
+    const route = source('src/app/api/user/wallet/send/route.ts');
+    const signer = route.indexOf('const custody = await getWalletCustody(fundingWallet)');
+    assert.ok(signer > 0);
+    for (const check of ['resolveSpendingAuthority(normalizedSender)', 'assertWithdrawalAllowed(fundingWallet, "USER")', 'assertAccountNotHalted(fundingWallet)', 'checkAndReserveSpendingLimit(', 'recordSubUserSpend(authority.commitId, totalAmountMicros)']) {
+        const position = route.indexOf(check, route.indexOf('export async function POST'));
+        assert.ok(position > 0 && position < signer, check);
+    }
+});
+
 /* Rows are plain objects keyed by commitId. `queryRaw`/`executeRaw` receive the template strings
    tagged call, so the fake inspects the interpolated values positionally — the same order the
    statements in commitId.ts pass them. */
@@ -27,6 +101,7 @@ function loadCommitId(rows) {
     const store = new Map(rows.map((row) => [row.commitId, { ...row }]));
 
     const findRow = (where) => {
+        if (where.id) return [...store.values()].find(row=>row.id===where.id)??null;
         if (where.commitId) return store.get(where.commitId) ?? null;
         if (where.walletAddress !== undefined) {
             for (const row of store.values()) {
@@ -49,6 +124,7 @@ function loadCommitId(rows) {
 
     const prisma = {
         userCommit: {
+            findUniqueOrThrow: async ({where})=>withParent(findRow(where)),
             findUnique: async ({ where, include }) => withParent(findRow(where), include),
             findMany: async ({ where }) => [...store.values()].filter(
                 (row) => row.parentCommitId === where.parentCommitId,
@@ -88,6 +164,14 @@ function loadCommitId(rows) {
            changes again. */
         $queryRaw: async (strings, ...values) => {
             const sql = strings.join(" ");
+            if (sql.includes("SET spend_limit_usdc")) {
+                const [amount,id,commitId,parentId,minimum,repeatedMinimum,allowed]=values;
+                const row=store.get(commitId);
+                if(!row || row.id!==id || row.parentCommitId!==parentId || row.status==='REVOKED'
+                    || (amount!==null && row.spentUsdc>amount)
+                    || (!allowed && row.spendLimitUsdc!==null && (amount===null || amount>row.spendLimitUsdc)))return [];
+                row.spendLimitUsdc=amount;return [{id}];
+            }
             const commitId = values.find((value) => typeof value === "string");
             const amount = values.find((value) => typeof value === "bigint");
             if (sql.includes("UPDATE user_commits")) {
@@ -295,14 +379,14 @@ test("a cap cannot be lowered below what was already spent", async () => {
 
 test("a cap can be raised, lowered to the spent floor, or lifted entirely", async () => {
     const lib = loadCommitId([PARENT, child({ spentUsdc: 60n })]);
-    assert.equal((await lib.updateSubUserLimit("0xparent", "cmt_child00a", 500n)).spendLimitUsdc, 500n);
+    assert.equal((await lib.updateSubUserLimit("0xparent", "cmt_child00a", 500n, true)).spendLimitUsdc, 500n);
     assert.equal((await lib.updateSubUserLimit("0xparent", "cmt_child00a", 60n)).spendLimitUsdc, 60n);
-    assert.equal((await lib.updateSubUserLimit("0xparent", "cmt_child00a", null)).spendLimitUsdc, null);
+    assert.equal((await lib.updateSubUserLimit("0xparent", "cmt_child00a", null, true)).spendLimitUsdc, null);
 });
 
 test("lowering a cap immediately shrinks spendable headroom", async () => {
     const lib = loadCommitId([PARENT, child({ spendLimitUsdc: 1000n, spentUsdc: 100n })]);
-    await lib.updateSubUserLimit("0xparent", "cmt_child00a", 150n);
+    await lib.updateSubUserLimit("0xparent", "cmt_child00a", 150n, true);
     assert.equal((await lib.recordSubUserSpend("cmt_child00a", 60n)).allowed, false);
     assert.equal((await lib.recordSubUserSpend("cmt_child00a", 50n)).allowed, true);
 });
@@ -337,7 +421,7 @@ test("a sibling cannot act on a sibling", async () => {
 test("revocation is terminal — no resume, no re-cap", async () => {
     const lib = loadCommitId([PARENT, child({ status: "REVOKED" })]);
     await assert.rejects(() => lib.resumeSubUser("0xparent", "cmt_child00a"), /revoked/i);
-    await assert.rejects(() => lib.updateSubUserLimit("0xparent", "cmt_child00a", 500n), /revoked/i);
+    await assert.rejects(() => lib.updateSubUserLimit("0xparent", "cmt_child00a", 500n, true), /revoked/i);
 });
 
 test("pause is reversible and restores spending", async () => {

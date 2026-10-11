@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sanitizeInput } from "@/utils/security";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import { normalizeAccountEmail } from "@/lib/auth/accountEmail";
+import { localAuthenticationConfigurationError } from "@/lib/auth/localConfiguration";
 
 export async function POST(request: Request) {
     try {
@@ -28,6 +29,8 @@ export async function POST(request: Request) {
             if (!/^0x[a-fA-F0-9]{40}$/.test(addressLower)) {
                 return NextResponse.json({ error: "Invalid address format" }, { status: 400 });
             }
+            const configurationError = localAuthenticationConfigurationError();
+            if (configurationError) return configurationError;
             const role = await resolveAccountRoleWithBackfill(addressLower);
             if (role) {
                 return NextResponse.json({

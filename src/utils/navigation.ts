@@ -25,6 +25,62 @@ export function getSafeRelativePath(value: string | null | undefined): string {
     return value;
 }
 
+/**
+ * Returns a validated redirection target. Allows safe relative paths or
+ * explicit, trusted SubScript protocol domains (e.g. admin.subscriptonarc.com).
+ * Reject all open redirect vectors or untrusted protocols/domains.
+ */
+export function getSafeRedirectUrl(value: string | null | undefined): string {
+    if (!value) return "";
+    const safeRel = getSafeRelativePath(value);
+    if (safeRel) return safeRel;
+
+    try {
+        const parsed = new URL(value);
+        if (parsed.protocol === "https:" || (parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"))) {
+            const host = parsed.hostname.toLowerCase();
+            if (
+                host === "admin.subscriptonarc.com" ||
+                host === "dashboard.subscriptonarc.com" ||
+                host === "pay.subscriptonarc.com" ||
+                host === "docs.subscriptonarc.com" ||
+                host === "www.subscriptonarc.com" ||
+                host === "subscriptonarc.com" ||
+                host === "localhost" ||
+                host === "127.0.0.1"
+            ) {
+                return parsed.toString();
+            }
+        }
+    } catch {
+        return "";
+    }
+    return "";
+}
+
+/**
+ * Resolves the canonical URL for the admin console across environments.
+ */
+export function getAdminUrl(path: string = "/admin", currentHostname?: string): string {
+    let hostname = "";
+    let protocol = "https:";
+
+    if (typeof window !== "undefined") {
+        hostname = currentHostname || window.location.hostname;
+        protocol = window.location.protocol;
+    }
+
+    const isProduction = Boolean(hostname && (hostname.includes("subscriptonarc.com") || hostname.includes("subscriptonarc")));
+    const cleanPath = path.startsWith("/admin") ? path : `/admin${path.startsWith("/") ? path : `/${path}`}`;
+
+    if (isProduction) {
+        const subPath = cleanPath === "/admin" ? "" : cleanPath.replace(/^\/admin/, "");
+        return `${protocol}//admin.subscriptonarc.com${subPath}`;
+    }
+
+    return cleanPath;
+}
+
 export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, currentHostname?: string): string {
     let hostname = "";
     let protocol = "https:";
@@ -32,6 +88,11 @@ export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, curre
     if (typeof window !== "undefined") {
         hostname = currentHostname || window.location.hostname;
         protocol = window.location.protocol;
+    }
+
+    // Admin paths redirect canonically to the admin host or path
+    if (path === "/admin" || path.startsWith("/admin/") || path.startsWith("/admin?")) {
+        return getAdminUrl(path, currentHostname);
     }
 
     const isProduction = hostname && (hostname.includes("subscriptonarc.com") || hostname.includes("subscriptonarc"));

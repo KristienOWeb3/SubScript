@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireScope } from "@/lib/admin/guard";
 import { prisma } from "@/lib/prisma";
-import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
+import { getAdminSponsorStatus } from "@/lib/admin/sponsorStatus";
 import { runAdminQueriesSequentially } from "@/lib/admin/db";
 
 const MICRO_USDC = 1_000_000n;
@@ -234,7 +234,7 @@ export async function GET(request: Request) {
                 },
             }),
             /* 8. Gas Sponsor Treasury */
-            () => getSponsorWalletStatus().catch(() => null),
+            () => getAdminSponsorStatus(),
         ]);
 
         /* Volume & Protocol Fee Calculation (1% / 100 bps) */

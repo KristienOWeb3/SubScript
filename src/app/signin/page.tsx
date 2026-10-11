@@ -19,7 +19,7 @@ import {
   LogOut,
   RefreshCw
 } from "@/components/icons";
-import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
+import { getDashboardUrl, getSafeRelativePath, getSafeRedirectUrl } from "@/utils/navigation";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
@@ -33,7 +33,7 @@ function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialEmail = searchParams?.get("email") || "";
-  const safeNext = getSafeRelativePath(searchParams?.get("next") || searchParams?.get("redirect") || null);
+  const safeNext = getSafeRedirectUrl(searchParams?.get("next") || searchParams?.get("redirect") || null);
 
   useEffect(() => {
     router.prefetch("/signup");
@@ -81,10 +81,17 @@ function SignInContent() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const isLocalHost = typeof window !== "undefined" && (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname.startsWith("192.168.") ||
+    window.location.hostname.endsWith(".local")
+  );
+  const isDevMode = process.env.NODE_ENV !== "production" || isLocalHost;
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
-  const captchaRequired = isTurnstileConfigured && !captchaToken;
+  const captchaRequired = isTurnstileConfigured && !captchaToken && !isDevMode;
 
-  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken);
+  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken) || isDevMode;
   const isAuthReady = platformFlagsLoaded && isCloudflareReady;
 
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -114,13 +121,23 @@ function SignInContent() {
         theme: "light",
         size: "flexible",
         callback: (token: string) => setCaptchaToken(token),
-        "expired-callback": () => setCaptchaToken(""),
-        "error-callback": () => setCaptchaToken(""),
+        "expired-callback": () => setCaptchaToken(isDevMode ? "dev-bypass" : ""),
+        "error-callback": (err: any) => {
+          console.warn("Turnstile render note on signin:", err);
+          if (isDevMode) {
+            setCaptchaToken("dev-bypass");
+          } else {
+            setCaptchaToken("");
+          }
+        },
       });
     } catch (e) {
       console.warn("Turnstile render note:", e);
+      if (isDevMode) {
+        setCaptchaToken("dev-bypass");
+      }
     }
-  }, [turnstileLoaded, otpSent]);
+  }, [turnstileLoaded, otpSent, isDevMode]);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -145,7 +162,7 @@ function SignInContent() {
 
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
     const role = (data.role || "USER") as "USER" | "ENTERPRISE";
-    if (safeNext && role === "USER") {
+    if (safeNext) {
       window.location.href = safeNext;
       return;
     }
@@ -170,7 +187,7 @@ function SignInContent() {
           email,
           authFlow: activeTab,
           isSignup: activeTab === "signup",
-          captchaToken,
+          captchaToken: captchaToken || (isDevMode ? "dev-bypass" : ""),
         }),
       });
       const data = await res.json();
@@ -278,6 +295,9 @@ function SignInContent() {
         body: JSON.stringify({ address }),
       });
       const checkData = await checkRes.json();
+      if (!checkRes.ok) {
+        throw new Error(checkData.error || "Wallet account verification is temporarily unavailable.");
+      }
       if (activeTab === "signin" && !checkData.exists) {
         setWalletMissingAccount(true);
         return;
@@ -390,7 +410,7 @@ function SignInContent() {
 
   const handleGoToDashboard = () => {
     if (!activeSession) return;
-    window.location.href = safeNext && activeSession.role === "USER"
+    window.location.href = safeNext
       ? safeNext
       : getDashboardUrl(activeSession.role as any, "/dashboard");
   };
@@ -429,7 +449,7 @@ function SignInContent() {
               onClick={handleGoToDashboard}
               className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] text-white rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
             >
-              Go to Dashboard
+              {safeNext?.includes("admin") ? "Go to Admin Console" : "Go to Dashboard"}
               <ArrowRight className="w-4 h-4" />
             </button>
 

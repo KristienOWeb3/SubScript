@@ -65,6 +65,30 @@ function supabaseDbCa() {
     if (process.env.SUPABASE_DB_SSL_CA) return process.env.SUPABASE_DB_SSL_CA;
     return readFileSync(path.join(REPO_ROOT, "config", "supabase-db-ca.crt"), "utf8");
 }
+
+// This script runs in plain Node during deployment, before application TS is bundled.
+function migrationConnectionConfig(connectionString) {
+    let parsed;
+    try { parsed = new URL(connectionString); }
+    catch { throw new Error("Database connection URL is invalid"); }
+    if (!["postgres:", "postgresql:"].includes(parsed.protocol)) throw new Error("Unsupported database connection protocol");
+    for (const key of ["host", "hostaddr", "user", "username", "password", "port", "database", "dbname"]) {
+        if (parsed.searchParams.has(key)) throw new Error("Database connection authority must be configured in the URL authority, not query parameters");
+    }
+    const host = parsed.hostname.toLowerCase();
+    const isLocal = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(host);
+    const isSupabase = /^db\.[a-z0-9]+\.supabase\.co$/i.test(host) || /(^|\.)pooler\.supabase\.com$/i.test(host);
+    if (!isLocal) {
+        for (const key of ["ssl", "sslmode", "sslrootcert", "sslcert", "sslkey", "uselibpqcompat"]) parsed.searchParams.delete(key);
+    }
+    for (const key of ["connect_timeout", "connectionTimeoutMillis", "statement_timeout", "query_timeout"]) parsed.searchParams.delete(key);
+    return {
+        connectionString: parsed.toString(),
+        connectionTimeoutMillis: 10_000,
+        statement_timeout: 120_000,
+        ...(isLocal ? {} : { ssl: { rejectUnauthorized: true, ...(isSupabase ? { ca: supabaseDbCa() } : {}) } }),
+    };
+}
 const MIGRATION_DIRS = ["prisma/migrations", "supabase/migrations"];
 
 /* Historical files present when the ledger was introduced. Kept as documentation only; never
@@ -182,12 +206,7 @@ async function main() {
         return;
     }
 
-    const isLocal = /localhost|127\.0\.0\.1/.test(connectionString);
-    const client = new pg.Client({
-        connectionString,
-        ...(isLocal ? {} : { ssl: { rejectUnauthorized: true, ca: supabaseDbCa() } }),
-        statement_timeout: 120_000,
-    });
+    const client = new pg.Client(migrationConnectionConfig(connectionString));
     await client.connect();
 
     try {

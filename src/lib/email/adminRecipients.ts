@@ -34,15 +34,15 @@ export async function listAdminNotificationEmails(): Promise<string[]> {
     try {
         const delegated = await prisma.adminWallet.findMany({ select: { wallet: true } });
         delegated.forEach((row) => wallets.add(row.wallet.toLowerCase()));
-    } catch (error) {
-        console.error("[admin-recipients] delegated admin lookup failed, root admins only:", error);
+    } catch {
+        console.error("[admin-recipients] delegated admin lookup failed, root admins only:", "EMAIL_ADMIN_LOOKUP_FAILED");
     }
 
     if (wallets.size === 0) return [];
 
     try {
         const identities = await prisma.authIdentity.findMany({
-            where: { walletAddress: { in: Array.from(wallets) } },
+            where: { walletAddress: { in: Array.from(wallets) }, disabledAt: null },
             select: { currentEmail: true },
         });
         const emails = new Set<string>();
@@ -50,8 +50,8 @@ export async function listAdminNotificationEmails(): Promise<string[]> {
             if (identity.currentEmail) emails.add(identity.currentEmail.toLowerCase());
         });
         return Array.from(emails);
-    } catch (error) {
-        console.error("[admin-recipients] admin email lookup failed:", error);
+    } catch {
+        console.error("[admin-recipients] admin email lookup failed:", "EMAIL_ADMIN_LOOKUP_FAILED");
         return [];
     }
 }

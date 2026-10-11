@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { fetchArcUsdcDeposits } from "@/lib/deposits/arcDeposits";
 import { pgQuery } from "@/lib/serverPg";
@@ -101,55 +101,25 @@ export async function GET(request: Request) {
 
         const allDeposits = [...cctpItems, ...uniqueDirect].sort((a, b) => b.timestamp - a.timestamp);
 
-        // Dispatch in-app notification and email for newly discovered direct deposits
-        const recentDirectIncoming = uniqueDirect.filter(
-            (d) => d.incoming && d.timestamp > Date.now() - 3 * 24 * 60 * 60 * 1000
-        );
-        if (recentDirectIncoming.length > 0) {
-            void (async () => {
-                try {
-                    const { prisma } = await import("@/lib/prisma");
-                    for (const d of recentDirectIncoming) {
-                        const shortRef = d.txHash ? d.txHash.slice(0, 12) : "";
-                        if (!shortRef) continue;
-
-                        const existingNotice = await prisma.accountNotification.findFirst({
-                            where: {
-                                recipientAddress: normalizedWallet,
-                                body: { contains: shortRef },
-                            },
-                            select: { id: true },
-                        });
-
-                        if (!existingNotice) {
-                            await prisma.accountNotification.create({
-                                data: {
-                                    recipientAddress: normalizedWallet,
-                                    audience: "USER",
-                                    title: "USDC deposit received",
-                                    body: `Received ${d.amountFormatted} USDC on Arc Network (ref: ${shortRef}).`,
-                                    source: "BRIDGE",
-                                },
-                            }).catch(() => undefined);
-
-                            const { resolveRecipient, safelySendEmail } = await import("@/lib/email/core");
-                            const email = await resolveRecipient(normalizedWallet, "transactional");
-                            if (email) {
-                                const { sendDepositReceivedEmail } = await import("@/lib/email/transactional");
-                                await safelySendEmail("direct deposit email", () => sendDepositReceivedEmail({
-                                    recipientEmail: email,
-                                    amountUsdc: d.amountFormatted,
-                                    originChainName: "Arc Network",
-                                    txHash: d.txHash,
-                                }));
-                            }
-                        }
-                    }
-                } catch (notifyErr) {
-                    console.warn("[api/user/deposits] direct deposit notify error:", notifyErr);
-                }
-            })();
-        }
+        // Persist receipt intent before returning; scheduled recovery scans independently.
+        const { enqueueDirectDepositEmails } = await import("@/lib/email/recovery");
+        await enqueueDirectDepositEmails(normalizedWallet, uniqueDirect);
+        after(async () => {
+            const { processEmailOutbox } = await import("@/lib/email/outbox");
+            await processEmailOutbox(1).catch(() => undefined);
+            const { prisma } = await import("@/lib/prisma");
+            for (const deposit of uniqueDirect.filter(d => d.incoming && d.timestamp > Date.now() - 3 * 24 * 3600_000)) {
+                const shortRef = deposit.txHash?.slice(0, 12);
+                if (!shortRef) continue;
+                const notice = await prisma.accountNotification.findFirst({
+                    where: { recipientAddress: normalizedWallet, body: { contains: shortRef } }, select: { id: true },
+                });
+                if (!notice) await prisma.accountNotification.create({ data: {
+                    recipientAddress: normalizedWallet, audience: "USER", title: "USDC deposit received",
+                    body: `Received ${deposit.amountFormatted} USDC on Arc Network (ref: ${shortRef}).`, source: "BRIDGE",
+                } }).catch(() => undefined);
+            }
+        });
 
         return NextResponse.json({
             success: true,

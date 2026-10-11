@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { withPgClient } from "@/lib/serverPg";
+import { authorizationDigest } from "./transactionPinCrypto";
 import { decodeJwt, jwtVerify, SignJWT } from "jose";
 import { getVerifiedSessionToken, type VerifiedSessionToken } from "@/lib/auth";
 
@@ -12,6 +14,7 @@ export type FinancialStepUpBinding = {
     recipient?: string;
     amount?: string;
     resourceId?: string;
+    contextDigest?: string;
 };
 
 export type FinancialStepUpAuthorization =
@@ -50,6 +53,8 @@ export function normalizeFinancialStepUpBinding(input: unknown): FinancialStepUp
     const recipient = optionalBoundString(value.recipient, 120);
     const amount = optionalBoundString(value.amount, 100);
     const resourceId = optionalBoundString(value.resourceId, 160);
+    const contextDigest = optionalBoundString(value.contextDigest, 64);
+    if (contextDigest === null || (contextDigest && !/^[a-f0-9]{64}$/i.test(contextDigest))) return null;
     if (recipient === null || amount === null || resourceId === null) return null;
     if (amount !== undefined && !/^\d+$/.test(amount)) return null;
 
@@ -58,6 +63,7 @@ export function normalizeFinancialStepUpBinding(input: unknown): FinancialStepUp
         ...(recipient !== undefined ? { recipient: recipient.toLowerCase() } : {}),
         ...(amount !== undefined ? { amount: BigInt(amount).toString() } : {}),
         ...(resourceId !== undefined ? { resourceId } : {}),
+        ...(contextDigest !== undefined ? { contextDigest: contextDigest.toLowerCase() } : {}),
     };
 }
 
@@ -67,7 +73,8 @@ function bindingsMatch(actual: unknown, expected: FinancialStepUpBinding) {
         && normalized.action === expected.action
         && normalized.recipient === expected.recipient
         && normalized.amount === expected.amount
-        && normalized.resourceId === expected.resourceId;
+        && normalized.resourceId === expected.resourceId
+        && normalized.contextDigest === expected.contextDigest;
 }
 
 export async function createFinancialStepUpToken(
@@ -125,14 +132,19 @@ export async function authorizeFinancialStepUp(input: {
                 && payload.session === sessionDigest(session.token)
                 && bindingsMatch(payload.binding, binding)
             ) {
+                if (typeof payload.jti !== "string" || !/^[0-9a-f-]{36}$/i.test(payload.jti) || typeof payload.exp !== "number") throw new Error("Invalid authorization nonce");
+                const consumed = await withPgClient<any>(client => client.query(
+                    "insert into financial_step_up_consumptions(jti,wallet_address,expires_at) values($1,$2,to_timestamp($3)) on conflict(jti) do nothing returning jti",
+                    [payload.jti,wallet,payload.exp]));
+                if (consumed.rows.length !== 1) return {ok:false,status:403,error:"This financial authorization has already been used."};
                 return { ok: true, method: "otp", session };
             }
         } catch {
-            // A malformed, expired, or differently scoped token is simply not authorization.
+            return {ok:false,status:403,error:"Financial authorization is invalid or unavailable."};
         }
     }
 
-    if (input.allowRecentAuth !== false) {
+    if (input.allowRecentAuth === true && !binding.action.startsWith("transaction-pin:")) {
         try {
             const payload = decodeJwt(session.token);
             const authenticatedAt = payload.authenticatedAt;
@@ -151,4 +163,11 @@ export async function authorizeFinancialStepUp(input: {
         status: 403,
         error: "Fresh verification is required for this financial operation.",
     };
+}
+
+/** Exact canonical action digest persisted when OTP is requested. */
+export function financialStepUpBindingDigest(binding: unknown) {
+    const normalized = normalizeFinancialStepUpBinding(binding);
+    if (!normalized) throw new Error("Invalid financial authorization binding");
+    return authorizationDigest(normalized);
 }

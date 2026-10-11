@@ -1,5 +1,7 @@
 # Email audit: what's wired up, and everywhere email should be sent
 
+> Historical audit. Current mainnet evidence, the recipient-lookup correction, delivery gaps and verification results are in [the 2026-10-09 email/PIN audit](mainnet/EMAIL_AND_TRANSACTION_PIN_AUDIT.md). Template counts, callers and rate limits below describe an earlier version.
+
 Audit of `src/lib/email/transactional.ts` (the entire email layer — 448 lines, one file) against every lifecycle moment in the product.
 
 **Provider:** Resend. **Templates:** 8. **Call sites:** 7. **Lifecycle events the system already defines:** 58.

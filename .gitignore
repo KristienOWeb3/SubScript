@@ -63,6 +63,7 @@ cache/
 .omx/
 scratch/
 test-results/
+supabase/.temp/
 /subscript/
 snapshot_*.json
 .env*

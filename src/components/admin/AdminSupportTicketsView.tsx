@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
     MessageSquare,
@@ -59,7 +61,7 @@ export function AdminSupportTicketsView({
     const loadTicketMessages = useCallback(async (ticketId: string, isSilent = false) => {
         if (!isSilent) setLoadingMessages(true);
         try {
-            const res = await fetch(`/api/support/tickets/${ticketId}/messages`);
+            const res = await adminFetch(`/api/support/tickets/${ticketId}/messages`);
             if (!res.ok) throw new Error("Failed to load conversation");
             const data = await res.json();
             setSelectedTicket(data.ticket);
@@ -84,7 +86,7 @@ export function AdminSupportTicketsView({
         if (showLoading) setLoading(true);
         try {
             const url = statusFilter === "ALL" ? "/api/support/tickets" : `/api/support/tickets?status=${statusFilter}`;
-            const res = await fetch(url);
+            const res = await adminFetch(url);
             if (!res.ok) throw new Error("Failed to load support tickets");
             const data = await res.json();
             const list: SupportTicket[] = data.tickets || [];

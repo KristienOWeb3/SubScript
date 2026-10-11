@@ -38,7 +38,10 @@ import {
   Trophy,
   X,
   Menu,
+  LogOut,
 } from "@/components/icons";
+import { getDashboardUrl } from "@/utils/navigation";
+import { adminFetch } from "@/lib/admin/clientFetch";
 import {
   SkeletonCard,
   SkeletonRows,
@@ -448,11 +451,29 @@ export default function AdminDashboardPage() {
   const [directKycCountry, setDirectKycCountry] = useState("US");
   const [directKycBusy, setDirectKycBusy] = useState(false);
 
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (e) {
+      console.error("Logout failed:", e);
+    }
+    window.location.href = "/signin";
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const searchTab = new URLSearchParams(window.location.search).get("tab") as TabId;
+      if (searchTab && TABS.some((t) => t.id === searchTab)) {
+        setTab(searchTab);
+      }
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/overview");
+      const res = await adminFetch("/api/admin/overview");
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load admin data");
       setOverviewData(json);
@@ -473,7 +494,7 @@ export default function AdminDashboardPage() {
   const loadAdmins = useCallback(async () => {
     setAdminsLoading(true);
     try {
-      const res = await fetch("/api/admin/admins");
+      const res = await adminFetch("/api/admin/admins");
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load admins");
       setAdmins([...(json.root || []), ...(json.delegated || [])]);
@@ -490,7 +511,7 @@ export default function AdminDashboardPage() {
   const loadAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
     try {
-      const res = await fetch("/api/admin/analytics");
+      const res = await adminFetch("/api/admin/analytics");
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load analytics");
       setAnalytics(json);
@@ -504,7 +525,7 @@ export default function AdminDashboardPage() {
   const loadFlags = useCallback(async () => {
     setFlagsLoading(true);
     try {
-      const res = await fetch("/api/admin/flags");
+      const res = await adminFetch("/api/admin/flags");
       const json = await res.json();
       if (!res.ok)
         throw new Error(json.error || "Failed to load platform flags");
@@ -520,7 +541,7 @@ export default function AdminDashboardPage() {
   const loadMerchantAccess = useCallback(async () => {
     setMaLoading(true);
     try {
-      const res = await fetch(
+      const res = await adminFetch(
         `/api/admin/merchant-access?status=${encodeURIComponent(maStatusFilter)}`
       );
       const json = await res.json();
@@ -544,7 +565,7 @@ export default function AdminDashboardPage() {
         limit: "100",
       });
       if (kycSearch.trim()) params.set("search", kycSearch.trim());
-      const res = await fetch(`/api/admin/kyc/review?${params.toString()}`);
+      const res = await adminFetch(`/api/admin/kyc/review?${params.toString()}`);
       const json = await res.json();
       if (!res.ok)
         throw new Error(json.error || "Failed to load verifications");
@@ -1264,7 +1285,18 @@ export default function AdminDashboardPage() {
     adminNavGroups.find((g) => g.items.some((item) => item.id === tab)) ||
     adminNavGroups[0];
 
-  const adminSidebarFooterItems: DashboardSidebarItem[] = [];
+  const adminSidebarFooterItems: DashboardSidebarItem[] = [
+    {
+      id: "to-dashboard",
+      label: "User Dashboard",
+      icon: Home,
+    },
+    {
+      id: "logout",
+      label: "Sign Out",
+      icon: LogOut,
+    },
+  ];
 
   const currentAdminEntry = admins.find(
     (a) => viewerWallet && a.wallet.toLowerCase() === viewerWallet.toLowerCase()
@@ -1297,7 +1329,17 @@ export default function AdminDashboardPage() {
           items={adminSidebarItems}
           footerItems={adminSidebarFooterItems}
           activeId={tab}
-          onSelect={(id) => setTab(id as TabId)}
+          onSelect={(id) => {
+            if (id === "to-dashboard") {
+              window.location.href = getDashboardUrl("USER", "/dashboard");
+              return;
+            }
+            if (id === "logout") {
+              handleLogout();
+              return;
+            }
+            setTab(id as TabId);
+          }}
           identity={{
             label: viewerAdminHandle,
             avatarUrl: null,
@@ -1479,14 +1521,22 @@ export default function AdminDashboardPage() {
                       </div>
 
                       {/* Footer Action */}
-                      <div className="p-3.5 border-t border-white/10 bg-black/20 shrink-0 flex items-center justify-between">
-                        <Link
-                          href="/dashboard/user"
+                      <div className="p-3.5 border-t border-white/10 bg-black/20 shrink-0 flex items-center justify-between gap-2">
+                        <a
+                          href={getDashboardUrl("USER", "/dashboard")}
                           onClick={() => setMobileNavOpen(false)}
                           className="flex items-center gap-1.5 text-xs font-bold text-white/95 hover:text-white transition"
                         >
                           <span>← User Dashboard</span>
-                        </Link>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="flex items-center gap-1.5 text-xs font-bold text-red-300 hover:text-red-200 transition"
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          <span>Sign Out</span>
+                        </button>
                         <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
                           Mainnet
                         </span>
@@ -1497,7 +1547,7 @@ export default function AdminDashboardPage() {
               </AnimatePresence>
 
         {error && (
-          <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-xs font-medium text-red-300">
+          <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs font-medium text-red-800">
             {error}
           </div>
         )}
@@ -1509,7 +1559,7 @@ export default function AdminDashboardPage() {
         )}
 
         {tab === "overview" && (
-          loading ? <AdminOverviewSkeleton /> : (
+          loading ? <AdminOverviewSkeleton /> : overviewData ? (
             <AdminOverviewDashboard
               overviewData={overviewData}
               analyticsData={analytics}
@@ -1520,7 +1570,7 @@ export default function AdminDashboardPage() {
               onToggleVerification={toggleVerification}
               verifyBusy={verifyBusy}
             />
-          )
+          ) : null
         )}
 
         {/* No viewerIsRoot guard on the render: the component asks the API, and the API answers 403

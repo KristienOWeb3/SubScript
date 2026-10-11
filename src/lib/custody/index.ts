@@ -1,3 +1,4 @@
+import { assertFinancialAuthorizationCurrent } from "@/lib/auth/financialAuthorizationContext";
 import { randomUUID, createHash } from "node:crypto";
 import { ethers } from "ethers";
 import { pgMaybeOne } from "@/lib/serverPg";
@@ -44,6 +45,8 @@ export interface ContractCall {
      * (returns circleTxId and submissionDurationMs).
      */
     waitForConfirmation?: boolean;
+    /** Persist the owned provider identity before bounded confirmation polling begins. */
+    onSubmitted?: (circleTxId: string) => Promise<void>;
 }
 
 /**
@@ -195,6 +198,9 @@ class CircleCustody implements WalletCustody {
         const submissionStart = performance.now();
         let created;
         for (let attempt = 0; ; attempt++) {
+            // A queue rejection has not accepted this transaction. Terms may change
+            // during backoff, so each submission must still match the approval.
+            await assertFinancialAuthorizationCurrent();
             try {
                 created = await client.createContractExecutionTransaction(createRequest);
                 break;
@@ -216,6 +222,13 @@ class CircleCustody implements WalletCustody {
         const txId = created.data?.id;
         if (!txId) {
             throw new Error("Circle contract execution returned no transaction id.");
+        }
+
+        // Acceptance is irreversible. A receipt persistence outage must never look like
+        // a rejected transfer or trigger a fresh financial submission.
+        if (call.onSubmitted) {
+            try { await call.onSubmitted(txId); }
+            catch { console.error("[CircleCustody] Accepted transaction requires receipt reconciliation", txId); }
         }
 
         if (call.waitForConfirmation === false) {
@@ -267,6 +280,7 @@ class CircleCustody implements WalletCustody {
         types: Record<string, Array<ethers.TypedDataField>>,
         value: Record<string, unknown>,
     ): Promise<string> {
+        await assertFinancialAuthorizationCurrent();
         const client = getDevWalletsClient();
         /* Circle expects the full eth_signTypedData_v4 payload (EIP712Domain included);
            TypedDataEncoder.getPayload builds exactly that from the ethers-style inputs. */
@@ -284,6 +298,7 @@ class CircleCustody implements WalletCustody {
 }
 
 interface EmbeddedWalletRow {
+    provider: string | null;
     circle_wallet_id: string | null;
 }
 
@@ -294,11 +309,11 @@ interface EmbeddedWalletRow {
 export async function getWalletCustody(walletAddress: string): Promise<WalletCustody> {
     const address = walletAddress.toLowerCase();
     const record = await pgMaybeOne<EmbeddedWalletRow>(
-        "select circle_wallet_id from user_embedded_wallets where wallet_address = $1 limit 1",
+        "select circle_wallet_id, provider from user_embedded_wallets where wallet_address = $1 limit 1",
         [address]
     );
 
-    if (record?.circle_wallet_id) {
+    if (record?.provider !== "external_wallet" && record?.circle_wallet_id) {
         return new CircleCustody(address, record.circle_wallet_id);
     }
     throw new Error("This wallet has no server-held key. Connect a browser wallet to sign transactions.");

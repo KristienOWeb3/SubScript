@@ -36,3 +36,19 @@ test("the batch-routing Single Send affordance opens the single-send modal", () 
     /use\s*<button[\s\S]{0,500}onClick=\{\(\)\s*=>\s*setSendSingleModalOpen\(true\)\}[\s\S]{0,500}>Single Send<\/button>/,
   );
 });
+
+test("mobile send and deposit install their entrance before paint without blurring the whole sheet", () => {
+  for (const file of ["src/components/DepositModal.tsx", "src/components/SendSingleModal.tsx"]) {
+    const entrance = source(file).split("/* ── BAR-TO-SHEET MORPH: Open Animation ── */")[1]
+      .split("/* ── BAR-TO-SHEET MORPH: Close Animation ── */")[0];
+
+    assert.match(entrance, /useLayoutEffect\(\(\) =>/, `${file} must set up its mask before paint`);
+    const sheetAnimations = [...entrance.matchAll(/animate(?:Deposit|Flow)\(sh, \[([\s\S]*?)\],/g)];
+    assert.equal(sheetAnimations.length, 2, `${file} must cover both capsule and fallback entrances`);
+    for (const [, frames] of sheetAnimations) {
+      assert.doesNotMatch(frames, /filter:/, `${file} must avoid filtering the entire sheet on entrance`);
+    }
+    assert.match(entrance, /clipPath: cp/);
+    assert.match(entrance, /clipPath: FULL/);
+  }
+});

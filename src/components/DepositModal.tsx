@@ -543,7 +543,8 @@ export default function DepositModal({
     };
 
     /* ── BAR-TO-SHEET MORPH: Open Animation ── */
-    useEffect(() => {
+    // Install the opening mask before paint, including the first mount.
+    useLayoutEffect(() => {
         if (!isOpen || !effectiveIsMobile) return;
         closingRef.current = false;
         swappingRef.current = false;
@@ -600,9 +601,8 @@ export default function DepositModal({
 
             // Morph capsule into sheet (480ms)
             animateDeposit(sh, [
-                { clipPath: cp, filter: "blur(0px)" },
-                { filter: "blur(2.5px)", offset: 0.35 },
-                { clipPath: FULL, filter: "blur(0px)" },
+                { clipPath: cp },
+                { clipPath: FULL },
             ], { duration: 480, easing: EASE_EXP, fill: "forwards" });
 
             if (tint) animateDeposit(tint, { opacity: [1, 0] }, { duration: 340, easing: "ease-out", fill: "forwards" });
@@ -625,8 +625,8 @@ export default function DepositModal({
         } else {
             sh.style.clipPath = FULL;
             animateDeposit(sh, [
-                { transform: "translateY(100%)", filter: "blur(8px)" },
-                { transform: "translateY(0%)", filter: "blur(0px)" },
+                { transform: "translateY(100%)" },
+                { transform: "translateY(0%)" },
             ], { duration: 420, easing: EASE, fill: "forwards" });
             if (sc) animateDeposit(sc, { opacity: [0, 1] }, { duration: 300, fill: "forwards" });
         }

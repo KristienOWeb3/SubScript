@@ -1,8 +1,10 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { rotateRootCommitForWallet } from "@/lib/commitId";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -26,3 +28,5 @@ export async function POST(request: Request) {
         );
     }
 }
+
+export const POST = withTransactionPin({ action: "account-commit-rotate", bind: financialPinContext }, handlePOST);

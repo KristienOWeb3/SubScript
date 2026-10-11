@@ -105,7 +105,7 @@ function pageCallback(path, variable, hook, contains = "") {
     const tree = ts.createSourceFile("page.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     let callback;
     function visit(node) {
-        if (variable && ts.isVariableDeclaration(node) && node.name.getText(tree) === variable) callback = node.initializer.arguments[0].getText(tree);
+        if (variable && ts.isVariableDeclaration(node) && node.name.getText(tree) === variable) callback = (ts.isArrowFunction(node.initializer) ? node.initializer : node.initializer.arguments[0]).getText(tree);
         if (hook && ts.isCallExpression(node) && node.expression.getText(tree) === hook && !callback && node.arguments[0].getText(tree).includes(contains)) callback = node.arguments[0].getText(tree);
         ts.forEachChild(node, visit);
     }
@@ -198,15 +198,53 @@ test("each external write checks the current connected wallet, including after a
     const context = vm.createContext({
         userWallet: wallet, walletConfig: {},
         getAccount: () => ({ address: connectedWallet }),
+        ensureTransactionPinSetup: async () => {},
         writeConnectedWalletContract: async value => { calls++; return value; },
     });
     const write = vm.runInContext(pageCallback("src/app/dashboard/user/page.tsx", "writeContractAsync"), context);
-    assert.equal(await write("first write"), "first write");
+    const operation = { functionName: "transfer", args: [wallet, 1n] };
+    assert.equal(await write(operation), operation);
     connectedWallet = `0x${"b".repeat(40)}`;
-    await assert.rejects(write("second write"), /Connect the wallet/);
+    await assert.rejects(write(operation), /Connect the wallet/);
     connectedWallet = undefined;
-    await assert.rejects(write("third write"), /Connect the wallet/);
+    await assert.rejects(write(operation), /Connect the wallet/);
     assert.equal(calls, 1);
+});
+
+test("an account switch during PIN preflight cannot submit from the new wallet", async () => {
+    let connectedWallet = wallet;
+    let calls = 0;
+    const context = vm.createContext({
+        userWallet: wallet, walletConfig: {},
+        getAccount: () => ({ address: connectedWallet }),
+        ensureTransactionPinSetup: async () => { connectedWallet = `0x${"b".repeat(40)}`; },
+        writeConnectedWalletContract: async () => { calls++; },
+    });
+    const write = vm.runInContext(pageCallback("src/app/dashboard/user/page.tsx", "writeContractAsync"), context);
+    await assert.rejects(write({ functionName: "transfer", args: [wallet, 1n] }), /Connect the wallet/);
+    assert.equal(calls, 0);
+});
+
+for (const phase of ["initial", "preflight", "chain switch", "matching"]) test(`merchant signing checks the actual account after ${phase}`, async () => {
+    let connectedWallet = phase === "initial" ? `0x${"b".repeat(40)}` : wallet;
+    const submitted = [];
+    const context = vm.createContext({
+        sessionWallet: wallet, embeddedWallet: null, walletConfig: {},
+        getAccount: () => ({ address: connectedWallet }), chainId: 1, activeArcChain: { id: 5042 },
+        ensureTransactionPinSetup: async () => { if (phase === "preflight") connectedWallet = `0x${"b".repeat(40)}`; },
+        switchChainAsync: async () => { if (phase === "chain switch") connectedWallet = undefined; },
+        switchChain: undefined,
+        writeContractAsync: async value => { submitted.push(value); return "hash"; },
+    });
+    const write = vm.runInContext(pageCallback("src/app/dashboard/page.tsx", "executeContractWrite"), context);
+    const operation = { address: wallet, abi: [], functionName: "transfer", args: [wallet, 1n] };
+    if (phase === "matching") {
+        assert.equal(await write(operation), "hash");
+        assert.equal(submitted[0].account, wallet);
+    } else {
+        await assert.rejects(write(operation), /Connect the wallet/);
+        assert.equal(submitted.length, 0);
+    }
 });
 
 test("merchant and payroll ignore stale verification after reconnecting the matching wallet", async () => {

@@ -1,5 +1,7 @@
 /* Tier 1 analytics and automations dashboard component. */
 
+import { fetchWithTransactionPin } from "@/lib/client/transactionPin";
+
 import { useMemo, useState, useEffect } from "react";
 import { BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock, Shield } from "@/components/icons";
 import Link from "next/link";
@@ -240,7 +242,7 @@ export default function AnalyticsDashboard({
         setIsClaimingVault(true);
         setVaultOpsStatus(null);
         try {
-            const res = await fetch("/api/merchant/vault/claim", { method: "POST" });
+            const res = await fetchWithTransactionPin("/api/merchant/vault/claim", { method: "POST" });
             const data = await res.json().catch(() => null);
             if (res.ok && data?.success) {
                 setVaultOpsStatus({
@@ -253,6 +255,7 @@ export default function AnalyticsDashboard({
                 setVaultOpsStatus({ text: data?.error || "Failed to claim vault funds.", type: "error" });
             }
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             setVaultOpsStatus({ text: err.message || "Failed to claim vault funds.", type: "error" });
         } finally {
             setIsClaimingVault(false);
@@ -1192,7 +1195,7 @@ function CustomerVaultRow({
         setStatus(null);
 
         try {
-            const res = await fetch("/api/user/vault/report-usage", {
+            const res = await fetchWithTransactionPin("/api/user/vault/report-usage", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -1217,6 +1220,7 @@ function CustomerVaultRow({
                 setStatus({ text: data.error || "Usage report failed.", type: "error" });
             }
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             setStatus({ text: err.message || "Failed to report usage.", type: "error" });
         } finally {
             setLoading(false);

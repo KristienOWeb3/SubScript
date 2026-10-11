@@ -4,6 +4,8 @@ const { execSync } = require('child_process');
 const keysToPush = [
   'JWT_SECRET', 
   'OTP_SECRET', 
+  'ADMIN_WALLET_ADDRESSES',
+  'ADMIN_WALLET_ADDRESS',
   'CIRCLE_API_KEY', 
   'CIRCLE_ENTITY_SECRET', 
   'KEEPER_PRIVATE_KEY', 
@@ -13,10 +15,16 @@ const keysToPush = [
   'KEEPER_SECRET',
   'DATABASE_URL', 
   'SUPABASE_SERVICE_ROLE_KEY', 
-  'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+  'RESEND_API_KEY',
+  'EMAIL_FROM',
+  'EMAIL_FROM_RECEIPTS',
+  'UPSTASH_REDIS_REST_URL',
+  'UPSTASH_REDIS_REST_TOKEN'
 ];
 
-const envContent = fs.readFileSync('.env', 'utf8');
+const envPath = fs.existsSync('.env') ? '.env' : (fs.existsSync('.env.local') ? '.env.local' : '');
+const envContent = envPath ? fs.readFileSync(envPath, 'utf8') : '';
 const envLines = envContent.split('\n');
 const envs = {};
 for (const line of envLines) {

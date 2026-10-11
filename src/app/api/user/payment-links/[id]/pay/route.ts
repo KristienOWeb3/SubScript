@@ -1,3 +1,6 @@
+import { assertAuthorizedFinancialRecord } from "@/lib/auth/financialAuthorizationContext";
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* On-page checkout for logged-in embedded (custody) wallet users. Signs the SAME on-chain payment
    a browser wallet would make on /pay/[id], server-side, so Google/email users can pay a merchant
    link (or peer request) without being bounced through DMs. Returns the confirmed tx hash; the
@@ -30,7 +33,7 @@ type RouteContext = {
     params: Promise<{ id: string }>;
 };
 
-export async function POST(request: Request, { params }: RouteContext) {
+async function handlePOST(request: Request, { params }: RouteContext) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
@@ -74,6 +77,13 @@ export async function POST(request: Request, { params }: RouteContext) {
         }
 
         const link = await prisma.paymentLink.findUnique({ where: { id } });
+        if (link) assertAuthorizedFinancialRecord("links", {
+            id: link.id, merchant_address: link.merchantAddress, beneficiary_address: link.beneficiaryAddress,
+            amount_usdc: link.amountUsdc.toString(), state_snapshot: link.stateSnapshot,
+            active: link.active, expires_at: link.expiresAt, max_uses: link.maxUses,
+            settlement_chain_id: link.settlementChainId.toString(), deleted_at: link.deletedAt,
+            link_kind: link.linkKind, sandbox_mode: link.sandboxMode, simulation_only: link.simulationOnly,
+        });
         if (!link) {
             return NextResponse.json({ error: "Payment link not found" }, { status: 404 });
         }
@@ -343,3 +353,5 @@ export async function POST(request: Request, { params }: RouteContext) {
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "checkout-pay", bind: financialPinContext }, handlePOST);

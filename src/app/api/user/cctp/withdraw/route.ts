@@ -1,6 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
+import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
+import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
+import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
 import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
 import { pgQuery } from "@/lib/serverPg";
 import { validateBridgeRequest, formatMicros } from "@/lib/cctp/feeEngine";
@@ -42,7 +46,7 @@ export const maxDuration = 180;
  * with the fee tx recorded, which is a recoverable state a human can refund or resume. The reverse
  * order would bridge the money and lose the fee with nothing to reconcile against.
  */
-export async function POST(req: NextRequest) {
+async function handlePOST(req: Request) {
   if (!ARC_CCTP_ENABLED) {
     return NextResponse.json({ error: CCTP_UNAVAILABLE_MESSAGE }, { status: 503 });
   }
@@ -54,6 +58,9 @@ export async function POST(req: NextRequest) {
     if (!wallet) {
       return NextResponse.json({ error: "Please connect your wallet and try again." }, { status: 401 });
     }
+
+    await assertWithdrawalAllowed(wallet, "USER");
+    await assertAccountNotHalted(wallet);
 
     const { getAccountKycTier } = await import("@/lib/kyc/tier");
     const tierInfo = await getAccountKycTier(wallet);
@@ -260,6 +267,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
+    if (error instanceof WithdrawalHeldError || error instanceof AccountHaltError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     const reason = String(error?.shortMessage || error?.message || "Failed to start withdrawal");
     console.error("[api/user/cctp/withdraw] error:", reason);
 
@@ -275,3 +285,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: reason }, { status: 400 });
   }
 }
+
+export const POST = withTransactionPin({ action: "bridge-withdraw", bind: financialPinContext, required: () => ARC_CCTP_ENABLED }, handlePOST);

@@ -1,3 +1,6 @@
+import { assertFinancialAuthorizationCurrent } from "@/lib/auth/financialAuthorizationContext";
+import { financialPinContext, payoutSettingRequiresPin } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -242,7 +245,7 @@ export async function GET(request: Request) {
     }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
@@ -331,6 +334,7 @@ export async function POST(request: Request) {
             }
             if (payoutDestination !== undefined) updateData.payoutDestination = payoutDestination;
 
+            if (payoutDestination !== undefined) await assertFinancialAuthorizationCurrent();
             await prisma.merchant.upsert({
                 where: { walletAddress: normalizedUser },
                 update: { ...updateData, updatedAt: new Date() },
@@ -386,3 +390,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "account-payout-settings", bind: financialPinContext, required: payoutSettingRequiresPin }, handlePOST);

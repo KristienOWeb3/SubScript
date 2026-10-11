@@ -1,3 +1,6 @@
+import { assertAuthorizedFinancialRecord } from "@/lib/auth/financialAuthorizationContext";
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* Change plan from a DM. Uses the contract's in-place modifySubscription (no cancel/recreate,
    no double charge):
      - "scheduled" (default): the current paid period runs out, then the next renewal bills the
@@ -30,7 +33,7 @@ import { haltGuard } from "@/lib/accountHalt";
 
 export const maxDuration = 150;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     let changeClaimKey: string | null = null;
     let proratedTxHashForRecovery: string | null = null;
     let modifyTxHashForRecovery: string | null = null;
@@ -56,6 +59,13 @@ export async function POST(request: Request) {
 
         const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
         if (!plan) return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
+
+        assertAuthorizedFinancialRecord("plans", {
+            id: plan.id, merchant_address: plan.merchantAddress, amount_usdc: plan.amountUsdc.toString(),
+            period_seconds: plan.periodSeconds.toString(), min_commitment_seconds: plan.minCommitmentSeconds.toString(),
+            active: plan.active, target_subscriber: plan.targetSubscriber,
+            source_checkout_id: plan.sourceCheckoutId, updated_at: plan.updatedAt,
+        });
 
         const subscriber = wallet.toLowerCase();
         if (plan.targetSubscriber && plan.targetSubscriber.toLowerCase() !== subscriber) {
@@ -487,3 +497,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message || "Failed to change plan" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "subscription-change", bind: financialPinContext }, handlePOST);

@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { GET as recoverEmailDelivery } from "../email-delivery/route";
+import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { processPaymentLinkVerificationJobs } from "@/lib/payments/paymentLinkVerificationWorker";
 import { healSubscriptionDrift } from "@/lib/subscriptions/driftHealer";
@@ -40,6 +41,27 @@ export async function POST(request: Request) {
         if (!isAuthorized(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+
+        // The existing reconciliation scheduler activates durable email retries on an app-only
+        // release. Its failure is observable but cannot change financial reconciliation results.
+        const emailAuthorization = request.headers.get("authorization")!;
+        const emailUrl = new URL("/api/cron/email-delivery", request.url);
+        after(async () => {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const response = await Promise.race([
+                    recoverEmailDelivery(new Request(emailUrl, { headers: { authorization: emailAuthorization } })),
+                    new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), 45_000); }),
+                ]);
+                if (!response || response.status < 200 || response.status >= 300) {
+                    console.error("[reconcile] Email recovery failed", response ? "EMAIL_RECOVERY_UNAVAILABLE" : "EMAIL_RECOVERY_TIMEOUT");
+                }
+            } catch {
+                console.error("[reconcile] Email recovery failed", "EMAIL_RECOVERY_UNAVAILABLE");
+            } finally {
+                if (timer !== undefined) clearTimeout(timer);
+            }
+        });
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";

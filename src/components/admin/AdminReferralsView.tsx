@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Trophy,
@@ -197,7 +199,7 @@ export function AdminReferralsView() {
         params.set("search", searchQuery.trim());
       }
 
-      const res = await fetch(`/api/admin/referrals?${params.toString()}`);
+      const res = await adminFetch(`/api/admin/referrals?${params.toString()}`);
       const json = await res.json().catch(() => null);
 
       if (!res.ok) {

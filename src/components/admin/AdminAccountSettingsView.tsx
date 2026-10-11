@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     AlertCircle,
@@ -118,7 +120,7 @@ export function AdminAccountSettingsView({ viewerWallet }: { viewerWallet: strin
     const fetchHolds = useCallback(async (showSpinner = false) => {
         if (showSpinner) setLoading(true);
         try {
-            const res = await fetch("/api/admin/withdrawal-holds");
+            const res = await adminFetch("/api/admin/withdrawal-holds");
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 throw new Error(

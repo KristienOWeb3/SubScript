@@ -1,3 +1,8 @@
+import { assertAuthorizedFinancialRecord, assertAuthorizedSubscriptionUpgrade, authorizedFinancialSnapshot } from "@/lib/auth/financialAuthorizationContext";
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin, TransactionPinError, type TransactionPinBindingContext } from "@/lib/auth/transactionPin";
+import type { VerifiedSessionToken } from "@/lib/auth";
+import { subscriptionUpgradeSnapshot } from "@/lib/auth/subscriptionUpgradeAuthorization";
 /* Upgrade a subscription to a higher-rate plan, settled from the hosted subscription checkout.
  *
  * Not an in-place modify. `modifySubscription` rejects a rate reduction by cross-multiplying the new
@@ -98,6 +103,12 @@ async function resolveUpgradeTarget(
 ): Promise<{ ok: true; value: UpgradeTarget } | Refusal> {
     const plan = await prisma.merchantPlan.findUnique({ where: { id } });
     if (plan) {
+        assertAuthorizedFinancialRecord("plans", {
+            id: plan.id, merchant_address: plan.merchantAddress, amount_usdc: plan.amountUsdc.toString(),
+            period_seconds: plan.periodSeconds.toString(), min_commitment_seconds: plan.minCommitmentSeconds.toString(),
+            active: plan.active, target_subscriber: plan.targetSubscriber,
+            source_checkout_id: plan.sourceCheckoutId, updated_at: plan.updatedAt,
+        });
         if (!plan.active) {
             return { ok: false, status: 404, body: { error: "Plan not found or inactive" } };
         }
@@ -123,6 +134,13 @@ async function resolveUpgradeTarget(
     if (!checkout || !meta || !checkout.active || !["PENDING", "PROCESSING"].includes(checkout.status)) {
         return { ok: false, status: 404, body: { error: "Plan not found or inactive" } };
     }
+    assertAuthorizedFinancialRecord("links", {
+        id: checkout.id, merchant_address: checkout.merchantAddress, beneficiary_address: checkout.beneficiaryAddress,
+        amount_usdc: checkout.amountUsdc.toString(), state_snapshot: checkout.stateSnapshot,
+        active: checkout.active, expires_at: checkout.expiresAt, max_uses: checkout.maxUses,
+        settlement_chain_id: checkout.settlementChainId.toString(), deleted_at: checkout.deletedAt,
+        link_kind: checkout.linkKind, sandbox_mode: checkout.sandboxMode, simulation_only: checkout.simulationOnly,
+    });
     if (meta.subscriber && meta.subscriber !== subscriber) {
         return {
             ok: false,
@@ -172,6 +190,8 @@ async function resolveUpgradeTarget(
 async function resolveUpgrade(
     subscriber: string,
     id: string,
+    quotedAt = new Date(),
+    allowRevoked = false,
 ): Promise<{ ok: true; value: ResolvedUpgrade } | Refusal> {
     if (!id) {
         return { ok: false, status: 400, body: { error: "planId is required" } };
@@ -218,7 +238,7 @@ async function resolveUpgrade(
     if (onChain.subscriber !== subscriber || onChain.merchant !== merchant) {
         return { ok: false, status: 404, body: { error: "Subscription not found for this account" } };
     }
-    if (!onChain.isActive) {
+    if (!onChain.isActive && !allowRevoked) {
         /* The authorization is already revoked — most likely a cancellation whose paid period is still
            running. Upgrading from here would price credit against an authorization that can no longer
            be cancelled, so send them through resume first. */
@@ -244,7 +264,7 @@ async function resolveUpgrade(
         paidThroughAt: new Date(Number(onChain.nextPayment) * 1000),
         newAmountMicros,
         newPeriodSeconds,
-        now: new Date(),
+        now: quotedAt,
     });
 
     if (!terms.ok) {
@@ -291,6 +311,16 @@ async function resolveUpgrade(
             terms,
         },
     };
+}
+
+async function bindUpgradeAuthorization(body: any, session: VerifiedSessionToken, request: Request, context: TransactionPinBindingContext) {
+    // A refreshed challenge must not resurrect an old credit quote indefinitely.
+    if (Date.now() - context.quotedAt.getTime() > 10 * 60 * 1000) {
+        throw new TransactionPinError(409, "TRANSACTION_AUTHORITY_CHANGED", "The upgrade quote expired. Start a new operation.");
+    }
+    const base = await financialPinContext(body, session, request);
+    const resolved = await resolveUpgrade(session.wallet.toLowerCase(), typeof body?.planId === "string" ? body.planId.trim() : "", context.quotedAt, true);
+    return { ...base, upgrade: resolved.ok ? subscriptionUpgradeSnapshot(resolved.value, context.quotedAt) : null };
 }
 
 /** Session wallet with the USER role, or the response to send instead. */
@@ -347,7 +377,7 @@ function microsFromDecimal(value: unknown): bigint {
     return BigInt(String(value).split(".")[0] || "0");
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const auth = await requireSubscriber(request);
         if (!auth.ok) return NextResponse.json(auth.body, { status: auth.status });
@@ -370,8 +400,12 @@ export async function POST(request: Request) {
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const planId = typeof body.planId === "string" ? body.planId.trim() : "";
 
-        const resolved = await resolveUpgrade(subscriber, planId);
+        const approved = authorizedFinancialSnapshot<{ upgrade: { quotedAt: string } | null }>();
+        const quotedAt = approved?.upgrade ? new Date(approved.upgrade.quotedAt) : new Date();
+        const resolved = await resolveUpgrade(subscriber, planId, quotedAt);
         if (!resolved.ok) return NextResponse.json(resolved.body, { status: resolved.status });
+
+        assertAuthorizedSubscriptionUpgrade(subscriptionUpgradeSnapshot(resolved.value, quotedAt));
 
         const {
             merchant, target, current, fromSubscriptionId, onChain, newAmountMicros, newPeriodSeconds, terms,
@@ -658,3 +692,5 @@ async function emitUpgradeSignals(params: {
         console.error("[ALERT] upgrade webhook enqueue failed after state committed:", webhookError);
     }
 }
+
+export const POST = withTransactionPin({ action: "subscription-upgrade", bind: bindUpgradeAuthorization }, handlePOST);

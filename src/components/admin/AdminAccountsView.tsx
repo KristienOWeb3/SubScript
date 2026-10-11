@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Users,
@@ -151,7 +153,7 @@ export function AdminAccountsView() {
     setError(null);
     try {
       if (activeSubTab === "deleted") {
-        const res = await fetch("/api/admin/accounts?tab=deleted");
+        const res = await adminFetch("/api/admin/accounts?tab=deleted");
         if (!res.ok) throw new Error("Failed to load deleted accounts");
         const json = await res.json();
         setDeletedAccounts(json.deletedAccounts || []);
@@ -159,7 +161,7 @@ export function AdminAccountsView() {
         const params = new URLSearchParams();
         if (search) params.set("search", search);
         if (roleFilter) params.set("role", roleFilter);
-        const res = await fetch(`/api/admin/accounts?${params.toString()}`);
+        const res = await adminFetch(`/api/admin/accounts?${params.toString()}`);
         if (!res.ok) throw new Error("Failed to load accounts");
         const json = await res.json();
         setAccounts(json.accounts || []);
@@ -181,7 +183,7 @@ export function AdminAccountsView() {
     setDetailLoading(true);
     setActionNotice(null);
     try {
-      const res = await fetch(`/api/admin/accounts/${address}`);
+      const res = await adminFetch(`/api/admin/accounts/${address}`);
       if (!res.ok) throw new Error("Failed to load account details");
       const json = await res.json();
       setAccountDetail(json.account);

@@ -107,6 +107,7 @@ export default function SendWalletModal({
                 onClose();
             }, 2000);
         } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
             console.error("Send wallet funds failed:", err);
             setErrorMsg(err.message || "Failed to send USDC. Please try again.");
         }

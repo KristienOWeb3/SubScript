@@ -175,10 +175,10 @@ test("every settlement path goes through the one entry point", () => {
         "app/api/cron/customer-billing/route.ts",
         "app/api/keeper/vault-draw/route.ts",
         "app/api/keeper/vault-topup/route.ts",
-        "app/api/merchant/vault/claim/route.ts",
         "app/api/internal/payroll/route.ts",
     ];
 
+    wired.push("lib/payments/settlementReceiptRecovery.ts");
     for (const path of wired) {
         const code = source(path);
         assert.match(
@@ -191,6 +191,17 @@ test("every settlement path goes through the one entry point", () => {
             /send(SettlementReceipts|BatchPayoutReceipts)\(/,
             `${path} imports the entry point but never calls it`,
         );
+    }
+});
+
+test("custody financial routes prepare durable jobs before signing and process verified receipts", () => {
+    for (const path of ["app/api/merchant/vault/claim/route.ts", "app/api/user/vault/commit/route.ts",
+        "app/api/user/vault/withdraw/route.ts", "app/api/user/vault/reclaim/route.ts",
+        "app/api/execute-tx/route.ts", "app/api/user/wallet/send/route.ts"]) {
+        const code = source(path);
+        assert.match(code, /prepareSettlementReceiptJob\(/, path);
+        assert.match(code, /recordSettlementReceiptSubmission\(/, path);
+        assert.match(code, /confirmSettlementReceiptJob\(/, path);
     }
 });
 

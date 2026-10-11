@@ -248,6 +248,7 @@ export async function updateVaultShareLimit(
     userAddress: string,
     commitId: string,
     spendLimitUsdc: bigint | null,
+    allowIncrease = false,
 ) {
     const share = await requireOwnedShare(userAddress, commitId);
 
@@ -277,10 +278,20 @@ export async function updateVaultShareLimit(
         });
     }
 
-    return prisma.userCommit.update({
-        where: { id: share.id },
-        data: { spendLimitUsdc },
-    });
+    const changed = await prisma.$queryRaw<{ id: string }[]>`
+        UPDATE user_commits SET spend_limit_usdc = ${spendLimitUsdc}::bigint
+         WHERE id = ${share.id}::uuid AND commit_id = ${share.commitId}
+           AND parent_commit_id = ${share.parentCommitId}::uuid AND status <> 'REVOKED'
+           AND (${spendLimitUsdc}::bigint IS NULL OR spent_usdc <= ${spendLimitUsdc}::bigint)
+           AND (${allowIncrease}::boolean OR spend_limit_usdc IS NULL
+                OR (${spendLimitUsdc}::bigint IS NOT NULL AND spend_limit_usdc >= ${spendLimitUsdc}::bigint))
+           AND vault_id=${share.vaultId}::uuid
+           AND EXISTS (SELECT 1 FROM metered_vaults v WHERE v.id=user_commits.vault_id
+                       AND lower(v.user_address)=${userAddress.toLowerCase()})
+         RETURNING id
+    `;
+    if (!changed.length) throw new CommitAccessError("The current cap or authority changed. Verify your transaction PIN before raising it.", 409);
+    return prisma.userCommit.findUniqueOrThrow({ where: { id: share.id } });
 }
 
 async function setVaultShareStatus(

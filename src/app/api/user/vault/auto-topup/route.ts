@@ -1,3 +1,6 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
+import { assertAuthorizedMerchantDestination } from "@/lib/auth/financialAuthorizationContext";
 /* Auto top-up mandate: the user's explicit, bounded authorization for SubScript to refill a
    (user -> merchant) vault while they are not present.
 
@@ -49,7 +52,7 @@ async function resolveMerchant(raw: string): Promise<string | null> {
     return ethers.isAddress(candidate) ? candidate : null;
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
@@ -94,6 +97,7 @@ export async function POST(request: Request) {
         if (!merchantAddress) {
             return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
         }
+        assertAuthorizedMerchantDestination(merchantAddress);
 
         let thresholdUsdc: bigint;
         let topUpAmountUsdc: bigint;
@@ -346,3 +350,5 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: error.message || "Failed to disable auto top-up" }, { status: 500 });
     }
 }
+
+export const POST = withTransactionPin({ action: "vault-auto-topup", bind: financialPinContext }, handlePOST);

@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchWithTransactionPin } from "@/lib/client/transactionPin";
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient, useSignMessage } from "wagmi";
@@ -1609,11 +1611,11 @@ export default function PublicPayClient({
         setPaymentStep("sending");
         setVerificationStatus("Paying from your SubScript wallet...");
         try {
-            const res = await fetch(`/api/user/payment-links/${linkData.id}/pay`, { 
+            const res = await fetchWithTransactionPin(`/api/user/payment-links/${linkData.id}/pay`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ clientIntentId })
-            });
+            }, { operation: "Pay checkout", details: { merchant: linkData.merchant_address, amountUsdc: formatUnits(BigInt(linkData.amount_usdc), 6), paymentLinkId: linkData.id, clientIntentId } });
             const data = await res.json().catch(() => ({}));
             if (res.status === 409 && data.code === "ATTEMPT_RELEASED") {
                 /* Terminal attempt UUID — rotate so the next click reserves a fresh attempt. */
@@ -1648,7 +1650,7 @@ export default function PublicPayClient({
             startVerification(hash, rid, payer, expectedChainId, submittedRecord.attemptId);
         } catch (err: any) {
             setVerificationStatus(null);
-            setVerificationError(friendlyError(err.message || "Payment failed"));
+            if (!(err instanceof Error && err.name === "AbortError")) setVerificationError(friendlyError(err.message || "Payment failed"));
             setIsEmbeddedPaying(false);
             setIsVerifying(false);
             setPaymentStep(null);

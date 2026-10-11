@@ -2,7 +2,7 @@ import { runAdminQueriesSequentially } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireScope } from "@/lib/admin/guard";
-import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
+import { getAdminSponsorStatus } from "@/lib/admin/sponsorStatus";
 import { jsonOk } from "@/lib/http/json";
 import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
@@ -133,7 +133,7 @@ export async function GET(request: Request) {
                     sentCount: true, failedCount: true, totalRecipients: true, createdAt: true,
                 },
             }),
-            () => getSponsorWalletStatus().catch(() => null),
+            () => getAdminSponsorStatus(),
             /* Timeline raw data for the last 30 days */
             () => prisma.receipt.findMany({
                 where: { status: "CONFIRMED", sourceType: { in: [...COMMERCE_RECEIPT_SOURCES] }, createdAt: { gte: thirtyDaysAgo } },

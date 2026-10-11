@@ -1,3 +1,5 @@
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin, isTransactionPinAuthorizedRequest } from "@/lib/auth/transactionPin";
 import { NextResponse } from "next/server";
 import { getVerifiedSessionToken } from "@/lib/auth";
 import { authorizeFinancialStepUp } from "@/lib/auth/stepUp";
@@ -13,11 +15,11 @@ const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
 ];
 
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
     try {
         const session = await getVerifiedSessionToken(request.headers);
         if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        const stepUp = await authorizeFinancialStepUp({
+        const stepUp = isTransactionPinAuthorizedRequest(request) ? { ok: true as const } : await authorizeFinancialStepUp({
             headers: request.headers,
             wallet: session.wallet,
             session,
@@ -183,3 +185,5 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: "Account deletion failed. Nothing was removed — please try again or contact support." }, { status: 500 });
     }
 }
+
+export const DELETE = withTransactionPin({ action: "account-delete", bind: financialPinContext }, handleDELETE);

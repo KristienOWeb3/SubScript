@@ -93,8 +93,8 @@ export const config = createConfig({
             http("https://optimism-rpc.publicnode.com"),
         ]),
         137: fallback([
-            http("https://polygon-rpc.com"),
             http("https://polygon-bor-rpc.publicnode.com"),
+            http("https://polygon-rpc.com"),
         ]),
         8453: fallback([
             http("https://mainnet.base.org"),

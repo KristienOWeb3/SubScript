@@ -2,7 +2,7 @@ import { runAdminQueriesSequentially } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireScope } from "@/lib/admin/guard";
-import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
+import { getAdminSponsorStatus } from "@/lib/admin/sponsorStatus";
 import { jsonOk } from "@/lib/http/json";
 import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
       recentReceipts14d,
       recentUsers14d,
     ] = await runAdminQueriesSequentially([
-      () => getSponsorWalletStatus(),
+      () => getAdminSponsorStatus(),
       () => prisma.merchant.findMany({
         orderBy: { createdAt: "desc" },
         take: 100,

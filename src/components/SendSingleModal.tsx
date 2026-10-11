@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { flushSync } from "react-dom";
 import RollingNumber from "@/components/ui/RollingNumber";
@@ -51,6 +51,8 @@ export type SendSingleModalProps = {
     amount: string;
     onAmountChange: (value: string) => void;
     resolving: boolean;
+    resolutionError?: string | null;
+    onRetryResolution?: () => void;
     resolved: SingleResolvedTarget | null;
     selfSend: boolean;
     loading: boolean;
@@ -324,6 +326,8 @@ function DesktopSendModal({
     amount,
     onAmountChange,
     resolving,
+    resolutionError,
+    onRetryResolution,
     resolved,
     selfSend,
     loading,
@@ -463,6 +467,7 @@ function DesktopSendModal({
     const submitBlocked =
         loading ||
         resolving ||
+        Boolean(resolutionError) ||
         !resolved?.address ||
         selfSend ||
         !amountIsValid ||
@@ -496,6 +501,7 @@ function DesktopSendModal({
                 } catch {}
             }
         } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") return;
             setRecipientError(error instanceof Error ? error.message : "The transfer failed.");
         }
     };
@@ -717,6 +723,12 @@ function DesktopSendModal({
                                     {recipientError && (
                                         <p className="mt-1 text-[11px] font-medium text-red-600">{recipientError}</p>
                                     )}
+                                    {resolutionError && (
+                                        <p role="alert" className="mt-1 text-[11px] font-medium text-red-600">
+                                            {resolutionError}
+                                            {onRetryResolution && <button type="button" className="ml-2 underline underline-offset-2" disabled={resolving} onClick={onRetryResolution}>Retry lookup</button>}
+                                        </p>
+                                    )}
 
                                     {/* Beneficiary / Recently Sent Pills */}
                                     <BeneficiaryPills
@@ -865,6 +877,8 @@ function MobileSendSheet({
     amount,
     onAmountChange,
     resolving,
+    resolutionError,
+    onRetryResolution,
     resolved,
     selfSend,
     loading,
@@ -1108,7 +1122,8 @@ function MobileSendSheet({
     }, [open, arriveStatus]);
 
     /* ── BAR-TO-SHEET MORPH: Open Animation ── */
-    useEffect(() => {
+    // Install the opening mask before paint, including the first mount.
+    useLayoutEffect(() => {
         if (!open) return;
         runTokenRef.current++;
         clearInterval(intervalRef.current);
@@ -1180,9 +1195,8 @@ function MobileSendSheet({
 
             // Morph capsule into sheet (480ms) - exact DepositModal opening speed
             animateFlow(sh, [
-                { clipPath: cp, filter: "blur(0px)" },
-                { filter: "blur(2.5px)", offset: 0.35 },
-                { clipPath: FULL, filter: "blur(0px)" },
+                { clipPath: cp },
+                { clipPath: FULL },
             ], { duration: 480, easing: EASE_EXP, fill: "forwards" });
 
             if (tint) animateFlow(tint, { opacity: [1, 0] }, { duration: 340, easing: "ease-out", fill: "forwards" });
@@ -1204,8 +1218,8 @@ function MobileSendSheet({
         } else {
             sh.style.clipPath = FULL;
             animateFlow(sh, [
-                { transform: "translateY(100%)", filter: "blur(8px)" },
-                { transform: "translateY(0%)", filter: "blur(0px)" },
+                { transform: "translateY(100%)" },
+                { transform: "translateY(0%)" },
             ], { duration: 420, easing: EASE, fill: "forwards" });
             if (sc) animateFlow(sc, { opacity: [0, 1] }, { duration: 300, fill: "forwards" });
         }
@@ -1543,7 +1557,7 @@ function MobileSendSheet({
             await handleSuccessSequence(tok, result);
         } catch (error) {
             if (tok !== runTokenRef.current) return;
-            setSendError(error instanceof Error ? error.message : "The transfer failed. Please try again.");
+            if (!(error instanceof Error && error.name === "AbortError")) setSendError(error instanceof Error ? error.message : "The transfer failed. Please try again.");
             setSendingState("idle");
             commitRef.current = false;
             onPresentationPause?.(false);
@@ -1796,7 +1810,7 @@ function MobileSendSheet({
 
     };
 
-    const isReadyForReview = amountIsValid && Boolean(quote) && !exceedsBalance && Boolean(resolved?.address) && !recipientError && !selfSend && !resolving && currentRouteLive && (isArcRoute || canWithdrawCrossChain);
+    const isReadyForReview = amountIsValid && Boolean(quote) && !exceedsBalance && Boolean(resolved?.address) && !recipientError && !resolutionError && !selfSend && !resolving && currentRouteLive && (isArcRoute || canWithdrawCrossChain);
 
     return (
         <div id="sheet-wrapper" className="fixed inset-0 overflow-hidden z-[100] flex flex-col justify-end pointer-events-none font-sans select-none">
@@ -2049,6 +2063,12 @@ function MobileSendSheet({
                                 </div>
 
                                 <div className={`send-validation-hint text-[11px] font-medium text-red-600 dark:text-red-400 ${recipientError ? "is-visible" : ""}`} aria-live="polite">{recipientError}</div>
+                                {resolutionError && (
+                                    <p role="alert" className="text-[11px] font-medium text-red-600 dark:text-red-400">
+                                        {resolutionError}
+                                        {onRetryResolution && <button type="button" className="ml-2 underline underline-offset-2" disabled={resolving} onClick={onRetryResolution}>Retry lookup</button>}
+                                    </p>
+                                )}
 
                                 {/* Beneficiary / Recently Sent Pills */}
                                 <BeneficiaryPills

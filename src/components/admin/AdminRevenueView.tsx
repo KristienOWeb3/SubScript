@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
@@ -73,7 +75,7 @@ export function AdminRevenueView() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/revenue");
+      const res = await adminFetch("/api/admin/revenue");
       const json = await res.json().catch(() => null);
       if (res.status === 403) {
         setForbidden(true);

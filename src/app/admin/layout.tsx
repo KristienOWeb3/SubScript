@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { getAdminSession } from "@/lib/admin/guard";
+import AdminUnavailable from "./AdminUnavailable";
 
 /* Authoritative admin gate.
  *
@@ -18,16 +19,14 @@ import { getAdminSession } from "@/lib/admin/guard";
 export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-    let admin = null;
+    const headerList = await headers();
+    let admin;
     try {
-        const headerList = await headers();
         admin = await getAdminSession(headerList);
-    } catch (err: any) {
-        if (err?.digest?.startsWith("NEXT_NOT_FOUND") || err?.message === "NEXT_NOT_FOUND") {
-            throw err;
-        }
-        console.error("[admin] AdminLayout gate error:", err);
-        notFound();
+    } catch {
+        // Layout errors bypass the same segment's error boundary. Render recovery here
+        // without mounting any protected children; only a verified denial is 404.
+        return <AdminUnavailable />;
     }
     if (!admin) notFound();
 

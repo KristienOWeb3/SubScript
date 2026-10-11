@@ -22,6 +22,7 @@ on:
     # CCTP disabled for mainnet v1 — Circle has not published Arc Mainnet CCTP domain/contracts.
     # The */5 cron for cctp-relay is removed until CCTP v2 launches. The job remains for manual smoke.
     # - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"
     - cron: "*/15 * * * *"
     - cron: "0 2 * * *"
     - cron: "0 5 * * *"
@@ -187,6 +188,19 @@ jobs:
             "${BASE:-https://www.subscriptonarc.com}/api/keeper/vault-topup" \
             -H "Authorization: Bearer ${SECRET}"
 
+  email-delivery:
+    if: github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: keeper/email-delivery
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/cron/email-delivery" \
+            -H "Authorization: Bearer ${SECRET}"
+
   manual-all:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -206,6 +220,7 @@ jobs:
             /api/cron/kyc-expiry \
             /api/cron/gdpr-hard-delete \
             /api/cron/payment-reminders \
+            /api/cron/email-delivery \
             /api/keeper/vault-topup \
             /api/keeper/cctp; do
             echo "→ GET ${path}"

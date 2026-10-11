@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { Redis } from "@upstash/redis/cloudflare";
 import { Ratelimit } from "@upstash/ratelimit";
-import { adminWalletAllowlist } from "@/lib/admin/allowlist";
 
 const PUBLIC_HOST = "www.subscriptonarc.com";
 const APEX_HOST = "subscriptonarc.com";
@@ -18,70 +17,28 @@ const PUBLIC_ORIGIN = `https://${PUBLIC_HOST}`;
 const SESSION_ISSUER = "subscriptonarc.com";
 const SESSION_AUDIENCE = "subscript-app";
 
-/* Cookie presence proves nothing — any string satisfies it — so the JWT is verified with the
-   same parameters that minted it and the wallet inside is matched against the allowlist.
-
-   Deliberately does not consult the sessions table: middleware runs on every request and a
-   database round trip here would tax the whole site, so a token revoked by signing out stays
-   accepted until it expires. Treat this as a gate, not the authority.
-
-   The authority is getAdminSession() in @/lib/admin/guard, enforced by the /admin layout and
-   by every /api/admin route handler — the latter matters because the isApiRoute guard below
-   means this gate never runs for /api/* at all. */
+/* The proxy checks JWT integrity only. The live session and admin grant are
+   authoritatively checked by /admin/layout and every /api/admin handler. A Redis
+   mirror miss must not lock out a valid delegated admin (especially locally). */
 async function isAuthorizedAdmin(request: NextRequest): Promise<boolean> {
-    const token = request.cookies.get("subscript_session_token")?.value;
     const secret = process.env.JWT_SECRET;
-    if (!token || !secret) return false;
-
-    let address = "";
-    try {
-        const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
-            issuer: SESSION_ISSUER,
-            audience: SESSION_AUDIENCE,
-        });
-        address = typeof payload.address === "string" ? payload.address.trim().toLowerCase() : "";
-    } catch {
-        return false;
+    if (!secret) return false;
+    // Host-only and domain cookies can coexist after sign-in. Check every candidate,
+    // matching the authoritative session reader instead of trusting cookie order.
+    for (const match of (request.headers.get("cookie") || "").matchAll(/(?:^|;\s*)subscript_session_token\s*=\s*([^;]*)/g)) {
+        const token = match[1].trim().replace(/^"|"$/g, "");
+        try {
+            const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+                issuer: SESSION_ISSUER,
+                audience: SESSION_AUDIENCE,
+            });
+            if (typeof payload.address === "string" && /^0x[0-9a-f]{40}$/i.test(payload.address)
+                && typeof payload.jti === "string" && payload.jti.length > 0) return true;
+        } catch {
+            // Another candidate may be the current, valid session.
+        }
     }
-    if (!address) return false;
-
-    if (adminWalletAllowlist().has(address)) return true;
-    return await isDelegatedAdminCached(address);
-}
-
-/* Delegated admins live in the admin_wallets table, which the edge runtime cannot read
-   (no pg). The console mirrors that table into a Redis set on every grant/revoke, and
-   this reads the mirror.
-
-   Cached in module memory for MIRROR_TTL_MS so a burst of requests from one admin costs
-   one Redis round trip rather than one per request; the cache is per-isolate, so a revoke
-   can take up to the TTL to be felt at the edge. That lag is acceptable because the edge
-   is only a gate — the /admin layout and every /api/admin handler re-check against the
-   DATABASE on each request, so a revoked wallet can reach the shell and nothing else.
-
-   The same asymmetry contains the obvious objection to trusting Redis for authorization:
-   anyone able to write this key could pass the gate, but they would still be rejected by
-   the authoritative DB check behind it. Redis can admit you to the door, never the room. */
-const MIRROR_TTL_MS = 10_000;
-let mirrorCache: { wallets: Set<string>; fetchedAt: number } | null = null;
-
-async function isDelegatedAdminCached(address: string): Promise<boolean> {
-    const now = Date.now();
-    if (mirrorCache && now - mirrorCache.fetchedAt < MIRROR_TTL_MS) {
-        return mirrorCache.wallets.has(address);
-    }
-    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) return false;
-
-    try {
-        const members = await redis.smembers("admin:wallets");
-        const wallets = new Set((members as string[]).map((entry) => String(entry).toLowerCase()));
-        mirrorCache = { wallets, fetchedAt: now };
-        return wallets.has(address);
-    } catch {
-        /* Redis unreachable: degrade to root-only rather than locking the console. Root
-           admins were already admitted above, so nothing here can lock everyone out. */
-        return false;
-    }
+    return false;
 }
 
 const DEFAULT_MAINTENANCE_MESSAGE = "SubScript is temporarily down for maintenance. We'll be back shortly.";
@@ -431,17 +388,29 @@ export default async function proxy(request: NextRequest) {
        same route tree, so a host-only check would leave the canonical domain ungated the moment
        those pages exist — the subdomain is a routing convenience, not a security boundary.
 
-       Non-admins get 404 rather than 403 so the console's existence is not advertised to anyone
-       who guesses the path. The page tree under /admin does not exist yet (only /api/admin does),
-       so today this returns 404 either way; the gate is here so it cannot be forgotten later. */
+       The proxy rejects invalid session tokens. The /admin layout checks live admin membership
+       and returns 404 for non-admins before any protected children render. */
     const isAdminPath = pathname === "/admin" || pathname.startsWith("/admin/");
     if (!isApiRoute && (isAdminHost || isAdminPath)) {
+        if (!process.env.JWT_SECRET) {
+            return new NextResponse("Admin access verification is temporarily unavailable because server configuration is incomplete. Configure the server authentication settings, then retry.", {
+                status: 503,
+                headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "Retry-After": "30" },
+            });
+        }
         if (!(await isAuthorizedAdmin(request))) {
             /* An anonymous caller on the admin host most likely just needs to sign in; anyone
                already carrying a session is being told nothing more than "no such page". */
             const hasSession = Boolean(request.cookies.get("subscript_session_token")?.value);
-            if (isAdminHost && !hasSession) {
-                return NextResponse.redirect(`${PUBLIC_ORIGIN}/signin`);
+            if (!hasSession) {
+                if (isAdminHost) {
+                    const returnUrl = `https://${ADMIN_HOST}${pathname === "/admin" ? "" : pathname}${request.nextUrl.search}`;
+                    return NextResponse.redirect(`${PUBLIC_ORIGIN}/signin?next=${encodeURIComponent(returnUrl)}`);
+                }
+                if (isLocalHost) {
+                    const returnUrl = `${pathname}${request.nextUrl.search}`;
+                    return NextResponse.redirect(new URL(`/signin?next=${encodeURIComponent(returnUrl)}`, request.url));
+                }
             }
             return new NextResponse("Not Found", { status: 404 });
         }
@@ -571,6 +540,10 @@ export default async function proxy(request: NextRequest) {
 
             // If not logged in, redirect to landing sign-in page
             if (!token && pathname !== "/signin" && pathname !== "/login" && pathname !== "/signup") {
+                if (pathname === "/dashboard/transaction-pin") {
+                    const returnUrl = `https://${DASHBOARD_HOST}${pathname}${request.nextUrl.search}`;
+                    return NextResponse.redirect(`${PUBLIC_ORIGIN}/signin?next=${encodeURIComponent(returnUrl)}`);
+                }
                 return NextResponse.redirect(`${PUBLIC_ORIGIN}/signin`);
             }
 
@@ -597,7 +570,8 @@ export default async function proxy(request: NextRequest) {
                 return NextResponse.rewrite(rewriteUrl);
             }
 
-            if (pathname.startsWith("/dashboard/")) {
+            // PIN settings is a shared page, not a merchant dashboard child.
+            if (pathname.startsWith("/dashboard/") && pathname !== "/dashboard/transaction-pin") {
                 const rewriteUrl = request.nextUrl.clone();
                 rewriteUrl.pathname = pathname.replace(/^\/dashboard/, "/merchant");
                 return NextResponse.rewrite(rewriteUrl);

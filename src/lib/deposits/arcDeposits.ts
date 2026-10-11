@@ -125,7 +125,8 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                     const incoming = itemTo === normalizedWallet;
                     const direction: "inbound_deposit" | "outbound_send" = incoming ? "inbound_deposit" : "outbound_send";
 
-                    const timeMs = Number(item.timeStamp) * 1000 || Date.now();
+                    const timeMs = Number(item.timeStamp) * 1000;
+                    if (!Number.isFinite(timeMs) || timeMs <= 0) continue;
                     const blockNum = Number(item.blockNumber) || 0;
                     /* Normalize the token's smallest unit to 6-decimal USDC micros using the decimals
                        Etherscan reports. Arc's USDC ERC-20 (USDC_NATIVE_GAS_ADDRESS) is 6-decimal, so
@@ -197,7 +198,8 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                     const incoming = itemTo === normalizedWallet;
                     const direction: "inbound_deposit" | "outbound_send" = incoming ? "inbound_deposit" : "outbound_send";
 
-                    const timeMs = Number(item.timeStamp) * 1000 || Date.now();
+                    const timeMs = Number(item.timeStamp) * 1000;
+                    if (!Number.isFinite(timeMs) || timeMs <= 0) continue;
                     const blockNum = Number(item.blockNumber) || 0;
                     const amountFormatted = formatHistoryMicros(microsBigInt);
 
@@ -307,7 +309,7 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                                     toAddress: toHex,
                                     amountUsdc: microsBigInt.toString(),
                                     amountFormatted,
-                                    timestamp: Date.now(),
+                                    timestamp: 0, // Unknown block time must not pass the email activation watermark.
                                     blockNumber: parseInt(log.blockNumber, 16) || latestBlock,
                                     status: "COMPLETED",
                                     senderName: null,

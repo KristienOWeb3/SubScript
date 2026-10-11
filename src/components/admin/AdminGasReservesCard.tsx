@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/admin/clientFetch";
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Fuel,
@@ -38,7 +40,7 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
 
   const fetchBalances = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/system/relayer-balances");
+      const res = await adminFetch("/api/admin/system/relayer-balances");
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         throw new Error(data?.error || `Couldn't load relayer balances (${res.status})`);

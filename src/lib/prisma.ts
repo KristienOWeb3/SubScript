@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { getDatabaseUrl } from "@/lib/databaseUrl";
+import { getDatabaseConnectionConfig } from "@/lib/databaseConnection";
 import {
     isConnectionError,
     getOfflineAccountRole,
@@ -34,9 +34,7 @@ const globalForPrisma = global as unknown as { prisma: PrismaClient };
 const rawPrisma =
     globalForPrisma.prisma ||
     new PrismaClient({
-        adapter: new PrismaPg({
-            connectionString: getDatabaseUrl({ allowBuildTimeFallback: true, forPrisma: true }),
-        }),
+        adapter: new PrismaPg(getDatabaseConnectionConfig({ allowBuildTimeFallback: true, forPrisma: true })),
         log: ["query"],
     });
 

@@ -7,6 +7,7 @@ const PLATFORM_NOTIFICATION_ROUTES = [
     /^\/user(?:[/?#]|$)/,
     /^\/merchant(?:[/?#]|$)/,
     /^\/dashboard(?:\/user|\/payroll)?(?:[?#]|$)/,
+    /^\/dashboard\/transaction-pin(?:[?#]|$)/,
     /^\/support(?:[/?#]|$)/,
     /^\/receipt\/[^/?#]+(?:[/?#]|$)/,
     /^\/pay\/[^/?#]+(?:[/?#]|$)/,

@@ -1,3 +1,6 @@
+import { assertAuthorizedFinancialRecord } from "@/lib/auth/financialAuthorizationContext";
+import { financialPinContext } from "@/lib/auth/financialPinPolicy";
+import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* Resume a subscription the subscriber canceled but is still inside the paid period.
  *
  * Not a flag flip. Cancelling revokes the on-chain PSA authorization immediately and on purpose
@@ -43,7 +46,7 @@ function microsFromDecimal(value: unknown): bigint {
     return BigInt(String(value).split(".")[0] || "0");
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -81,6 +84,15 @@ export async function POST(request: Request) {
             }, { status: 409 });
         }
 
+        assertAuthorizedFinancialRecord("standingSubscription", {
+            subscription_id: row.subscriptionId.toString(), contract_address: row.contractAddress,
+            merchant_address: row.merchantAddress, subscriber: row.subscriber,
+            amount_cap_usdc: microsFromDecimal(row.amountCapUsdc).toString(), billing_interval_seconds: row.billingIntervalSeconds.toString(),
+            beneficiary_address: row.beneficiaryAddress, min_commitment_until: row.minCommitmentUntil,
+            plan_id: row.planId, source_checkout_id: row.sourceCheckoutId,
+            cancel_at_period_end: row.cancelAtPeriodEnd, kind: row.kind, status: row.status,
+            updated_at: row.updatedAt,
+        });
         const merchant = row.merchantAddress.toLowerCase();
         const amountUsdc = microsFromDecimal(row.amountCapUsdc);
         const planPeriodSeconds = Number(row.billingIntervalSeconds);
@@ -328,3 +340,5 @@ async function emitResumeSignals(params: {
         console.error("[ALERT] reactivation webhook enqueue failed after state committed:", webhookError);
     }
 }
+
+export const POST = withTransactionPin({ action: "subscription-resume", bind: financialPinContext }, handlePOST);
