@@ -72,6 +72,7 @@ async function fixture(browser: Browser, width: number, height = 844, emptyHisto
     if (path === "/api/user/subscriptions") return json({ success: true, subscriptions: [] });
     if (path === "/api/user/vault/config") return json({ success: true, vaults: [], config: null });
     if (path === "/api/user/commit/halt") return json({ success: true, onHold: false });
+    if (path === "/api/user/transaction-pin") return json({ configured: true, required: false });
     if (path === "/api/rates") return json({ rate: 1500, currency: "NGN" });
     return json({ success: true, requests: [], links: [], scan: [] });
   });
