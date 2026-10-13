@@ -91,6 +91,16 @@ function migrationConnectionConfig(connectionString) {
 }
 const MIGRATION_DIRS = ["prisma/migrations", "supabase/migrations"];
 
+/* Migrations whose initial production apply used an earlier syntax (e.g. `lock table`
+   outside transaction blocks in external runners) and was subsequently normalized.
+   Maps repo-relative filename to an array of recognized historical SHA-256 hashes.
+   When a known alias is encountered, the ledger updates the row to the active hash. */
+const MIGRATION_CHECKSUM_ALIASES = {
+    "supabase/migrations/20261013185408_email_financial_receipt_guard.sql": [
+        "9f4d7e2c5c5ca8b9d26b5cf4438759bf8e7a862e8ff1743d5e289dc9b92ee027",
+    ],
+};
+
 /* Historical files present when the ledger was introduced. Kept as documentation only; never
    auto-record these as applied because existence of a few tables cannot prove their hardening. */
 const HISTORICAL_BASELINE_FILES = [
@@ -333,12 +343,21 @@ async function main() {
                 const storedSha = appliedMap.get(file);
                 if (storedSha !== null && storedSha !== undefined) {
                     if (storedSha !== sha256) {
-                        throw new Error(
-                            `Migration checksum mismatch for file "${file}".\n` +
-                            `  Database stored: ${storedSha}\n` +
-                            `  Local file hash: ${sha256}\n` +
-                            `Aborting deployment to protect database integrity.`
-                        );
+                        const aliases = MIGRATION_CHECKSUM_ALIASES[file] || [];
+                        if (aliases.includes(storedSha)) {
+                            console.log(`[migrations] Updating accepted checksum alias for: ${file}`);
+                            await client.query(
+                                "UPDATE _subscript_migrations SET sha256 = $1, byte_length = $2 WHERE filename = $3",
+                                [sha256, byteLength, file]
+                            );
+                        } else {
+                            throw new Error(
+                                `Migration checksum mismatch for file "${file}".\n` +
+                                `  Database stored: ${storedSha}\n` +
+                                `  Local file hash: ${sha256}\n` +
+                                `Aborting deployment to protect database integrity.`
+                            );
+                        }
                     }
                 } else if (hasSha256Col) {
                     console.log(`[migrations] Backfilling checksum for already applied migration: ${file}`);
