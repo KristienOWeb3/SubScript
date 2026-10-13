@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { broadcastNotificationId } from "@/lib/notifications/broadcastId";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
 import { jsonOk } from "@/lib/http/json";
@@ -27,6 +28,26 @@ function parseAudience(value: string | null): Audience | null {
     return normalized === "USER" || normalized === "MERCHANT" ? normalized : null;
 }
 
+type NotificationCursor = { createdAt: Date; id: string };
+
+function parseCursor(value: string): NotificationCursor | null {
+    if (value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
+    try {
+        const decoded = Buffer.from(value, "base64url");
+        if (decoded.toString("base64url") !== value) return null;
+        const payload: unknown = JSON.parse(decoded.toString("utf8"));
+        if (!Array.isArray(payload) || payload.length !== 2) return null;
+        const [timestamp, id] = payload;
+        if (typeof timestamp !== "string" || typeof id !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) return null;
+        const createdAt = new Date(timestamp);
+        if (!Number.isFinite(createdAt.getTime()) || createdAt.toISOString() !== timestamp) return null;
+        return { createdAt, id };
+    } catch {
+        return null;
+    }
+}
+
 export async function GET(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -37,7 +58,11 @@ export async function GET(request: Request) {
         if (!audience) {
             return NextResponse.json({ error: "audience must be USER or MERCHANT" }, { status: 400 });
         }
-
+        const cursorValue = url.searchParams.get("cursor");
+        const cursor = cursorValue === null ? null : parseCursor(cursorValue);
+        if (cursorValue !== null && !cursor) {
+            return NextResponse.json({ error: "Invalid notification cursor" }, { status: 400 });
+        }
         const requestedLimit = Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT);
         const limit = Number.isFinite(requestedLimit)
             ? Math.min(Math.max(Math.trunc(requestedLimit), 1), MAX_LIMIT)
@@ -50,107 +75,60 @@ export async function GET(request: Request) {
             console.warn("[notifications] PIN setup reminder unavailable");
         });
 
-        /* 1. Fetch existing account notifications for this user that are not dismissed */
-        const [notifications, unreadCount, broadcasts, allUserBroadcastRows] = await Promise.all([
-            prisma.accountNotification.findMany({
-                where: { ...where, source: { not: "DISMISSED" } },
-                orderBy: { createdAt: "desc" },
-                take: limit,
-                select: {
-                    id: true,
-                    title: true,
-                    body: true,
-                    url: true,
-                    source: true,
-                    readAt: true,
-                    createdAt: true,
-                    broadcastId: true,
-                },
-            }),
-            prisma.accountNotification.count({ where: { ...where, readAt: null, source: { not: "DISMISSED" } } }),
+        const [broadcasts, allUserBroadcastRows] = await Promise.all([
             prisma.adminBroadcast.findMany({
                 where: { audience: { in: targetBroadcastAudience } },
                 orderBy: { createdAt: "desc" },
                 take: 20,
-                select: {
-                    id: true,
-                    title: true,
-                    body: true,
-                    url: true,
-                    createdAt: true,
-                },
+                select: { id: true, title: true, body: true, url: true, createdAt: true },
             }).catch(() => []),
             prisma.accountNotification.findMany({
-                where: { recipientAddress, audience, broadcastId: { not: null } },
+                where: { ...where, broadcastId: { not: null } },
                 select: { broadcastId: true },
-            }).catch(() => []),
+            }),
         ]);
-
-        /* 2. Determine any new broadcast announcements that have never been written for this user */
+        // Keep legacy random-id rows and dismissed markers; stable keys prevent new races.
         const knownBroadcastIds = new Set(allUserBroadcastRows.map((n) => n.broadcastId).filter(Boolean));
         const unrecordedBroadcasts = broadcasts.filter((b) => !knownBroadcastIds.has(b.id));
-
         if (unrecordedBroadcasts.length > 0) {
             await prisma.accountNotification.createMany({
                 data: unrecordedBroadcasts.map((b) => ({
-                    recipientAddress,
-                    audience,
-                    title: b.title,
-                    body: b.body,
-                    url: b.url,
-                    source: "ADMIN",
-                    broadcastId: b.id,
-                    readAt: null,
-                    createdAt: b.createdAt,
+                    id: broadcastNotificationId(recipientAddress, audience, b.id),
+                    recipientAddress, audience, title: b.title, body: b.body, url: b.url,
+                    source: "ADMIN", broadcastId: b.id, readAt: null, createdAt: b.createdAt,
                 })),
                 skipDuplicates: true,
             });
-
-            // Re-fetch so the returned list and unread count include newly materialized broadcast records
-            const freshNotifications = await prisma.accountNotification.findMany({
-                where: { ...where, source: { not: "DISMISSED" } },
-                orderBy: { createdAt: "desc" },
-                take: limit,
-                select: {
-                    id: true,
-                    title: true,
-                    body: true,
-                    url: true,
-                    source: true,
-                    readAt: true,
-                    createdAt: true,
-                    broadcastId: true,
-                },
-            });
-            const freshUnread = await prisma.accountNotification.count({
-                where: { ...where, readAt: null, source: { not: "DISMISSED" } },
-            });
-
-            return jsonOk({
-                notifications: freshNotifications.map((n) => ({
-                    id: n.id,
-                    title: n.title,
-                    body: n.body,
-                    url: n.url,
-                    source: n.source,
-                    readAt: n.readAt ? n.readAt.toISOString() : null,
-                    createdAt: n.createdAt.toISOString(),
-                })),
-                unreadCount: freshUnread,
-            });
         }
 
+        // Date + primary-key ordering avoids skipping rows sharing a timestamp. The cursor
+        // remains usable if its row was dismissed or deleted after the previous page loaded.
+        const [notifications, unreadCount] = await Promise.all([
+            prisma.accountNotification.findMany({
+                where: {
+                    ...where, source: { not: "DISMISSED" },
+                    ...(cursor ? { OR: [
+                        { createdAt: { lt: cursor.createdAt } },
+                        { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+                    ] } : {}),
+                },
+                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                take: limit + 1,
+                select: { id: true, title: true, body: true, url: true, source: true, readAt: true, createdAt: true },
+            }),
+            prisma.accountNotification.count({ where: { ...where, readAt: null, source: { not: "DISMISSED" } } }),
+        ]);
+        const page = notifications.slice(0, limit);
+        const last = page[page.length - 1];
+        const nextCursor = notifications.length > limit && last
+            ? Buffer.from(JSON.stringify([last.createdAt.toISOString(), last.id])).toString("base64url")
+            : null;
         return jsonOk({
-            notifications: notifications.map((n) => ({
-                id: n.id,
-                title: n.title,
-                body: n.body,
-                url: n.url,
-                source: n.source,
-                readAt: n.readAt ? n.readAt.toISOString() : null,
-                createdAt: n.createdAt.toISOString(),
+            notifications: page.map((n) => ({
+                id: n.id, title: n.title, body: n.body, url: n.url, source: n.source,
+                readAt: n.readAt ? n.readAt.toISOString() : null, createdAt: n.createdAt.toISOString(),
             })),
-            unreadCount,
+            unreadCount, nextCursor,
         });
     } catch (error: any) {
         console.error("[notifications] list failed:", error);

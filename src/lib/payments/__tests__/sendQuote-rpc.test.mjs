@@ -140,6 +140,8 @@ test("external CCTP rejects unavailable simulation and a reverted simulated burn
 function sendHarness(receipt, balance = 100_000_000n) {
   const events = { status: [], loading: [], writes: [], optimistic: [], logs: [], refreshes: [] };
   const subject = dashboard({
+    // PIN interaction is covered by the browser suite; this harness exercises RPC settlement.
+    ensureTransactionPinSetup: async () => {},
     singleResolved: { address: recipient, alias: "recipient.sub" }, singleResolving: false,
     singleAmount: "10", isOwnWalletAddress: () => false,
     setSingleSendStatus: status => events.status.push(status), setSingleSendLoading: loading => events.loading.push(loading),

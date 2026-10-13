@@ -76,7 +76,7 @@ test("buildDepositReceivedEmail generates Spenda-style receipt with 3D banner, c
 
     assert.ok(mail.html.includes("Completed"), "should have Completed pill");
     assert.ok(mail.html.includes("eth-3d-banner-v4.png"), "should have 3D Ethereum banner graphic");
-    assert.ok(mail.html.includes("etherscan.io/tx/0x58c5aa18"), "should link to Etherscan");
+    assert.match(mail.html, /(?:explorer\.arc\.io|testnet\.arcscan\.app)\/tx\/0x58c5aa18/, "confirmation links to the destination credit on Arc");
     assert.ok(mail.html.includes("260 USDC"), "should format micro amount");
     assert.ok(mail.idempotencyKey.includes("0x58c5aa18"), "should have deterministic idempotency key");
 });

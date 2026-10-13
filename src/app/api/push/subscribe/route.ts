@@ -26,7 +26,11 @@ export async function POST(request: Request) {
 
         /* One row per endpoint. Replace any prior binding so a shared device re-points to the
            wallet that is currently signed in. (Avoids partial-unique-index upsert edge cases.) */
-        await supabaseAdmin.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+        const { error: deleteError } = await supabaseAdmin.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+        if (deleteError) {
+            console.error("[push/subscribe] prior binding removal failed:", deleteError.message);
+            return NextResponse.json({ error: "Failed to replace subscription" }, { status: 500 });
+        }
 
         const { count, error: countError } = await supabaseAdmin
             .from("push_subscriptions")
@@ -83,11 +87,16 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Invalid endpoint" }, { status: 400 });
         }
 
-        await supabaseAdmin
+        const { error } = await supabaseAdmin
             .from("push_subscriptions")
             .delete()
             .eq("endpoint", endpoint)
             .eq("wallet_address", wallet.toLowerCase());
+
+        if (error) {
+            console.error("[push/subscribe] removal failed:", error.message);
+            return NextResponse.json({ error: "Failed to remove subscription" }, { status: 500 });
+        }
 
         return NextResponse.json({ success: true }, { status: 200 });
     } catch (err: any) {

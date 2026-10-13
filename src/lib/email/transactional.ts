@@ -7,6 +7,7 @@
  */
 
 import crypto from "crypto";
+import { arcReceiptEvent } from "./receiptEvent";
 import { isProd } from "@/lib/contracts/constants";
 import { pgMaybeOne } from "@/lib/serverPg";
 import {
@@ -33,6 +34,7 @@ export {
 export type { WalletEmailPreference, EmailCategory, EmailSendOutcome } from "./core";
 
 type PaymentReceipt = {
+    chainId?: number;
     recipient: string;
     recipientKind: "payer" | "merchant";
     amountUsdc: bigint | string | number;
@@ -150,6 +152,15 @@ export async function sendWelcomeEmail(email: string, role: "USER" | "ENTERPRISE
 }
 
 export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
+    if (receipt.recipientKind === "merchant") {
+        return sendTransactionalEmail({
+            ...buildDepositReceivedEmail({ recipientEmail: receipt.recipient, amountUsdc: receipt.amountUsdc,
+                originChainName: "Arc Network", chainId: receipt.chainId, txHash: receipt.txHash,
+                paymentTitle: receipt.paymentTitle, receiptUrl: receipt.receiptUrl }),
+            // Preserve the original producer key so historical receipt retries remain deduplicated.
+            idempotencyKey: `payment-receipt:${receipt.recipientKind}:${receipt.txHash}:${receipt.recipient}`,
+        });
+    }
     const amount = formatUsdc(receipt.amountUsdc);
     /* Who was paid, in words. Falls back to a shortened address rather than a full one: an
        inbox is a place where a 42-character hex string is pure noise. */
@@ -181,6 +192,7 @@ export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
             cta: { label: "Open your receipt", url: receipt.receiptUrl },
         }),
         idempotencyKey: `payment-receipt:${receipt.recipientKind}:${receipt.txHash}:${receipt.recipient}`,
+        receiptEvent: arcReceiptEvent(receipt.txHash, receipt.chainId),
     });
 }
 
@@ -523,6 +535,8 @@ function getNetworkBannerHtml(chainName: string): string {
 }
 
 export type DepositEmailParams = {
+    /** Destination chain where the confirmed deposit was received. */
+    chainId?: number;
     recipientEmail: string;
     recipientName?: string | null;
     amountUsdc: bigint | string | number;
@@ -530,6 +544,8 @@ export type DepositEmailParams = {
     txHash?: string | null;
     referenceId?: string | null;
     receivedAt?: Date;
+    paymentTitle?: string | null;
+    receiptUrl?: string | null;
 };
 
 export function buildDepositReceivedEmail(params: DepositEmailParams) {
@@ -537,48 +553,53 @@ export function buildDepositReceivedEmail(params: DepositEmailParams) {
     const chainName = params.originChainName || "External Chain";
     const dateStr = formatSpendaDateTime(params.receivedAt);
     const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
+    // This is the destination mint/credit hash, even when the banner names the origin chain.
+    const event = arcReceiptEvent(params.txHash, params.chainId);
+    const explorer = event?.chainId === 5042002 ? "https://testnet.arcscan.app" : "https://explorer.arc.io";
     const txLinkHtml = params.txHash
-        ? `<a href="${getExplorerTxUrl(chainName, params.txHash)}" target="_blank" style="color:#38bdf8;text-decoration:none">${htmlEscape(shortHash!)}</a>`
-        : `<span style="color:#94a3b8">Confirmed on-chain</span>`;
-
-    const bannerHtml = getNetworkBannerHtml(chainName);
+        ? `<a href="${explorer}/tx/${htmlEscape(params.txHash)}" target="_blank" style="color:#2775ca;text-decoration:underline">${htmlEscape(shortHash!)}</a>`
+        : `<span>Confirmed on-chain</span>`;
+    const bannerHtml = `<img src="${htmlEscape(getNetworkBannerUrl(chainName))}" alt="${htmlEscape(chainName)}" width="518" style="display:block;width:100%;max-width:518px;height:auto;border:0;border-radius:16px;margin:0 0 24px">`;
     const greetingName = params.recipientName?.trim() || "there";
 
     const rows = [
-        { label: "Quantity", valueHtml: `${htmlEscape(amount)} USDC` },
-        { label: "Amount in USD", valueHtml: `$${htmlEscape(amount)}` },
-        { label: "Fee", valueHtml: "$0.00" },
+        ...(params.paymentTitle ? [{ label: "Payment", valueHtml: htmlEscape(params.paymentTitle) }] : []),
         { label: "Network", valueHtml: htmlEscape(chainName) },
-        { label: "Date/Time", valueHtml: htmlEscape(dateStr) },
-        { label: "Transaction Hash", valueHtml: txLinkHtml },
+        { label: "Asset", valueHtml: "USDC" },
+        { label: "Received", valueHtml: htmlEscape(dateStr) },
+        { label: "Transaction", valueHtml: txLinkHtml },
     ];
-
-    const detailsCard = renderSpendaReceiptCard(rows);
+    const detailsCard = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;margin:24px 0 0">
+        ${rows.map((row, index) => `<tr><td width="32%" style="padding:13px 8px 13px 0;vertical-align:top;color:#676f6c;font-size:12px;${index ? "border-top:1px solid #d4d9cf" : ""}">${row.label}</td>
+        <td align="right" style="padding:13px 0;font-size:12px;font-weight:600;overflow-wrap:anywhere;word-break:break-word;${index ? "border-top:1px solid #d4d9cf" : ""}">${row.valueHtml}</td></tr>`).join("")}
+    </table>`;
 
     return {
         to: params.recipientEmail,
         category: "transactional" as const,
         subject: `Deposit confirmed: ${amount} USDC on ${chainName}`,
-        text: `Hi ${greetingName},\n\nYou have received a new USDC deposit into your SubScript account.\n\nQuantity: ${amount} USDC\nNetwork: ${chainName}\nDate: ${dateStr}\n\nManage your funds at https://subscriptonarc.com/dashboard/user`,
+        text: `Hi ${greetingName},\n\nYour USDC has arrived and is ready to use.\n\nQuantity: ${amount} USDC\nNetwork: ${chainName}\nDate: ${dateStr}${params.txHash ? `\nTransaction: ${params.txHash}` : ""}\n\n${params.receiptUrl ? `View receipt: ${params.receiptUrl}` : "Open your wallet: https://subscriptonarc.com/user"}`,
         html: renderEmailLayout({
             previewText: `Deposit confirmed: ${amount} USDC from ${chainName}`,
-            theme: "dark",
+            theme: "platform",
             bodyHtml: `
                 ${bannerHtml}
-                <p style="margin:0 0 10px;font-size:15px;color:#cbd5e1">Hi <strong style="color:#ffffff">${htmlEscape(greetingName)}</strong>,</p>
-                <p style="margin:0 0 18px;font-size:14px;color:#94a3b8;line-height:1.6">You have received a new USDC deposit into your <strong style="color:#00d2b4">SubScript</strong> account. Log into your dashboard to manage your funds. See deposit details below.</p>
-                <div style="border-top:1px solid #232732;margin:18px 0"></div>
-                <div style="text-align:center;margin:0 0 8px">
-                    <span style="display:inline-block;padding:4px 14px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:9999px;font-size:12px;font-weight:700;color:#22c55e">Completed</span>
-                </div>
-                <div style="text-align:center;margin:6px 0 20px;font-size:32px;font-weight:900;color:#ffffff;letter-spacing:-0.5px">
-                    $${htmlEscape(amount)} <span style="font-size:18px;font-weight:700;color:#00d2b4">USDC</span>
-                </div>
+                <p style="margin:0 0 6px;font-size:14px">Hi ${htmlEscape(greetingName)},</p>
+                <h1 style="margin:0 0 8px;font-size:26px;font-weight:750;letter-spacing:-0.8px;line-height:1.2">Deposit received.</h1>
+                <p style="margin:0 0 24px;color:#676f6c;font-size:14px">Your USDC has arrived and is ready to use.</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#d4e3e8" style="background:#d4e3e8;border:1px solid #aab8b9;border-radius:20px">
+                <tr><td align="center" style="padding:24px 12px">
+                    <span style="display:inline-block;padding:4px 12px;border:1px solid #899c98;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Completed</span>
+                    <p style="margin:14px 0 2px;font-size:36px;font-weight:750;letter-spacing:-1.3px;line-height:1.15;overflow-wrap:anywhere;word-break:break-word">${htmlEscape(amount)} <span style="font-size:15px;letter-spacing:0">USDC</span></p>
+                    <p style="margin:8px 0 0;font-size:11px;color:#526660;letter-spacing:1px;text-transform:uppercase">Added to your wallet</p>
+                </td></tr></table>
                 ${detailsCard}
             `,
-            cta: { label: "Go to Dashboard", url: "https://subscriptonarc.com/dashboard/user" },
+            cta: params.receiptUrl ? { label: "View receipt", url: params.receiptUrl }
+                : { label: "Open wallet", url: "https://subscriptonarc.com/user" },
         }),
         idempotencyKey: `deposit:${chainName}:${params.txHash?.toLowerCase() || params.referenceId || `${params.recipientEmail.toLowerCase()}:${dateStr}`}`,
+        receiptEvent: arcReceiptEvent(params.txHash, params.chainId),
     };
 }
 

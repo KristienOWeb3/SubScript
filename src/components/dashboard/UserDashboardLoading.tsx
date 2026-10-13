@@ -4,21 +4,25 @@ import DashboardSidebar, {
   type DashboardSidebarItem,
 } from "./DashboardSidebar";
 import { Settings, HelpCircle } from "@/components/icons";
+import TransactionPinSettingsSkeleton from "@/components/TransactionPinSettingsSkeleton";
+import Skeleton from "@/components/ui/Skeleton";
 
 // CSS owns the responsive loading layout, including the server's first paint.
 export default function UserDashboardLoading({
   items,
   activeTab,
+  pinSettings = false,
 }: {
   items: ReadonlyArray<DashboardSidebarItem>;
   activeTab: string;
+  pinSettings?: boolean;
 }) {
   return (
     <div
-      role="status"
+      role={pinSettings ? undefined : "status"}
       className="user-dashboard-loading relative overflow-x-hidden bg-[#FFFFF0] dark:bg-[#060608] text-black dark:text-white font-sans h-[100dvh] overflow-y-auto overscroll-y-contain md:h-[100dvh] md:overflow-hidden"
     >
-      <span className="sr-only">Loading dashboard…</span>
+      {!pinSettings && <span className="sr-only">Loading dashboard…</span>}
       <div
         aria-hidden="true"
         className="absolute inset-0 pointer-events-none z-0 bg-[#353935] hidden md:block"
@@ -44,7 +48,7 @@ export default function UserDashboardLoading({
           ariaLabel="User dashboard loading"
         />
 
-        {/* Content Pane Skeleton — mirrors the mobile & desktop Home layout */}
+        {/* Content Pane Skeleton — mirrors the destination on mobile and desktop */}
         <div className="user-dashboard-content relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] dark:bg-[#060608] md:mt-[14px] md:rounded-tl-[20px] md:border md:border-black/10 dark:md:border-white/10 overflow-hidden h-[100dvh] md:h-[calc(100dvh-14px)]">
           <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
             <div className="flex w-full max-w-md items-center justify-between px-1 py-2 pointer-events-auto">
@@ -62,7 +66,15 @@ export default function UserDashboardLoading({
             </div>
           </div>
 
-          <main className="flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 pt-20 pb-28 md:pt-6 lg:pt-8 md:pb-12">
+          <main className={`flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-4 ${pinSettings ? "sm:px-5" : "sm:px-6"} lg:px-8 pt-20 pb-28 md:pt-6 lg:pt-8 md:pb-12`}>
+            {pinSettings && <div className="hidden md:flex items-center gap-3 mb-8 pb-6 border-b border-black/10 dark:border-white/10"><h1 className="min-w-0 text-2xl xl:text-3xl font-extrabold text-[#111827] dark:text-white uppercase tracking-tight">User Dashboard</h1><Skeleton className="h-9 w-9 shrink-0 rounded-full" /></div>}
+            {pinSettings ? <div className="transaction-pin-settings space-y-6">
+              <div className="flex items-center gap-4"><Skeleton className="h-9 w-9 rounded-full" /><h2 className="text-sm font-black uppercase tracking-wider">Transaction PIN</h2></div>
+              <section className="rounded-[2rem] border border-[#082824]/10 bg-white/60 p-5 shadow-[0_12px_48px_rgba(8,40,36,0.045)] sm:p-8 dark:border-white/10 dark:bg-white/[0.03]">
+                <p className="mt-4 text-sm leading-relaxed text-[#082824]/65 dark:text-white/65">Protect payments from your SubScript wallet with a private six-digit PIN. Verify your email whenever you set, change, or reset it.</p>
+                <TransactionPinSettingsSkeleton />
+              </section>
+            </div> : <>
             {/* Title Header on Desktop/Tablet */}
             <div className="hidden md:flex items-center justify-between gap-6 mb-8 pb-6 border-b border-black/10 dark:border-white/10">
               <div className="h-8 w-64 subscript-skeleton max-w-full rounded-lg" />
@@ -176,12 +188,13 @@ export default function UserDashboardLoading({
                 </div>
               </div>
             </div>
+            </>}
           </main>
         </div>
       </div>
 
       {/* Mobile Bottom Bar Skeleton */}
-      <div className="md:hidden fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2">
+      {!pinSettings && <div className="md:hidden fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2">
         <div className="flex h-[60.6375px] flex-1 items-center justify-around rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-3 backdrop-blur-2xl">
           {[1, 2, 3, 4].map((i) => (
             <div
@@ -191,7 +204,7 @@ export default function UserDashboardLoading({
           ))}
         </div>
         <div className="h-[60.6375px] w-[60.6375px] shrink-0 rounded-full subscript-skeleton" />
-      </div>
+      </div>}
     </div>
   );
 }

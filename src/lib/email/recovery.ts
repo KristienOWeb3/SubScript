@@ -20,7 +20,8 @@ export async function enqueueDirectDepositEmails(wallet: string, deposits: ArcDe
     if (!email) return 0;
     for (const deposit of eligible) {
         await sendDepositReceivedEmail({ recipientEmail: email, amountUsdc: deposit.amountFormatted,
-            originChainName: `Arc Network (${deposit.chainId})`, txHash: deposit.txHash });
+            originChainName: `Arc Network (${deposit.chainId})`, txHash: deposit.txHash, chainId: deposit.chainId,
+            receivedAt: new Date(deposit.timestamp) });
     }
     return eligible.length;
 }

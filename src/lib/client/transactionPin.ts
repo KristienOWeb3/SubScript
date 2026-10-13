@@ -5,7 +5,9 @@ export type TransactionPinChallenge = {
 };
 
 export type TransactionPinReview = { operation: string; details: unknown };
-export type TransactionPinPrompt = (challenge: TransactionPinChallenge, review: TransactionPinReview, signal?: AbortSignal | null) => Promise<string>;
+export type TransactionPinPrompt = ((challenge: TransactionPinChallenge, review: TransactionPinReview, signal?: AbortSignal | null) => Promise<string>) & {
+    getSetupStatus?: (signal: AbortSignal) => Promise<TransactionPinStatus>;
+};
 
 export type TransactionPinStatus = { required: boolean; configured: boolean; lockedUntil?: string | null; coolingOffUntil?: string | null };
 
@@ -53,10 +55,16 @@ export async function ensureTransactionPinSetup(signal?: AbortSignal | null, pro
     return withTransactionPinCancellation(signal, current => checkTransactionPinSetup(current, prompt));
 }
 
-async function checkTransactionPinSetup(signal: AbortSignal, prompt?: TransactionPinPrompt): Promise<void> {
+export async function loadTransactionPinStatus(signal: AbortSignal): Promise<TransactionPinStatus> {
     signal.throwIfAborted();
     const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
     const status = await readTransactionPinStatus(await fetch("/api/user/transaction-pin", { cache: "no-store", signal: requestSignal }));
+    signal.throwIfAborted();
+    return status;
+}
+
+async function checkTransactionPinSetup(signal: AbortSignal, prompt?: TransactionPinPrompt): Promise<void> {
+    const status = await (prompt?.getSetupStatus ? prompt.getSetupStatus(signal) : loadTransactionPinStatus(signal));
     signal.throwIfAborted();
     if (!status.required || status.configured) return;
     const ask = prompt ?? (await import("@/components/TransactionPinPrompt")).promptTransactionPin;

@@ -168,7 +168,7 @@ export async function processSettlementReceiptJobs(limit=5, readTimeoutMs=3000) 
                     'destination' in checked ? checked.destination : job.payee_address,
                 ])).digest('hex');
                 await sendSettlementReceipts({kind:job.kind as SettlementKind,amountUsdc:checked.amount,txHash,
-                    settlementRef:`settlement-leg:${legIdentity}`,payerAddress:payer,payeeAddress:payee});
+                    chainId:job.chain_id,settlementRef:`settlement-leg:${legIdentity}`,payerAddress:payer,payeeAddress:payee});
             } else {
                 const recipient=await resolveRecipient(job.funding_wallet,'security',true);
                 if(!recipient) throw new Error("SETTLEMENT_RECIPIENT_UNAVAILABLE");

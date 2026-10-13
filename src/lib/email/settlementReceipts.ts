@@ -31,6 +31,7 @@
  */
 
 import crypto from "crypto";
+import { arcReceiptEvent } from "./receiptEvent";
 
 import { receiptUrl } from "@/lib/arc/memo";
 import {
@@ -40,7 +41,7 @@ import {
     resolveRecipient,
     sendTransactionalEmail,
 } from "./core";
-import { sendPaymentReceiptEmails } from "./transactional";
+import { buildDepositReceivedEmail, sendPaymentReceiptEmails } from "./transactional";
 
 /* What settled. Only used to pick default copy and to namespace the idempotency key, so two
    different kinds of settlement can never collide on one key even if they shared a hash. */
@@ -74,6 +75,7 @@ const DEFAULT_TITLE: Record<SettlementKind, string> = {
 };
 
 export type SettlementReceiptInput = {
+    chainId?: number;
     kind: SettlementKind;
     /** Micro-USDC. Never format this by hand; formatUsdc owns the decimal math. */
     amountUsdc: bigint | string | number;
@@ -185,6 +187,7 @@ export async function sendSettlementReceipts(input: SettlementReceiptInput): Pro
             payerAddress: input.payerAddress,
             paymentTitle: title,
             txHash: input.txHash,
+            chainId: input.chainId,
         });
         return;
     }
@@ -201,6 +204,7 @@ export async function sendSettlementReceipts(input: SettlementReceiptInput): Pro
  * on its webhook and the run in its dashboard.
  */
 export async function sendBatchPayoutReceipts(input: {
+    chainId?: number;
     kind: SettlementKind;
     txHash: string;
     paymentTitle?: string | null;
@@ -209,6 +213,7 @@ export async function sendBatchPayoutReceipts(input: {
     for (const recipient of input.recipients) {
         await sendSettlementReceipts({
             kind: input.kind,
+            chainId: input.chainId,
             amountUsdc: recipient.amountUsdc,
             txHash: input.txHash,
             payeeAddress: recipient.address,
@@ -241,7 +246,10 @@ async function sendReceiptsWithoutCta(input: SettlementReceiptInput & {
         if (!recipient || sent.has(recipient)) continue;
         sent.add(recipient);
 
-        const message = buildSettlementReceiptEmail({
+        const message = side === "payee" && input.reference.isTxHash ? buildDepositReceivedEmail({
+            recipientEmail: recipient, amountUsdc: input.amount, originChainName: "Arc Network",
+            txHash: input.txHash, chainId: input.chainId, paymentTitle: input.title,
+        }) : buildSettlementReceiptEmail({
             side,
             amountUsdc: input.amount,
             title: input.title,
@@ -261,6 +269,7 @@ async function sendReceiptsWithoutCta(input: SettlementReceiptInput & {
                other. The recipient is hashed rather than inlined so no address reaches the
                provider-visible Idempotency-Key header. */
             idempotencyKey: `settlement-receipt:${input.kind}:${side}:${input.reference.key}:${hashRecipient(recipient)}`,
+            receiptEvent: arcReceiptEvent(input.txHash, input.chainId),
         });
     }
 }

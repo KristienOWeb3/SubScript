@@ -93,8 +93,10 @@ export function quoteEmbeddedArcReceipt(amountUsdc: string, networkFee?: {
 }
 
 export function maxSendAmount(balanceUsdc: string, quote: SendQuote): string {
-  const reservedFee = (quote.feeTreatment === "additional" ? usdcToMicros(quote.feeUsdc) : 0n)
+  // Arc quotes expose gas as an additional fee; bridge quotes expose wallet gas
+  // separately. Reserve twice that estimate while leaving included fees alone.
+  const estimatedGas = (quote.feeTreatment === "additional" ? usdcToMicros(quote.feeUsdc) : 0n)
     + usdcToMicros(quote.nativeGasUsdc || "0");
-  const remaining = usdcToMicros(balanceUsdc) - reservedFee;
+  const remaining = usdcToMicros(balanceUsdc) - estimatedGas * 2n;
   return microsToUsdc(remaining > 0n ? remaining : 0n);
 }

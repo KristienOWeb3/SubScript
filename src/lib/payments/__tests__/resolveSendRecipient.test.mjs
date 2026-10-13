@@ -43,6 +43,37 @@ test("a stalled lookup aborts and can be retried successfully", async () => {
   assert.equal((await resolveSendRecipient("nora.sub", new AbortController().signal)).address, address);
 });
 
+for (const environment of ["development", "production"]) test(`${environment} lookup deadline keeps cold compilation separate from production latency`, async (t) => {
+  const previousEnvironment = process.env.NODE_ENV;
+  process.env.NODE_ENV = environment;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let respond;
+  globalThis.fetch = (_url, { signal }) => new Promise((resolve, reject) => {
+    respond = () => resolve(Response.json({ success: true, address }));
+    signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+  });
+  try {
+    const lookup = resolveSendRecipient("nora.sub", new AbortController().signal);
+    if (environment === "development") {
+      t.mock.timers.tick(8_001);
+      respond();
+      assert.equal((await lookup).address, address);
+      const stalled = resolveSendRecipient("nora.sub", new AbortController().signal);
+      const rejection = assert.rejects(stalled, /took too long/);
+      t.mock.timers.tick(30_000);
+      await rejection;
+    } else {
+      const rejection = assert.rejects(lookup, /took too long/);
+      t.mock.timers.tick(8_000);
+      await rejection;
+    }
+  } finally {
+    if (previousEnvironment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousEnvironment;
+    t.mock.timers.reset();
+  }
+});
+
 test("cancelled or stale requests cannot return a successful target", async () => {
   const controller = new AbortController();
   globalThis.fetch = async () => {

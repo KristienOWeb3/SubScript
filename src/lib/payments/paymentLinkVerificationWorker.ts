@@ -470,6 +470,7 @@ async function runPostSettlementEffects(
     await sendSettlementReceipts({
         kind: "payment_link",
         amountUsdc: job.amount_usdc,
+        chainId: Number(job.chain_id),
         txHash: job.tx_hash,
         payerAddress: job.payer_address,
         payeeAddress: job.merchant_address,

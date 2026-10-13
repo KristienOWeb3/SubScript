@@ -8,7 +8,7 @@ const hash = `0x${"12".repeat(32)}`;
 
 async function fixture(browser: Browser, width: number, height = 844, emptyHistory = false, reducedMotion = false) {
   const pendingOperations = new Map<string, { status: "pending" | "confirmed" | "failed"; amountMicros: bigint; hash: string }>();
-  const state = { independentPending: false, pendingOperations, deposits: [] as Record<string, unknown>[], balanceMicros: 100_000_000n, settledBalanceMicros: 100_000_000n, failSend: false, failedPending: false, pendingSend: false, confirmed: false, sendDelay: 0, receiptFeeMicros: 125_000n, brokenAvatar: false, sent: [] as unknown[] };
+  const state = { independentPending: false, pendingOperations, deposits: [] as Record<string, unknown>[], balanceMicros: 100_000_000n, settledBalanceMicros: 100_000_000n, failSend: false, failedPending: false, pendingSend: false, confirmed: false, sendDelay: 0, receiptFeeMicros: 125_000n, quoteFeeMicros: 125_000n, brokenAvatar: false, sent: [] as unknown[] };
   const context = await browser.newContext({ viewport: { width, height }, colorScheme: "dark", serviceWorkers: "block", reducedMotion: reducedMotion ? "reduce" : "no-preference" });
   await context.addCookies([{ name: "subscript_e2e_test", value: "true", url: baseURL }]);
   await context.addInitScript((empty) => {
@@ -43,7 +43,7 @@ async function fixture(browser: Browser, width: number, height = 844, emptyHisto
     if (path === "/api/user/settings") return json({ success: true, receipts: [], settings: { alias: "qa-user", profilePic: null, payoutDestination: wallet, pushEnabled: false, walletBackup: { available: true, email: "qa@example.com", provider: "email_otp", completedAt: "2026-01-01T00:00:00Z" } } });
     if (path === "/api/merchant/alias") return json({ success: true, address: recipient, alias: "nora.sub", profile_pic: state.brokenAvatar ? "/api/fixture-missing-avatar" : null });
     if (path === "/api/fixture-missing-avatar") return route.fulfill({ status: 404, body: "Missing photo" });
-    if (path === "/api/user/wallet/estimate-fee") return json({ recipients: 1, feeUsdc: "0.125", feeMicros: "125000", fallback: false });
+    if (path === "/api/user/wallet/estimate-fee") return json({ recipients: 1, feeUsdc: String(Number(state.quoteFeeMicros) / 1_000_000), feeMicros: String(state.quoteFeeMicros), fallback: false });
     if (path === "/api/user/wallet/send") {
       state.sent.push(request.postDataJSON());
       if (state.sendDelay) await new Promise(resolve => setTimeout(resolve, state.sendDelay));
@@ -224,7 +224,7 @@ test.describe("send flow uses platform data", () => {
     });
   }
 
-  test("reference morph timings, real height interpolation, keyboard send and repeated close", async ({ browser }, info) => {
+  test("bounded morph timings, real height interpolation, keyboard send and repeated close", async ({ browser }, info) => {
     const { page, context, state } = await fixture(browser, 390);
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -253,7 +253,7 @@ test.describe("send flow uses platform data", () => {
     await page.screenshot({ style: "nextjs-portal { display: none !important; }", path: info.outputPath("review.png") });
     const evidence = await page.evaluate(() => (window as unknown as { arcMotion: { id: string; frames: Keyframe[]; timing: KeyframeAnimationOptions }[] }).arcMotion);
     expect(evidence.some(item => item.id === "sheet-card" && item.timing.duration === 480 && item.frames.some(frame => typeof frame.clipPath === "string"))).toBe(true);
-    expect(evidence.some(item => item.id === "sheet-card" && item.timing.duration === 560 && item.frames[0].height !== item.frames[1].height)).toBe(true);
+    expect(evidence.some(item => item.id === "sheet-card" && item.timing.duration === 160 && item.frames[0].height !== item.frames[1].height)).toBe(true);
     const thumb = page.getByRole("button", { name: "Slide to send" });
     await expect(thumb).toBeEnabled();
     const thumbBounds = await thumb.boundingBox();
@@ -430,12 +430,16 @@ test.describe("send flow uses platform data", () => {
     await context.close();
   });
   for (const width of [390, 1440]) {
-    test(`${width}px Max reserves quoted gas and recent identities are unique`, async ({ browser }, info) => {
-      const { page, context } = await fixture(browser, width);
+    test(`${width}px Max reserves double current gas and recent identities are unique`, async ({ browser }, info) => {
+      const { page, context, state } = await fixture(browser, width);
       const dialog = await openSend(page, width < 768);
       await expect(dialog.getByTestId("send-gas-fee")).toContainText("0.125");
       await dialog.getByRole("button", { name: /^(Max|Send all-gas \(Max\))$/i }).click();
-      await expect(dialog.getByTestId("send-amount")).toHaveValue("99.875");
+      await expect(dialog.getByTestId("send-amount")).toHaveValue("99.75");
+      // Each click must use today's estimate rather than the previous displayed quote.
+      state.quoteFeeMicros = 200_000n;
+      await dialog.getByRole("button", { name: /^(Max|Send all-gas \(Max\))$/i }).click();
+      await expect(dialog.getByTestId("send-amount")).toHaveValue("99.6");
       const recent = dialog.getByText("Recent recipients", { exact: true }).locator("..");
       await expect(recent.locator("button")).toHaveCount(1);
       await expect(recent).toContainText(/nora\.sub/i);
@@ -448,10 +452,10 @@ test.describe("send flow uses platform data", () => {
       if (width < 768) {
         await dialog.getByTestId("send-review").click();
         await expect(page.locator("#sheet-review-header")).toContainText("Review");
-        await expect(page.locator("#sheet-review-top")).toContainText("99.875");
-        await expect(dialog.getByText("Network fee", { exact: true }).locator("..")).toContainText("0.125");
-        await expect(dialog.getByText("Total received", { exact: true }).locator("..")).toContainText("99.875");
-        await expect(dialog).toContainText("Wallet debit: 100 USDC");
+        await expect(page.locator("#sheet-review-top")).toContainText("99.6");
+        await expect(dialog.getByText("Network fee", { exact: true }).locator("..")).toContainText("0.2");
+        await expect(dialog.getByText("Total received", { exact: true }).locator("..")).toContainText("99.6");
+        await expect(dialog).toContainText("Wallet debit: 99.8 USDC");
         await page.waitForTimeout(650);
         await page.screenshot({ style: "nextjs-portal { display: none !important; }", path: info.outputPath("send-review-mobile.png") });
       }

@@ -46,6 +46,8 @@ export type EmailMessage = {
     text: string;
     idempotencyKey: string;
     category: EmailCategory;
+    /** Shared financial confirmation identity, independent of template/producer. */
+    receiptEvent?: { chainId: number; txHash: string };
 };
 
 export const htmlEscape = (value: string) => value.replace(/[&<>'"]/g, (character) => ({
@@ -74,8 +76,36 @@ export function renderEmailLayout(opts: {
     heading?: string;
     bodyHtml: string;
     cta?: { label: string; url: string };
-    theme?: "light" | "dark";
+    theme?: "light" | "dark" | "platform";
 }): string {
+    if (opts.theme === "platform") {
+        return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"></head>
+<body style="margin:0;padding:0;background:#fffff0;color:#353935">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">${htmlEscape(opts.previewText)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#fffff0" style="background:#fffff0">
+<tr><td align="center" style="padding:28px 16px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;font-family:${EMAIL_FONT_STACK}">
+<tr><td style="padding:0 4px 24px">
+  <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+    <td width="36"><img src="https://subscriptonarc.com/logo-colored.png" width="32" height="32" alt="" style="display:block;border-radius:10px"></td>
+    <td style="padding-left:8px;font-size:21px;font-weight:800;letter-spacing:-0.7px;color:#353935">SubScript</td>
+  </tr></table>
+</td></tr>
+<tr><td style="padding:20px;background:#fffff0;border:1px solid #aab8b9;border-radius:24px">
+${opts.heading ? `<h1 style="margin:0 0 16px;font-size:26px;color:#353935">${htmlEscape(opts.heading)}</h1>` : ""}
+<div style="font-size:15px;line-height:1.6;color:#353935">${opts.bodyHtml}</div>
+${opts.cta ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0"><tr>
+<td align="center" bgcolor="#353935" style="background:#353935;border-radius:999px"><a href="${htmlEscape(opts.cta.url)}" style="display:block;padding:16px 20px;color:#fffff0;font-family:${EMAIL_FONT_STACK};font-size:14px;font-weight:700;text-decoration:none;border-radius:999px">${htmlEscape(opts.cta.label)}</a></td>
+</tr></table>` : ""}
+</td></tr>
+<tr><td align="center" style="padding:22px 12px;color:#676f6c;font-size:12px;line-height:1.7">
+Every way money moves. Settled in USDC.<br>
+You received this receipt because your email is linked to a SubScript account.
+</td></tr></table>
+</td></tr></table></body></html>`;
+    }
     const isDark = opts.theme === "dark";
     const button = opts.cta
         ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0 4px;${isDark ? "width:100%" : ""}">

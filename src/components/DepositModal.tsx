@@ -561,7 +561,6 @@ export default function DepositModal({
         const barEl = (document.getElementById("mobile-nav-capsule") || document.querySelector("aside[aria-label='Mobile navigation bar'] nav")) as HTMLElement | null;
         const walEl = (document.getElementById("mobile-nav-payments-btn") || document.getElementById("wal")) as HTMLElement | null;
         const previousBarVisibility = barEl?.style.visibility ?? "";
-        let ghostBar: HTMLElement | null = null;
         let walletAnimation: Animation | null = null;
 
         if (sc) sc.style.pointerEvents = "auto";
@@ -577,24 +576,8 @@ export default function DepositModal({
                 B: s.bottom - b.bottom,
                 L: b.left - s.left,
                 r: b.height / 2,
-                w: b.width,
-                h: b.height,
             };
             const cp = `inset(${g.T}px ${g.R}px ${g.B}px ${g.L}px round ${g.r}px)`;
-
-            const gh = barEl.cloneNode(true) as HTMLElement;
-            ghostBar = gh;
-            gh.id = "ghost-bottom-bar-deposit";
-            gh.style.position = "absolute";
-            gh.style.pointerEvents = "none";
-            gh.style.zIndex = "6";
-            gh.style.left = `${g.L}px`;
-            gh.style.top = `${g.T}px`;
-            gh.style.width = `${g.w}px`;
-            gh.style.height = `${g.h}px`;
-            gh.style.right = "auto";
-            gh.style.bottom = "auto";
-            sh.appendChild(gh);
 
             barEl.style.visibility = "hidden";
             if (sc) sc.style.pointerEvents = "auto";
@@ -606,7 +589,6 @@ export default function DepositModal({
             ], { duration: 480, easing: EASE_EXP, fill: "forwards" });
 
             if (tint) animateDeposit(tint, { opacity: [1, 0] }, { duration: 340, easing: "ease-out", fill: "forwards" });
-            animateDeposit(gh, { opacity: [1, 0], filter: ["blur(0px)", "blur(7px)"] }, { duration: 220, easing: "ease-out", fill: "forwards" }).onfinish = () => gh.remove();
 
             animateDeposit(pg, [
                 { opacity: 0, transform: "translateY(20px)", filter: "blur(10px)" },
@@ -634,7 +616,6 @@ export default function DepositModal({
         return () => {
             [sh, pg, tint, sc].forEach((element) => element?.getAnimations().forEach((animation) => animation.cancel()));
             walletAnimation?.cancel();
-            ghostBar?.remove();
             if (barEl) barEl.style.visibility = previousBarVisibility;
         };
     }, [isOpen, effectiveIsMobile, animateDeposit]);
@@ -661,34 +642,13 @@ export default function DepositModal({
                     B: s.bottom - b.bottom,
                     L: b.left - s.left,
                     r: b.height / 2,
-                    w: b.width,
-                    h: b.height,
                 };
                 const cp = `inset(${g.T}px ${g.R}px ${g.B}px ${g.L}px round ${g.r}px)`;
-
-                const gh = barEl.cloneNode(true) as HTMLElement;
-                gh.id = "ghost-bottom-bar-deposit-close";
-                gh.style.position = "absolute";
-                gh.style.pointerEvents = "none";
-                gh.style.zIndex = "6";
-                gh.style.left = `${g.L}px`;
-                gh.style.top = `${g.T}px`;
-                gh.style.width = `${g.w}px`;
-                gh.style.height = `${g.h}px`;
-                gh.style.right = "auto";
-                gh.style.bottom = "auto";
-                gh.style.opacity = "0";
-                sh.appendChild(gh);
 
                 animateDeposit(pg, [
                     { opacity: 1, transform: "none", filter: "blur(0px)" },
                     { opacity: 0, transform: "translateY(16px)", filter: "blur(8px)" },
                 ], { duration: 200, easing: "cubic-bezier(.5,0,1,1)", fill: "forwards" });
-
-                animateDeposit(gh, [
-                    { opacity: 0, filter: "blur(6px)" },
-                    { opacity: 1, filter: "blur(0px)" },
-                ], { duration: 240, delay: 240, easing: "ease-out", fill: "forwards" });
 
                 if (tint) animateDeposit(tint, { opacity: [0, 1] }, { duration: 280, delay: 100, fill: "forwards" });
                 if (sc) animateDeposit(sc, { opacity: [1, 0] }, { duration: 380, fill: "forwards" });
@@ -706,7 +666,6 @@ export default function DepositModal({
 
                 barEl.style.visibility = "visible";
                 [sh, pg, tint, sc].forEach((e) => e?.getAnimations().forEach((a) => a.cancel()));
-                gh.remove();
                 sh.style.display = "none";
                 if (sc) sc.style.pointerEvents = "none";
 

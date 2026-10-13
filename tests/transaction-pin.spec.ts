@@ -1,9 +1,24 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator } from "@playwright/test";
 import { buildSync } from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
 import postcss from "postcss";
 import tailwindcss from "@tailwindcss/postcss";
+
+
+async function fillPin(input: Locator, value: string) {
+    const verify=input.page().getByRole('button',{name:'Verify email code',exact:true});
+    if (await input.count() === 0 && await verify.isVisible() && await verify.isEnabled()) await verify.click();
+    await input.waitFor({state:'visible'});
+    if (await input.getAttribute('data-pin-slot') === null) { await input.fill(value); return; }
+    const slots=input.locator('xpath=ancestor::*[@data-pin-feedback][1]').locator('[data-pin-slot]');
+    for (let index=0;index<6;index++) await slots.nth(index).fill(value[index] ?? '');
+}
+async function expectPin(input: Locator, value: string) {
+    await expect(input).toBeVisible();
+    if (await input.getAttribute('data-pin-slot') === null) { await expect(input).toHaveValue(value); return; }
+    await expect.poll(()=>input.locator('xpath=ancestor::*[@data-pin-feedback][1]').locator('[data-pin-slot]').evaluateAll(nodes=>nodes.map(node=>(node as HTMLInputElement).value).join(''))).toBe(value);
+}
 
 let stylesheet = "";
 test.beforeAll(async () => {
@@ -66,7 +81,7 @@ async function fixture(page: import('@playwright/test').Page, configured = true)
         if (path === '/api/user/transaction-pin') return json({configured: state.configured, required: state.required});
         if (path === '/api/auth/session') return json({loggedIn:true,role:'USER',email:'user@example.com'});
         if (path === '/api/auth/otp/send') return json({challengeId:'email-challenge',retryAfterSeconds:60});
-        if (path === '/api/auth/otp/verify') return json({stepUpToken:'fresh-otp-token'});
+        if (path === '/api/auth/otp/verify') return json({stepUpToken:'fresh-otp-token',expiresInSeconds:300});
         return json({success:true,configured:true});
     });
     await page.goto('http://localhost:9876'); await page.addStyleTag({content:stylesheet}); await page.addScriptTag({content:script});
@@ -111,20 +126,20 @@ test('mobile keypad masks digits, limits length, deletes and shows rejection/suc
     await expect(input).toHaveAttribute('readonly','');
     await expect(slots).toHaveCount(6);
     for (const digit of '482619') await keypad.getByRole('button',{name:digit,exact:true}).click();
-    await expect(input).toHaveValue('482619');
+    await expectPin(input,'482619');
     await expect(keypad.getByRole('button',{name:'1',exact:true})).toBeDisabled();
     await expect(slots.first()).toHaveText('');
     await keypad.getByRole('button',{name:'Delete last digit'}).click();
-    await expect(input).toHaveValue('48261');
+    await expectPin(input,'48261');
     await keypad.getByRole('button',{name:'9',exact:true}).click();
     await page.screenshot({path:testInfo.outputPath('pin-mobile-filled.png')});
     state.incorrect=true;
     await page.getByRole('button',{name:'Authorize',exact:true}).click();
     await expect(page.getByRole('alert')).toContainText('Incorrect');
-    await expect(input).toHaveValue('');
+    await expectPin(input,'');
     await expect(page.locator('[data-pin-feedback]')).toHaveAttribute('data-pin-feedback','error');
-    await expect(page.locator('[data-pin-field]')).toHaveCSS('border-top-color','oklch(0.637 0.237 25.331)');
-    for (const slot of await slots.all()) await expect(slot).toHaveCSS('border-top-width','0px');
+    await expect(page.locator('[data-pin-field]').first()).toHaveCSS('border-top-color','oklch(0.637 0.237 25.331)');
+    for (const slot of await slots.all()) await expect(slot).toHaveCSS('border-top-width','2px');
     await page.screenshot({path:testInfo.outputPath('pin-mobile-error.png')});
     state.incorrect=false;
     for (const digit of '482619') await keypad.getByRole('button',{name:digit,exact:true}).click();
@@ -135,6 +150,37 @@ test('mobile keypad masks digits, limits length, deletes and shows rejection/suc
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(calls.filter(c=>c.path.endsWith('/authorize'))).toHaveLength(2);
     expect(calls.filter(c=>c.path.endsWith('/send'))).toHaveLength(2);
+});
+
+for(const theme of ['light','dark'])for(const feedback of ['error','success'])test(`PIN borders appear in order without glow for ${feedback} in ${theme} theme`,async({page},info)=>{
+    await page.setViewportSize({width:390,height:844});
+    const {state}=await fixture(page);state.incorrect=feedback==='error';
+    await page.clock.install();
+    await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;document.body.className='user-dashboard-redesign';void(window as unknown as {send:()=>Promise<void>}).send();},theme);
+    const fields=page.locator('[data-pin-slot]');
+    for(const digit of '482619')await page.getByRole('group',{name:'PIN keypad'}).getByRole('button',{name:digit,exact:true}).click();
+    await page.clock.pauseAt(await page.evaluate(()=>Date.now()+50));
+    await page.getByRole('button',{name:'Authorize',exact:true}).evaluate(node=>(node as HTMLButtonElement).click());
+    await expect(page.locator('[data-pin-feedback]')).toHaveAttribute('data-pin-feedback',feedback);
+    for(let count=1;count<=6;count++){
+        await page.clock.runFor(45);
+        expect(await fields.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-pin-slot-feedback')))).toEqual([...Array(count).fill(feedback),...Array(6-count).fill('idle')]);
+        for(const field of await fields.all())await expect(field).toHaveCSS('box-shadow','none');
+    }
+    await page.clock.runFor(80);
+    for(const field of await fields.all()){
+        await expect(field).toHaveCSS('border-top-width','2px');
+        await expect(field).toHaveCSS('border-top-color',feedback==='error'?'oklch(0.637 0.237 25.331)':'oklch(0.696 0.17 162.48)');
+    }
+    await page.screenshot({path:info.outputPath(`pin-${theme}-${feedback}-sequential-borders.png`)});
+    if(feedback==='success'){
+        await page.clock.runFor(80);await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(page.locator('#result')).toContainText('pending-1');
+    }else{
+        await page.clock.runFor(100);
+        await page.getByRole('group',{name:'PIN keypad'}).getByRole('button',{name:'4',exact:true}).evaluate(node=>(node as HTMLButtonElement).click());
+        await expect(page.locator('[data-pin-feedback]')).toHaveAttribute('data-pin-feedback','idle');
+    }
 });
 
 for (const reduced of [false, true]) test(`PIN touch feedback ${reduced ? 'respects reduced motion' : 'pulses only for accepted key presses'}`, async ({page}) => {
@@ -152,17 +198,73 @@ for (const reduced of [false, true]) test(`PIN touch feedback ${reduced ? 'respe
     for (const digit of '482619') await keypad.getByRole('button',{name:digit,exact:true}).click();
     await expect(keypad.getByRole('button',{name:'1',exact:true})).toBeDisabled();
     await keypad.getByRole('button',{name:'Delete last digit'}).click();
-    expect(await page.evaluate(()=>(window as unknown as {pinFeedbackPulses:number[]}).pinFeedbackPulses)).toEqual(reduced?[]:Array(7).fill(10));
+    expect(await page.evaluate(()=>(window as unknown as {pinFeedbackPulses:number[]}).pinFeedbackPulses)).toEqual(reduced?[]:[10,10,10,10,10,35,20]);
     await page.evaluate(()=>Object.defineProperty(navigator,'vibrate',{configurable:true,value:()=>{throw new Error('Device feedback unavailable');}}));
     await keypad.getByRole('button',{name:'9',exact:true}).click();
-    await expect(page.getByLabel('Six-digit transaction PIN',{exact:true})).toHaveValue('482619');
+    await expectPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'482619');
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+});
+
+test('six desktop PIN fields advance focus, support corrections, paste and deletion', async ({page}, testInfo) => {
+    await fixture(page);
+    await page.evaluate(() => { void (window as unknown as {send:()=>Promise<void>}).send(); });
+    const slots=page.getByRole('group',{name:'Six-digit transaction PIN digits',exact:true}).locator('input');
+    await expect(slots).toHaveCount(6);
+    await slots.first().click();
+    await page.keyboard.type('482619');
+    await expectPin(slots.first(),'482619');
+    await expect(slots.last()).toBeFocused();
+    await slots.nth(2).click();
+    await page.keyboard.type('7');
+    await expectPin(slots.first(),'487619');
+    await expect(slots.nth(3)).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await expect(slots.nth(2)).toBeFocused();
+    await page.keyboard.press('Delete');
+    await expectPin(slots.first(),'48619');
+    await slots.first().evaluate(node=>{
+        const data=new DataTransfer(); data.setData('text/plain','48x2619-extra');
+        node.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));
+    });
+    await expectPin(slots.first(),'482619');
+    await page.keyboard.press('Backspace');
+    await expectPin(slots.first(),'48261');
+    await expect(slots.last()).toBeFocused();
+    await page.keyboard.type('9');
+    await expectPin(slots.first(),'482619');
+    for (const slot of await slots.all()) {
+        await expect(slot).toHaveAttribute('type','password');
+        await expect(slot).toHaveCSS('border-top-width','1px');
+    }
+    await page.screenshot({path:testInfo.outputPath('pin-desktop-separated-fields.png')});
+    await page.getByRole('button',{name:'Authorize',exact:true}).click();
+    await expect(page.locator('#result')).toContainText('pending-1');
+});
+
+test('tapping any mobile PIN box selects that digit for keypad correction', async ({page}, testInfo) => {
+    await page.setViewportSize({width:320,height:568});
+    await fixture(page);
+    await page.evaluate(() => { void (window as unknown as {send:()=>Promise<void>}).send(); });
+    const slots=page.locator('[data-pin-slot]');
+    const keypad=page.getByRole('group',{name:'PIN keypad',exact:true});
+    for (const digit of '482619') await keypad.getByRole('button',{name:digit,exact:true}).click();
+    for (const slot of await slots.all()) {
+        await slot.click();
+        await expect(slot).toBeFocused();
+        await expect(keypad.getByRole('button',{name:'7',exact:true})).toBeEnabled();
+    }
+    await slots.nth(2).click();
+    await keypad.getByRole('button',{name:'7',exact:true}).click();
+    await expectPin(slots.first(),'487619');
+    await expect(keypad.getByRole('button',{name:'7',exact:true})).toBeDisabled();
+    await page.screenshot({path:testInfo.outputPath('pin-mobile-small-separated-fields.png')});
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
 });
 
 test('cancellation during green confirmation prevents the authorized retry', async ({page}) => {
     const {calls}=await fixture(page);
     await page.evaluate(() => { void (window as unknown as {send:()=>Promise<void>}).send(); });
-    await page.getByLabel('Six-digit transaction PIN',{exact:true}).fill('482619');
+    await fillPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'482619');
     await page.getByRole('button',{name:'Authorize',exact:true}).click();
     await expect(page.getByRole('status')).toHaveText('PIN verified');
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
@@ -187,20 +289,20 @@ for (const action of ['enroll','change','reset'] as const) test(`mobile ${action
         const keypad=page.getByRole('group',{name:'PIN keypad',exact:true});
         await expect(keypad).toHaveCount(1);
         for (const digit of value) await keypad.getByRole('button',{name:digit,exact:true}).click();
-        await expect(input).toHaveValue(value);
+        await expectPin(input,value);
         await expect(page.locator('[data-pin-slot]').first()).toHaveText('');
         if(index===1) {
             await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
             await page.getByRole('button',{name:'Back',exact:true}).click();
-            await expect(page.getByLabel(fields[0][0],{exact:true})).toHaveValue(fields[0][1]);
+            await expect(page.getByText('Email verified.',{exact:true})).toBeVisible();
             await page.getByRole('button',{name:'Continue',exact:true}).click();
-            await expect(page.getByLabel(label,{exact:true})).toHaveValue(value);
+            await expectPin(page.getByLabel(label,{exact:true}),value);
             await page.screenshot({path:testInfo.outputPath(`mobile-${action}.png`)});
         }
         if(index < fields.length-1) await page.getByRole('button',{name:'Continue',exact:true}).click();
     }
-    expect(calls.filter(call=>call.path.endsWith('/otp/verify'))).toHaveLength(0);
-    await page.getByRole('button',{name:'Verify and save PIN',exact:true}).click();
+    expect(calls.filter(call=>call.path.endsWith('/otp/verify'))).toHaveLength(1);
+    await page.getByRole('button',{name:'Save PIN',exact:true}).click();
     await expect(page.locator('[data-pin-feedback="success"]')).toHaveCount(1);
     await expect(page.getByRole('status')).toContainText(action==='reset'?'reset':'saved');
     const saved=calls.find(call=>call.path.endsWith(`/${action}`))!;
@@ -230,14 +332,14 @@ test('full batch review, incorrect/locked attempts, opaque retry and pending sta
     await page.evaluate(() => { void (window as unknown as {send:()=>Promise<void>}).send(); });
     const dialog=page.getByRole('dialog'); await expect(dialog).toBeVisible();
     await expect(dialog).toHaveClass(/ph-no-capture/);
-    await expect(page.getByLabel('Six-digit transaction PIN')).toHaveAttribute('type','password');
-    await expect(page.getByLabel('Six-digit transaction PIN')).toHaveAttribute('data-private','true');
+    await expect(page.getByLabel('Six-digit transaction PIN',{exact:true})).toHaveAttribute('type','password');
+    await expect(page.getByLabel('Six-digit transaction PIN',{exact:true})).toHaveAttribute('data-private','true');
     await expect(dialog).toContainText('alice'); await expect(dialog).toContainText('bob');
-    state.incorrect=true; await page.getByLabel('Six-digit transaction PIN').fill('123456'); await page.getByRole('button',{name:'Authorize',exact:true}).click();
-    await expect(page.getByRole('alert')).toContainText('Incorrect'); await expect(page.getByLabel('Six-digit transaction PIN')).toHaveValue('');
-    state.incorrect=false; state.locked=true; await page.getByLabel('Six-digit transaction PIN').fill('123456'); await page.getByRole('button',{name:'Authorize',exact:true}).click();
+    state.incorrect=true; await fillPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'123456'); await page.getByRole('button',{name:'Authorize',exact:true}).click();
+    await expect(page.getByRole('alert')).toContainText('Incorrect'); await expectPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'');
+    state.incorrect=false; state.locked=true; await fillPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'123456'); await page.getByRole('button',{name:'Authorize',exact:true}).click();
     await expect(page.getByRole('alert')).toContainText('locked');
-    state.locked=false; await page.getByLabel('Six-digit transaction PIN').fill('482619'); await page.getByRole('button',{name:'Authorize',exact:true}).click();
+    state.locked=false; await fillPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'482619'); await page.getByRole('button',{name:'Authorize',exact:true}).click();
     await expect(dialog).toHaveCount(0); await expect(page.locator('#result')).toContainText('pending-1');
     const sends=calls.filter(c=>c.path.endsWith('/send')); expect(sends).toHaveLength(2); expect(sends[1].body).toEqual(sends[0].body); expect(sends[1].headers['x-transaction-operation-id']).toEqual(sends[0].headers['x-transaction-operation-id']); expect(sends[1].headers['x-transaction-pin-token']).toBe('opaque-token');
 });
@@ -245,10 +347,10 @@ test('full batch review, incorrect/locked attempts, opaque retry and pending sta
 test('cancel and abort clear PIN dialog without retry', async ({page}) => {
     const {calls}=await fixture(page);
     await page.evaluate(() => { void (window as unknown as {send:()=>Promise<void>}).send(); });
-    await page.getByLabel('Six-digit transaction PIN').fill('123456'); await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    await fillPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'123456'); await page.getByRole('button',{name:'Cancel',exact:true}).click();
     await expect(page.getByRole('dialog')).toHaveCount(0); await expect(page.locator('#result')).toHaveText('AbortError');
     await page.evaluate(() => { void (window as unknown as {send:()=>Promise<void>}).send(); });
-    await expect(page.getByLabel('Six-digit transaction PIN')).toHaveValue('');
+    await expectPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'');
     await page.evaluate(() => (window as unknown as {abort:()=>void}).abort());
     await expect(page.getByRole('dialog')).toHaveCount(0); expect(calls.filter(c=>c.path.endsWith('/send'))).toHaveLength(2); expect(calls.filter(c=>c.path.endsWith('/authorize'))).toHaveLength(0);
 });
@@ -298,7 +400,7 @@ test('setup popup on checkout host navigates to the dashboard PIN page',async({p
 test('route lifecycle cancellation erases entered PIN and never authorizes', async ({page}) => {
     const {calls}=await fixture(page);
     await page.evaluate(() => { void (window as unknown as {send:()=>Promise<void>}).send(); });
-    await page.getByLabel('Six-digit transaction PIN').fill('123456');
+    await fillPin(page.getByLabel('Six-digit transaction PIN',{exact:true}),'123456');
     await page.evaluate(() => (window as unknown as {cancelRoute:()=>void}).cancelRoute());
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.locator('#result')).toHaveText('AbortError');
@@ -367,10 +469,10 @@ test('change PIN requires current PIN and fresh action-bound OTP without introdu
     const {calls}=await fixture(page);
     await page.evaluate(()=>(window as unknown as {settings:()=>void}).settings());
     await page.getByRole('button',{name:'Send verification code'}).click();
-    await expect(page.getByLabel('Email code')).toHaveAttribute('type','password');
-    await page.getByLabel('Email code').fill('112233'); await page.getByLabel('Current PIN').fill('123456');
-    await page.getByLabel('New PIN',{exact:true}).fill('482619'); await page.getByLabel('Confirm new PIN').fill('482619');
-    await page.getByRole('button',{name:'Verify and save PIN'}).click();
+    await expect(page.getByLabel('Email code',{exact:true})).toHaveAttribute('type','password');
+    await fillPin(page.getByLabel('Email code',{exact:true}),'112233'); await fillPin(page.getByLabel('Current PIN',{exact:true}),'123456');
+    await fillPin(page.getByLabel('New PIN',{exact:true}),'482619'); await fillPin(page.getByLabel('Confirm new PIN',{exact:true}),'482619');
+    await page.getByRole('button',{name:'Save PIN'}).click();
     await expect(page.locator('[data-pin-feedback="success"]')).toHaveCount(3);
     await expect(page.getByRole('status')).toContainText('saved');
     const saved=calls.find(c=>c.path.endsWith('/change'))!; expect(saved.body).toEqual({pin:'482619',currentPin:'123456'});
@@ -384,8 +486,8 @@ for (const reset of [false,true]) test(`${reset?'reset':'enrollment'} requires e
     await page.evaluate(()=>(window as unknown as {settings:()=>void}).settings());
     if(reset) await page.getByRole('button',{name:'Forgot PIN'}).click();
     await page.getByRole('button',{name:'Send verification code'}).click();
-    await page.getByLabel('Email code').fill('112233'); await page.getByLabel('New PIN',{exact:true}).fill('482619'); await page.getByLabel('Confirm new PIN').fill('482619');
-    await page.getByRole('button',{name:'Verify and save PIN'}).click();
+    await fillPin(page.getByLabel('Email code',{exact:true}),'112233'); await fillPin(page.getByLabel('New PIN',{exact:true}),'482619'); await fillPin(page.getByLabel('Confirm new PIN',{exact:true}),'482619');
+    await page.getByRole('button',{name:'Save PIN'}).click();
     await expect(page.getByRole('status')).toContainText(reset?'reset':'saved');
     const verify=calls.find(c=>c.path.endsWith('/otp/verify'))!; expect(verify.body).toMatchObject({purpose:'financial_step_up',stepUp:{action:`transaction-pin:${reset?'reset':'enroll'}`}});
     const saved=calls.find(c=>c.path.endsWith(reset?'/reset':'/enroll'))!; expect(saved.headers['x-step-up-token']).toBe('fresh-otp-token'); expect(saved.body).toEqual({pin:'482619'});
@@ -449,7 +551,7 @@ test("settings load failures offer retry and merchant return uses the actual ses
     await expect(page.getByRole("alert")).toContainText("Unable to load");
     await page.getByRole("button", { name: "Retry loading PIN settings" }).click();
     await expect(page.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute("href", "/merchant");
-    await expect(page.getByText("Verification email: merchant@example.com")).toBeVisible();
+    await expect(page.getByText("merchant@example.com")).toBeVisible();
 });
 
 test("unverified email never exposes the enrollment form", async ({ page }) => {
@@ -492,17 +594,17 @@ test("anonymous session never exposes PIN settings", async ({ page }) => {
     await expect(page.getByRole("button", { name: "Send verification code" })).toHaveCount(0);
 });
 
-test("weak PIN validation happens before consuming a fresh OTP", async ({ page }) => {
+test("weak PIN validation preserves the verified email authorization", async ({ page }) => {
     const { calls } = await fixture(page, false);
     await page.evaluate(() => (window as unknown as { settings: () => void }).settings());
     await page.getByRole("button", { name: "Send verification code" }).click();
-    await page.getByLabel("Email code").fill("112233");
-    await page.getByLabel("New PIN", { exact: true }).fill("123456");
-    await page.getByLabel("Confirm new PIN").fill("123456");
-    await page.getByRole("button", { name: "Verify and save PIN" }).click();
+    await fillPin(page.getByLabel("Email code",{exact:true}),"112233");
+    await fillPin(page.getByLabel("New PIN", { exact: true }),"123456");
+    await fillPin(page.getByLabel("Confirm new PIN",{exact:true}),"123456");
+    await page.getByRole("button", { name: "Save PIN" }).click();
     await expect(page.getByRole("status")).toContainText("without a repeated or sequential pattern");
     await expect(page.locator('[data-pin-feedback="error"]')).toHaveCount(2);
-    expect(calls.filter(call => call.path.endsWith("/otp/verify"))).toHaveLength(0);
+    expect(calls.filter(call => call.path.endsWith("/otp/verify"))).toHaveLength(1);
 });
 
 test("failed current PIN clears consumed OTP challenge and all credentials before retry", async ({ page }) => {
@@ -511,20 +613,20 @@ test("failed current PIN clears consumed OTP challenge and all credentials befor
     await page.route("**/api/user/transaction-pin/change", route => route.fulfill({ status: 403, json: { error: "Current PIN verification failed." } }));
     await page.evaluate(() => (window as unknown as { settings: () => void }).settings());
     await page.getByRole("button", { name: "Send verification code" }).click();
-    await page.getByLabel("Email code").fill("112233");
-    await page.getByLabel("Current PIN").fill("731492");
-    await page.getByLabel("New PIN", { exact: true }).fill("482619");
-    await page.getByLabel("Confirm new PIN").fill("482619");
-    await page.getByRole("button", { name: "Verify and save PIN" }).click();
+    await fillPin(page.getByLabel("Email code",{exact:true}),"112233");
+    await fillPin(page.getByLabel("Current PIN",{exact:true}),"731492");
+    await fillPin(page.getByLabel("New PIN", { exact: true }),"482619");
+    await fillPin(page.getByLabel("Confirm new PIN",{exact:true}),"482619");
+    await page.getByRole("button", { name: "Save PIN" }).click();
     await expect(page.locator('[data-pin-feedback="error"]')).toHaveCount(3);
     await expect(page.getByRole("status")).toContainText("Send a fresh verification code");
-    await expect(page.getByLabel("Email code")).toHaveCount(0);
+    await expect(page.getByLabel("Email code",{exact:true})).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Request another code in/ })).toBeDisabled();
     await page.clock.fastForward(61_000);
     await page.getByRole("button", { name: "Send verification code" }).click();
-    await expect(page.getByLabel("Email code")).toHaveValue("");
-    await expect(page.getByLabel("Current PIN")).toHaveValue("");
-    await expect(page.getByLabel("New PIN", { exact: true })).toHaveValue("");
+    await expectPin(page.getByLabel("Email code",{exact:true}),"");
+    await expect(page.getByLabel("Current PIN",{exact:true})).toHaveCount(0);
+    await expect(page.getByLabel("New PIN", { exact: true })).toHaveCount(0);
 });
 
 test("missing OTP proof cannot submit a PIN update", async ({ page }) => {
@@ -532,12 +634,106 @@ test("missing OTP proof cannot submit a PIN update", async ({ page }) => {
     await page.route("**/api/auth/otp/verify", route => route.fulfill({ json: {} }));
     await page.evaluate(() => (window as unknown as { settings: () => void }).settings());
     await page.getByRole("button", { name: "Send verification code" }).click();
-    await page.getByLabel("Email code").fill("112233");
-    await page.getByLabel("New PIN", { exact: true }).fill("482619");
-    await page.getByLabel("Confirm new PIN").fill("482619");
-    await page.getByRole("button", { name: "Verify and save PIN" }).click();
+    await fillPin(page.getByLabel("Email code",{exact:true}),"112233");
+    await page.getByRole("button", { name: "Verify email code" }).click();
     await expect(page.getByRole("status")).toContainText("Email verification did not complete");
+    await expect(page.getByLabel("New PIN",{exact:true})).toHaveCount(0);
     expect(calls.filter(call => call.path.endsWith("/enroll"))).toHaveLength(0);
+});
+
+for (const width of [390,1280]) test(`email code is verified before PIN entry at ${width}px`, async ({page},testInfo) => {
+    await page.setViewportSize({width,height:844});
+    const {calls}=await fixture(page,false);
+    await page.clock.install();
+    let attempts=0;
+    await page.route('**/api/auth/otp/verify',route=>{
+        attempts++;
+        return route.request().postDataJSON().code==='112233'
+            ? route.fulfill({json:{stepUpToken:'verified-email-proof',expiresInSeconds:300}})
+            : route.fulfill({status:403,json:{error:'Invalid or expired verification code.'}});
+    });
+    await page.evaluate(()=>(window as unknown as {settings:()=>void}).settings());
+    await page.getByRole('button',{name:'Send verification code',exact:true}).click();
+    const enter=async(code:string)=>{
+        if(width<640)for(const digit of code)await page.getByRole('group',{name:'PIN keypad'}).getByRole('button',{name:digit,exact:true}).click();
+        else await fillPin(page.getByLabel('Email code',{exact:true}),code);
+    };
+    await enter('999999');
+    await page.getByRole('button',{name:width<640?'Continue':'Verify email code',exact:true}).click();
+    await expect(page.getByRole('status')).toContainText('Invalid or expired');
+    await expect(page.getByLabel('New PIN',{exact:true})).toHaveCount(0);
+    if(width<640)await expect(page.getByText('Step 1 of 3',{exact:true})).toBeVisible();
+    const fields=page.getByRole('group',{name:'Email code digits',exact:true}).locator('input');
+    await expect(fields).toHaveCount(6);
+    for(const field of await fields.all()) {
+        await expect(field).toHaveAttribute('aria-invalid','true');
+        await expect(field).toHaveCSS('border-top-color','oklch(0.637 0.237 25.331)');
+        await expect(field).toHaveCSS('box-shadow','none');
+    }
+    await page.screenshot({path:testInfo.outputPath('email-code-error-borders.png')});
+    await enter('112233');
+    await page.clock.pauseAt(await page.evaluate(()=>Date.now()+50));
+    await page.getByRole('button',{name:width<640?'Continue':'Verify email code',exact:true}).evaluate(node=>(node as HTMLButtonElement).click());
+    await expect(page.locator('[data-pin-feedback="success"]')).toBeVisible();
+    await page.clock.runFor(350);
+    for(const field of await fields.all()) {
+        await expect(field).toBeDisabled();
+        await expect(field).toHaveAttribute('aria-invalid','false');
+        await expect(field).toHaveCSS('border-top-color','oklch(0.696 0.17 162.48)');
+        await expect(field).toHaveCSS('box-shadow','none');
+    }
+    await expect(page.getByLabel('New PIN',{exact:true})).toHaveCount(0);
+    await page.screenshot({path:testInfo.outputPath('email-code-success-borders.png')});
+    await page.clock.runFor(100);
+    await expect(page.getByLabel('New PIN',{exact:true})).toBeVisible();
+    expect(attempts).toBe(2);
+    expect(calls.filter(call=>call.path.endsWith('/enroll'))).toHaveLength(0);
+});
+
+test('pending email verification blocks advancement and duplicate requests',async({page})=>{
+    await page.setViewportSize({width:390,height:844});await fixture(page,false);
+    let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});let attempts=0;
+    await page.route('**/api/auth/otp/verify',async route=>{attempts++;await held;await route.fulfill({json:{stepUpToken:'proof',expiresInSeconds:300}});});
+    await page.evaluate(()=>(window as unknown as {settings:()=>void}).settings());
+    await page.getByRole('button',{name:'Send verification code',exact:true}).click();
+    for(const digit of '112233')await page.getByRole('group',{name:'PIN keypad'}).getByRole('button',{name:digit,exact:true}).click();
+    await page.getByRole('button',{name:'Continue',exact:true}).evaluate(node=>{(node as HTMLButtonElement).click();(node as HTMLButtonElement).click();});
+    await expect.poll(()=>attempts).toBe(1);
+    await expect(page.getByRole('button',{name:'Verifying code…',exact:true})).toBeDisabled();
+    await expect(page.getByLabel('New PIN',{exact:true})).toHaveCount(0);
+    release();await expect(page.getByLabel('New PIN',{exact:true})).toBeVisible();
+});
+
+test('expired verified email proof requires a fresh code before saving the PIN',async({page})=>{
+    const {calls}=await fixture(page,false);await page.clock.install();
+    await page.evaluate(()=>(window as unknown as {settings:()=>void}).settings());
+    await page.getByRole('button',{name:'Send verification code',exact:true}).click();
+    await fillPin(page.getByLabel('Email code',{exact:true}),'112233');
+    await fillPin(page.getByLabel('New PIN',{exact:true}),'482619');
+    await fillPin(page.getByLabel('Confirm new PIN',{exact:true}),'482619');
+    await page.clock.fastForward(301_000);
+    await page.getByRole('button',{name:'Save PIN',exact:true}).click();
+    await expect(page.getByRole('status')).toContainText('verification expired');
+    await expect(page.getByRole('button',{name:'Send verification code',exact:true})).toBeEnabled();
+    expect(calls.filter(call=>call.path.endsWith('/enroll'))).toHaveLength(0);
+});
+
+test('returning to the email step after proof expiry offers a fresh code',async({page})=>{
+    await page.setViewportSize({width:390,height:844});
+    const {calls}=await fixture(page,false);await page.clock.install();
+    await page.evaluate(()=>(window as unknown as {settings:()=>void}).settings());
+    await page.getByRole('button',{name:'Send verification code',exact:true}).click();
+    for(const digit of '112233')await page.getByRole('group',{name:'PIN keypad'}).getByRole('button',{name:digit,exact:true}).click();
+    await page.getByRole('button',{name:'Continue',exact:true}).click();
+    await expect(page.getByLabel('New PIN',{exact:true})).toBeVisible();
+    await page.clock.fastForward(301_000);
+    await page.getByRole('button',{name:'Back',exact:true}).click();
+    await page.getByRole('button',{name:'Continue',exact:true}).click();
+    await expect(page.getByRole('status')).toContainText('verification expired');
+    await expect(page.getByRole('button',{name:'Send verification code',exact:true})).toBeEnabled();
+    await expect(page.getByLabel('New PIN',{exact:true})).toHaveCount(0);
+    expect(calls.filter(call=>call.path.endsWith('/otp/verify'))).toHaveLength(1);
+    expect(calls.filter(call=>call.path.endsWith('/enroll'))).toHaveLength(0);
 });
 
 test("stalled status fetch times out and releases loading with retry", async ({ page }) => {
@@ -569,15 +765,15 @@ test("timed-out enrollment rechecks committed status before offering another upd
         (window as unknown as { settings: () => void }).settings();
     });
     await page.getByRole("button", { name: "Send verification code" }).click();
-    await page.getByLabel("Email code").fill("112233");
-    await page.getByLabel("New PIN", { exact: true }).fill("482619");
-    await page.getByLabel("Confirm new PIN").fill("482619");
+    await fillPin(page.getByLabel("Email code",{exact:true}),"112233");
+    await fillPin(page.getByLabel("New PIN", { exact: true }),"482619");
+    await fillPin(page.getByLabel("Confirm new PIN",{exact:true}),"482619");
     committed = true;
-    await page.getByRole("button", { name: "Verify and save PIN" }).click();
+    await page.getByRole("button", { name: "Save PIN" }).click();
     await expect(page.getByRole("status")).toContainText("Send a fresh verification code");
     await expect(page.getByRole("button", { name: "Change PIN", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /Request another code in/ })).toBeDisabled();
-    await expect(page.getByLabel("Email code")).toHaveCount(0);
+    await expect(page.getByLabel("Email code",{exact:true})).toHaveCount(0);
 });
 
 test("PIN resend cooldown counts down and survives changing the PIN action", async ({ page }) => {
@@ -598,12 +794,12 @@ test("server resend limit keeps the existing code and uses Retry-After", async (
     await page.clock.install();
     await page.evaluate(() => (window as unknown as {settings:()=>void}).settings());
     await page.getByRole('button',{name:'Send verification code',exact:true}).click();
-    await page.getByLabel('Email code').fill('112233');
+    await fillPin(page.getByLabel('Email code',{exact:true}),'112233');
     await page.clock.fastForward(61_000);
     await page.route('**/api/auth/otp/send',route=>route.fulfill({status:429,headers:{'Retry-After':'42'},json:{error:'Please wait before requesting a fresh code.'}}));
     await page.getByRole('button',{name:'Send a fresh code',exact:true}).click();
     await expect(page.getByRole('button',{name:'Request another code in 42s'})).toBeDisabled();
-    await expect(page.getByLabel('Email code')).toHaveValue('112233');
+    await expectPin(page.getByLabel('Email code',{exact:true}),'112233');
     await page.clock.fastForward(43_000);
     await expect(page.getByRole('button',{name:'Send a fresh code',exact:true})).toBeEnabled();
 });

@@ -6,6 +6,7 @@ import { recordAdminAction } from "@/lib/admin/audit";
 import { sendPushToWallet } from "@/lib/push";
 import { jsonOk } from "@/lib/http/json";
 import { normalizeNotificationActionUrl } from "@/lib/notifications/actionUrl";
+import { broadcastNotificationId } from "@/lib/notifications/broadcastId";
 
 /* Admin broadcast: one push notification to every user, every merchant, or both.
  *
@@ -179,17 +180,21 @@ export async function POST(request: Request) {
         let notified = 0;
         for (let i = 0; i < notificationRows.length; i += NOTIFY_CHUNK) {
             const chunk = notificationRows.slice(i, i + NOTIFY_CHUNK);
-            const created = await prisma.accountNotification.createMany({
+            await prisma.accountNotification.createMany({
                 data: chunk.map((row) => ({
                     ...row,
+                    id: broadcastNotificationId(row.recipientAddress, row.audience, broadcast.id),
                     title,
                     body: messageBody,
                     url,
                     source: "ADMIN",
                     broadcastId: broadcast.id,
+                    createdAt: broadcast.createdAt,
                 })),
+                skipDuplicates: true,
             });
-            notified += created.count;
+            // A skipped primary key was already delivered by a concurrent bell request.
+            notified += chunk.length;
         }
 
         let sent = 0;
