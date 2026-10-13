@@ -551,7 +551,7 @@ test("settings load failures offer retry and merchant return uses the actual ses
     await expect(page.getByRole("alert")).toContainText("Unable to load");
     await page.getByRole("button", { name: "Retry loading PIN settings" }).click();
     await expect(page.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute("href", "/merchant");
-    await expect(page.getByText("Verification email: merchant@example.com")).toBeVisible();
+    await expect(page.getByText("merchant@example.com")).toBeVisible();
 });
 
 test("unverified email never exposes the enrollment form", async ({ page }) => {

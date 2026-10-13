@@ -80,9 +80,6 @@ $$;
 revoke all on function public.email_receipt_event(jsonb) from public, anon, authenticated;
 grant execute on function public.email_receipt_event(jsonb) to service_role;
 
--- The migration runner wraps this file in one transaction. Lock writers during
--- backfill/trigger installation so no producer slips through the handover.
-lock table public.email_outbox in share row exclusive mode;
 insert into public.email_receipt_events (chain_id, tx_hash, recipient, identity)
 select distinct on (e.chain_id, e.tx_hash, lower(btrim(o.recipient)))
     e.chain_id, e.tx_hash, lower(btrim(o.recipient)), o.identity
