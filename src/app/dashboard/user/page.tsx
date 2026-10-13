@@ -2,7 +2,7 @@
 
 /* Mobile-first user dashboard: wallet home, system-DM chat, DNS, payment links, and batch send. */
 
-import { ensureTransactionPinSetup, fetchWithTransactionPin } from "@/lib/client/transactionPin";
+import { ensureTransactionPinSetup, fetchWithTransactionPin, type TransactionPinPrompt } from "@/lib/client/transactionPin";
 import TransactionPinCard from "@/components/dashboard/TransactionPinCard";
 import TransactionPinSettings from "@/components/TransactionPinSettings";
 import { cancelTransactionPinPrompt } from "@/components/TransactionPinPrompt";
@@ -10,7 +10,7 @@ import { cancelTransactionPinPrompt } from "@/components/TransactionPinPrompt";
 import { ethers } from "ethers";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useDisconnect, useReadContract, useReadContracts, useAccount, useConfig, useSwitchChain, useWriteContract } from "wagmi";
 import { getAccount } from "wagmi/actions";
@@ -50,6 +50,7 @@ import NotificationBell from "@/components/dashboard/NotificationBell";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import UserDashboardLoading from "@/components/dashboard/UserDashboardLoading";
 import { useTheme } from "@/hooks/useTheme";
+import { haptics } from "@/lib/client/haptics";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
@@ -512,6 +513,7 @@ const getDmPeerAddress = (dm: DmMessage, userWallet: string | null) => {
 };
 
 export default function UserDashboard() {
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { disconnect } = useDisconnect();
   const dmBottomRef = useRef<HTMLDivElement | null>(null);
@@ -863,13 +865,15 @@ export default function UserDashboard() {
   const [browserPushBusy, setBrowserPushBusy] = useState(false);
   const [browserPushTestBusy, setBrowserPushTestBusy] = useState(false);
   const [browserPushSupported, setBrowserPushSupported] = useState(true);
+  const [browserPushChecking, setBrowserPushChecking] = useState(true);
+  const browserPushInFlightRef = useRef(false);
 
   useEffect(() => {
     const supported = pushSupported();
     setBrowserPushSupported(supported);
     if (supported) {
-      isPushEnabled().then(setBrowserPushOn).catch(() => {});
-    }
+      isPushEnabled().then(setBrowserPushOn).catch(() => {}).finally(() => setBrowserPushChecking(false));
+    } else setBrowserPushChecking(false);
   }, []);
 
   /* Detect browser local currency and fetch real-time exchange rate */
@@ -953,10 +957,13 @@ export default function UserDashboard() {
   }, []);
 
   const handleToggleBrowserPush = async () => {
+    if (browserPushInFlightRef.current || browserPushChecking || !browserPushSupported) return;
+    browserPushInFlightRef.current = true;
     setBrowserPushBusy(true);
     try {
       if (browserPushOn) {
-        await disablePush();
+        const result = await disablePush();
+        if (!result.ok || await isPushEnabled()) throw new Error("Could not disable browser push. Please try again.");
         setBrowserPushOn(false);
         triggerToast("Browser push disabled on this device.");
       } else {
@@ -965,19 +972,27 @@ export default function UserDashboard() {
           setBrowserPushOn(true);
           triggerToast("Browser push enabled on this device.");
         } else {
-          triggerToast(res.error || "Could not enable browser push.");
+          triggerToast(res.error || "Could not enable browser push.", "error");
         }
       }
+    } catch (err) {
+      triggerToast(err instanceof Error ? err.message : "Could not update browser push.", "error");
     } finally {
+      browserPushInFlightRef.current = false;
       setBrowserPushBusy(false);
     }
   };
   const handleTestBrowserPush = async () => {
+    if (browserPushInFlightRef.current || !browserPushOn) return;
+    browserPushInFlightRef.current = true;
     setBrowserPushTestBusy(true);
     try {
       const result = await sendTestPush();
-      triggerToast(result.ok ? (result.message || "Test notification sent.") : (result.error || "Could not send a test notification."));
+      triggerToast(result.ok ? (result.message || "Test notification sent.") : (result.error || "Could not send a test notification."), result.ok ? "success" : "error");
+    } catch {
+      triggerToast("Could not send a test notification.", "error");
     } finally {
+      browserPushInFlightRef.current = false;
       setBrowserPushTestBusy(false);
     }
   };
@@ -1043,6 +1058,9 @@ export default function UserDashboard() {
   useEffect(() => () => settingsTxObserverRef.current?.disconnect(), []);
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
+  const settingsSaveInFlightRef = useRef(false);
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
+  const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null);
 
   // Prepaid Metered Vault States
   const [vaults, setVaults] = useState<any[]>([]);
@@ -1067,8 +1085,10 @@ export default function UserDashboard() {
   const [referralQrOpen, setReferralQrOpen] = useState<boolean>(false);
 
   const { theme, setTheme } = useTheme();
+  const [hapticsEnabled, setHapticsEnabled] = useState(() => haptics.isEnabled());
   const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [accountSubView, setAccountSubView] = useState<AccountSubView>("menu");
+  const [navigationReady, setNavigationReady] = useState(false);
   useLayoutEffect(() => () => cancelTransactionPinPrompt(), [activeTab, accountSubView]);
   const [spendSearchQuery, setSpendSearchQuery] = useState("");
   const [spendCategory, setSpendCategory] = useState("all");
@@ -1101,6 +1121,7 @@ export default function UserDashboard() {
       setDataViewLoading(subView);
       window.setTimeout(() => setDataViewLoading((current) => current === subView ? null : current), 400);
     }
+    haptics.microTick();
     setActiveTab(tab);
     /* Also applied directly, so the navigation still lands when activeTab is already `tab`
        and the effect never runs. Both paths set the same value, so ordering cannot matter. */
@@ -1117,18 +1138,36 @@ export default function UserDashboard() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    const restoreNavigation = () => {
       const params = new URLSearchParams(window.location.search);
-      const urlTab = params.get("tab") as UserTab | null;
-      const urlSubView = params.get("subview") as AccountSubView | null;
-      if (urlSubView === "spend-analysis" || window.location.hash === "#spend-analysis") {
+      const requestedTab = params.get("tab");
+      const urlTab: UserTab = requestedTab === "dns" || userDesktopTabs.some(tab => tab.id === requestedTab) ? requestedTab as UserTab : "home";
+      const urlSubView = params.get("subview");
+      if ((urlTab === "dns" && urlSubView === "spend-analysis") || window.location.hash === "#spend-analysis") {
         goToAccountSubView("dns", "spend-analysis");
-      } else if (urlTab) {
-        setActiveTab(urlTab);
-        if (urlSubView) goToAccountSubView(urlTab, urlSubView);
+      } else {
+        const accountView = urlTab === "dns" && ["menu", "profile", "appearance", "kyc", "transactions", "notifications", "security", "transaction-pin", "support"].includes(urlSubView ?? "") ? urlSubView as AccountSubView : "menu";
+        goToAccountSubView(urlTab, accountView);
+        if (urlTab === "inbox") setPaymentsSubView(urlSubView === "people" ? "people" : "subscriptions");
       }
-    }
+      setNavigationReady(true);
+    };
+    restoreNavigation();
+    window.addEventListener("popstate", restoreNavigation);
+    return () => window.removeEventListener("popstate", restoreNavigation);
   }, [goToAccountSubView]);
+
+  useEffect(() => {
+    if (!navigationReady) return;
+    const url = new URL(window.location.href);
+    if (activeTab === "home") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", activeTab);
+    if (activeTab === "dns" && accountSubView !== "menu") url.searchParams.set("subview", accountSubView);
+    else if (activeTab === "inbox") url.searchParams.set("subview", paymentsSubView);
+    else url.searchParams.delete("subview");
+    if (url.hash === "#spend-analysis" && !(activeTab === "dns" && accountSubView === "spend-analysis")) url.hash = "";
+    if (url.href !== window.location.href) window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [navigationReady, activeTab, accountSubView, paymentsSubView]);
 
   const fetchReferrals = useCallback(async () => {
     setReferralsLoading(true);
@@ -1181,6 +1220,7 @@ export default function UserDashboard() {
 
   const loadUserSettings = async () => {
     setIsSettingsLoading(true);
+    setSettingsLoadError(null);
     try {
       const [res, depositsRes, scanRes] = await Promise.all([
         fetch("/api/user/settings").catch(() => null),
@@ -1190,11 +1230,13 @@ export default function UserDashboard() {
       void scanRes;
       const data = res ? await res.json().catch(() => null) : null;
       const depData = depositsRes ? await depositsRes.json().catch(() => ({})) : {};
-      if (data?.success) {
+      if (res?.ok && data?.success && data.settings) {
         setUserSettings(data.settings);
         setSettingsTransactions(Array.isArray(data.receipts) ? data.receipts : []);
         if (data.settings?.profilePic) setProfilePic(data.settings.profilePic);
         if (data.settings?.alias) setRegisteredDomain(data.settings.alias);
+      } else {
+        setSettingsLoadError(data?.error || "Unable to load notification preferences.");
       }
       if (depData.success && Array.isArray(depData.deposits)) {
         lastDepositsJsonRef.current = JSON.stringify(depData.deposits);
@@ -1206,6 +1248,7 @@ export default function UserDashboard() {
         setOptimisticTxs(reconcileOptimisticTxs(serverHashes));
       }
     } catch (err) {
+      setSettingsLoadError("Unable to load notification preferences.");
       console.error("Failed to load user settings:", err);
     } finally {
       setIsSettingsLoading(false);
@@ -1252,7 +1295,9 @@ export default function UserDashboard() {
   };
 
   const handleToggleSetting = async (field: string, currentValue: boolean) => {
-    if (comingSoonUserSettings.has(field)) return;
+    if (comingSoonUserSettings.has(field) || settingsSaveInFlightRef.current || isSettingsLoading) return;
+    settingsSaveInFlightRef.current = true;
+    setSettingsSaveError(null);
     setSavingSettingsField(field);
     try {
       const res = await fetchWithTransactionPin("/api/user/settings", {
@@ -1260,14 +1305,15 @@ export default function UserDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: !currentValue }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setUserSettings((prev: any) => ({ ...prev, [field]: !currentValue }));
-      }
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Unable to save notification preferences. Please try again.");
+      setUserSettings((prev: any) => ({ ...prev, [field]: !currentValue }));
     } catch (err) {
             if (err instanceof Error && err.name === "AbortError") return;
       console.error(`Error saving user setting ${field}:`, err);
+      setSettingsSaveError(err instanceof Error ? err.message : "Unable to save notification preferences. Please try again.");
     } finally {
+      settingsSaveInFlightRef.current = false;
       setSavingSettingsField(null);
     }
   };
@@ -1947,7 +1993,7 @@ export default function UserDashboard() {
        key from it, so a retry with the same key cannot pay a recipient twice. */
     requestKey?: string;
     earlySubmission?: boolean;
-  }) => {
+  }, prompt?: TransactionPinPrompt) => {
     const { requestKey, ...body } = payload;
     const res = await fetchWithTransactionPin("/api/user/wallet/send", {
       method: "POST",
@@ -1956,7 +2002,7 @@ export default function UserDashboard() {
         ...(requestKey ? { "x-request-id": requestKey } : {}),
       },
       body: JSON.stringify(body),
-    });
+    }, undefined, prompt);
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
       const err = new Error(data.error || "Failed to send USDC from your generated wallet.");
@@ -2167,6 +2213,7 @@ export default function UserDashboard() {
 
   const copyGiftRequestUrl = async (url: string) => {
     await navigator.clipboard.writeText(url);
+    haptics.success();
     setGiftRequestCopied(true);
     triggerToast("Gift checkout link copied!");
     setTimeout(() => setGiftRequestCopied(false), 1600);
@@ -2960,6 +3007,7 @@ export default function UserDashboard() {
     if (!linkResultUrl) return;
     try {
       await navigator.clipboard.writeText(linkResultUrl);
+      haptics.success();
       setLinkCopied(true);
       triggerToast("Shareable link copied!");
       setTimeout(() => setLinkCopied(false), 1600);
@@ -3254,7 +3302,7 @@ export default function UserDashboard() {
     destinationChainId: number | string;
     recipientAddress: string;
     amountMicros: bigint;
-  }) => {
+  }, prompt?: TransactionPinPrompt) => {
     const fee = calculateBridgeFee(params.amountMicros, params.destinationChainId, "outbound_withdrawal");
     if (!ARC_CCTP_ENABLED) {
       throw new Error("Cross-chain transfers are not available on Arc Mainnet yet.");
@@ -3339,7 +3387,7 @@ export default function UserDashboard() {
             burnTxHash,
             feeTxHash,
           }),
-        });
+        }, undefined, prompt);
         registered = res.ok;
         if (!registered) await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (cancelError) {
@@ -3356,7 +3404,7 @@ export default function UserDashboard() {
     return { burnTxHash, feeTxHash, fee, nativeGasMicros: nativeGasToMicros(1n, nativeGasWei) };
   };
 
-  const handleSingleSend = async (e: React.FormEvent, selectedNetwork: string = "arc"): Promise<SendResult | void> => {
+  const handleSingleSend = async (e: React.FormEvent, selectedNetwork: string = "arc", prompt?: TransactionPinPrompt): Promise<SendResult | void> => {
     e.preventDefault();
     setSingleSendStatus(null);
     const recipientAddr = singleResolved?.address;
@@ -3381,6 +3429,7 @@ export default function UserDashboard() {
 
     setSingleSendLoading(true);
     try {
+      if (!isEmbeddedWalletSession) await ensureTransactionPinSetup(undefined, prompt);
       /* Anything other than Arc is a CCTP withdrawal: the fee is skimmed to the treasury on Arc and
          only the remainder is burned, so the destination mints exactly the "will receive" figure the
          modal quoted. An in-app wallet has server-held keys and the route does all three steps; a
@@ -3406,7 +3455,7 @@ export default function UserDashboard() {
               recipientAddress: recipientAddr,
               amountMicros: amountMicros.toString(),
             }),
-          });
+          }, undefined, prompt);
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || "We couldn't start that withdrawal.");
           burnTxHash = data.burnTxHash;
@@ -3425,7 +3474,7 @@ export default function UserDashboard() {
             destinationChainId: selectedNetwork === "solana" ? "solana" : Number(selectedNetwork),
             recipientAddress: recipientAddr,
             amountMicros,
-          });
+          }, prompt);
           burnTxHash = result?.burnTxHash;
           settledQuote = createSendQuote({
             amountUsdc: microsToUsdc(result.fee.grossMicros),
@@ -3489,7 +3538,7 @@ export default function UserDashboard() {
             amountUsdc: singleAmount,
             requestKey: singleSendRequestKey.current,
             earlySubmission: true,
-          });
+          }, prompt);
           singleSendRequestKey.current = null;
           const txHash = transfers[0]?.txHash || "";
           const amountSent = transfers[0]?.amountUsdc || singleAmount;
@@ -4047,7 +4096,10 @@ export default function UserDashboard() {
   }, [selectedDmPeer, activeTab]);
 
   if (loading) {
-    return <UserDashboardLoading items={userDesktopTabs} activeTab={activeTab} />;
+    const pinSettings = navigationReady
+      ? activeTab === "dns" && accountSubView === "transaction-pin"
+      : searchParams?.get("tab") === "dns" && searchParams.get("subview") === "transaction-pin";
+    return <UserDashboardLoading items={userDesktopTabs} activeTab={activeTab} pinSettings={pinSettings} />;
   }
 
   if (redirectMessage) {
@@ -6080,6 +6132,42 @@ export default function UserDashboard() {
                           );
                         })}
                       </div>
+
+                      <div className="border-t border-black/10 pt-6">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <h3 className="text-base font-bold text-black flex items-center gap-2">
+                              Haptic Feedback
+                            </h3>
+                            <p className="text-xs text-black/60">
+                              Tactile vibration feedback for buttons, keypad inputs, tabs, and confirmations.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={hapticsEnabled}
+                            aria-label="Toggle haptic feedback"
+                            onClick={() => {
+                              const next = !hapticsEnabled;
+                              setHapticsEnabled(next);
+                              haptics.setEnabled(next);
+                              if (next) {
+                                haptics.lightSnap();
+                              }
+                            }}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              hapticsEnabled ? "bg-[#2775CA]" : "bg-black/15"
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                hapticsEnabled ? "translate-x-5" : "translate-x-0"
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -6208,6 +6296,7 @@ export default function UserDashboard() {
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(userWallet || "");
+                            haptics.success();
                             triggerToast("Address copied to clipboard");
                           }}
                           className="p-2 rounded-xl bg-black/5 text-black/60 hover:text-black transition"
@@ -7387,39 +7476,53 @@ export default function UserDashboard() {
 
                 {/* 5. NOTIFICATIONS VIEW */}
                 {accountSubView === "notifications" && (
-                  <div className="space-y-6">
+                  <div className="space-y-6" data-testid="notification-preferences">
                     <div className="flex items-center gap-4">
-                      <button 
+                      <button
+                        type="button"
+                        aria-label="Back to account settings"
                         onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
+                        className="min-h-11 min-w-11 p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
                       <h2 className="text-sm font-black uppercase tracking-wider text-black">Notifications</h2>
                     </div>
 
+                    {!userSettings && !settingsLoadError && <p role="status" className="text-xs text-black/60">Loading notification preferences…</p>}
+                    {settingsLoadError && (
+                      <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">
+                        <p>{settingsLoadError}</p>
+                        <button type="button" onClick={() => void loadUserSettings()} disabled={isSettingsLoading} className="mt-2 min-h-11 rounded-xl px-3 font-bold disabled:opacity-50">Retry notification preferences</button>
+                      </div>
+                    )}
+                    {settingsSaveError && <p role="alert" className="rounded-2xl bg-red-50 p-4 text-xs text-red-800">{settingsSaveError}</p>}
                     {userSettings && (
                       <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
                         <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
                           <NotificationBadge className="h-4 w-4 text-[#2775CA]" /> Notification Preferences
                         </h3>
                         <div className="space-y-4 font-sans text-xs">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1 space-y-0.5 break-words [overflow-wrap:anywhere]">
                               <p className="text-black font-bold">Push Notifications</p>
                               <p className="text-[10px] text-black/50">Enable alerts inside the browser portal</p>
                             </div>
                             <button
+                              type="button"
+                              role="switch"
+                              aria-label="Push Notifications"
+                              aria-checked={Boolean(userSettings.pushEnabled)}
                               onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
-                              disabled={savingSettingsField === "pushEnabled"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}
+                              disabled={savingSettingsField !== null || isSettingsLoading}
+                              className={`relative inline-flex h-11 w-11 shrink-0 items-center cursor-pointer rounded-xl transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2775CA] disabled:opacity-50 `}
                             >
-                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                              <span aria-hidden="true" className={`pointer-events-none flex h-6 w-11 items-center rounded-full border-2 border-transparent ${userSettings.pushEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}><span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} /></span>
                             </button>
                           </div>
 
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1 space-y-0.5 break-words [overflow-wrap:anywhere]">
                               <p className="text-black font-bold">Browser Push (This Device)</p>
                               <p className="text-[10px] text-black/50">
                                 {browserPushSupported
@@ -7433,60 +7536,68 @@ export default function UserDashboard() {
                               aria-checked={browserPushOn}
                               aria-label="Browser Push on this device"
                               onClick={handleToggleBrowserPush}
-                              disabled={browserPushBusy || !browserPushSupported}
-                              className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#2775CA]" : "bg-black/15"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                              disabled={browserPushChecking || browserPushBusy || browserPushTestBusy || !browserPushSupported}
+                              className={`relative inline-flex h-11 w-11 shrink-0 items-center rounded-xl transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2775CA] disabled:opacity-50  ${browserPushChecking || browserPushBusy || browserPushTestBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                             >
-                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
+                              <span aria-hidden="true" className={`pointer-events-none flex h-6 w-11 items-center rounded-full border-2 border-transparent ${browserPushOn ? "bg-[#2775CA]" : "bg-black/15"}`}><span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} /></span>
                             </button>
                           </div>
 
                           {browserPushOn && (
-                            <div className="flex items-center justify-between rounded-2xl border border-black/10 bg-black/[0.02] px-4 py-3">
-                              <div className="space-y-0.5">
+                            <div className="flex items-center justify-between gap-3 rounded-2xl border border-black/10 bg-black/[0.02] px-4 py-3">
+                              <div className="min-w-0 flex-1 space-y-0.5 break-words [overflow-wrap:anywhere]">
                                 <p className="text-black font-bold">Verify this device</p>
                                 <p className="text-[10px] text-black/50">Send a private test alert to your registered browsers</p>
                               </div>
                               <button
                                 type="button"
                                 onClick={handleTestBrowserPush}
-                                disabled={browserPushTestBusy}
-                                className="rounded-xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#2775CA] transition hover:bg-[#2775CA]/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={browserPushBusy || browserPushTestBusy}
+                                className="min-h-11 shrink-0 rounded-xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#2775CA] transition hover:bg-[#2775CA]/20 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 {browserPushTestBusy ? <>Sending<LoadingDots /></> : "Send test"}
                               </button>
                             </div>
                           )}
 
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1 space-y-0.5 break-words [overflow-wrap:anywhere]">
                               <p className="text-black font-bold">Debit Success</p>
                               <p className="text-[10px] text-black/50">Notify immediately when a subscription billing succeeds</p>
                             </div>
                             <button
+                              type="button"
+                              role="switch"
+                              aria-label="Debit Success"
+                              aria-checked={Boolean(userSettings.debitSuccessEnabled)}
                               onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
-                              disabled={savingSettingsField === "debitSuccessEnabled"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}
+                              disabled={savingSettingsField !== null || isSettingsLoading}
+                              className={`relative inline-flex h-11 w-11 shrink-0 items-center cursor-pointer rounded-xl transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2775CA] disabled:opacity-50 `}
                             >
-                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                              <span aria-hidden="true" className={`pointer-events-none flex h-6 w-11 items-center rounded-full border-2 border-transparent ${userSettings.debitSuccessEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}><span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} /></span>
                             </button>
                           </div>
 
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1 space-y-0.5 break-words [overflow-wrap:anywhere]">
                               <p className="text-black font-bold">Expiry Warnings</p>
                               <p className="text-[10px] text-black/50">Alert 3 days before any subscription renewal or cap expiry</p>
                             </div>
                             <button
+                              type="button"
+                              role="switch"
+                              aria-label="Expiry Warnings"
+                              aria-checked={Boolean(userSettings.expiryWarningEnabled)}
                               onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
-                              disabled={savingSettingsField === "expiryWarningEnabled"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}
+                              disabled={savingSettingsField !== null || isSettingsLoading}
+                              className={`relative inline-flex h-11 w-11 shrink-0 items-center cursor-pointer rounded-xl transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2775CA] disabled:opacity-50 `}
                             >
-                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                              <span aria-hidden="true" className={`pointer-events-none flex h-6 w-11 items-center rounded-full border-2 border-transparent ${userSettings.expiryWarningEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}><span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} /></span>
                             </button>
                           </div>
 
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1 space-y-0.5 break-words [overflow-wrap:anywhere]">
                               <p className="text-black font-bold">Email Receipts</p>
                               <p className="text-[10px] text-black/50">
                                 {userSettings?.walletSecurity?.email || userSettings?.walletBackup?.email || userEmail
@@ -7500,10 +7611,10 @@ export default function UserDashboard() {
                               aria-checked={userSettings.emailEnabled !== false}
                               aria-label="Email Receipts"
                               onClick={() => handleToggleSetting("emailEnabled", userSettings.emailEnabled !== false)}
-                              disabled={savingSettingsField === "emailEnabled"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.emailEnabled !== false ? "bg-[#2775CA]" : "bg-black/15"}`}
+                              disabled={savingSettingsField !== null || isSettingsLoading}
+                              className={`relative inline-flex h-11 w-11 shrink-0 items-center cursor-pointer rounded-xl transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2775CA] disabled:opacity-50 `}
                             >
-                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.emailEnabled !== false ? "translate-x-5" : "translate-x-0"}`} />
+                              <span aria-hidden="true" className={`pointer-events-none flex h-6 w-11 items-center rounded-full border-2 border-transparent ${userSettings.emailEnabled !== false ? "bg-[#2775CA]" : "bg-black/15"}`}><span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.emailEnabled !== false ? "translate-x-5" : "translate-x-0"}`} /></span>
                             </button>
                           </div>
                         </div>
@@ -7667,6 +7778,7 @@ export default function UserDashboard() {
                         onClick={() => {
                           if (!referralLink) return;
                           navigator.clipboard.writeText(referralLink);
+                          haptics.success();
                           setReferralCopySuccess(true);
                           triggerToast("Referral link copied!");
                           setTimeout(() => setReferralCopySuccess(false), 3000);
@@ -8561,6 +8673,7 @@ export default function UserDashboard() {
                     type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(referralLink);
+                      haptics.success();
                       setReferralCopySuccess(true);
                       triggerToast("Referral link copied!");
                       setTimeout(() => setReferralCopySuccess(false), 3000);

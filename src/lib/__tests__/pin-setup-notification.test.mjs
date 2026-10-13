@@ -85,6 +85,7 @@ for (const bulk of [false, true]) test(`notification ${bulk ? "bulk" : "single"}
         "@/lib/auth": { getSessionWallet: async () => wallet },
         "@/lib/http/json": { jsonOk: body => Response.json(body) },
         "@/lib/notifications/pinSetup": reminders,
+        "@/lib/notifications/broadcastId": load("../notifications/broadcastId.ts", { "node:crypto": crypto }),
         "@/lib/prisma": { prisma: { accountNotification: {
             findFirst: async ({ where }) => { assert.equal(where.recipientAddress, wallet); return { id, audience: "USER", broadcastId: null }; },
             updateMany: async args => { updates.push(args); return { count: 1 }; },

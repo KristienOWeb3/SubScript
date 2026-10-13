@@ -6,6 +6,7 @@ import { dashboardStyles } from "./fixtures/dashboard-render";
 const registry = `import React from 'react'; import {renderToString} from 'react-dom/server';
 import DashboardSkeleton from './src/components/DashboardSkeleton';
 import UserDashboardLoading from './src/components/dashboard/UserDashboardLoading';
+import TransactionPinSettingsSkeleton from './src/components/TransactionPinSettingsSkeleton';
 import VaultShareManager from './src/components/VaultShareManager';
 import AuthSkeleton from './src/components/AuthSkeleton';
 import CheckoutSkeleton from './src/app/pay/[id]/CheckoutSkeleton';
@@ -13,7 +14,7 @@ import SubscribeSkeleton from './src/app/subscribe/[planId]/SubscribeSkeleton';
 import Skeleton from './src/components/ui/Skeleton';
 import * as composites from './src/components/ui/skeletons';
 import * as analytics from './src/components/admin/analytics/AnalyticsSkeletons';
-const components = {UserDashboardLoading, VaultShareManager, DashboardSkeleton, AuthSkeleton, CheckoutSkeleton, SubscribeSkeleton, Skeleton, ...composites, ...analytics};
+const components = {UserDashboardLoading, TransactionPinSettingsSkeleton, VaultShareManager, DashboardSkeleton, AuthSkeleton, CheckoutSkeleton, SubscribeSkeleton, Skeleton, ...composites, ...analytics};
 export const names = Object.keys(analytics);
 export function render(name, props) {return renderToString(React.createElement(components[name], props));}`;
 let renderer: {
@@ -326,6 +327,23 @@ test("full user loading shell stays mobile throughout hydration and responds to 
   await expect(header).toBeHidden();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(header).toBeVisible();
+});
+
+test("PIN loading shell previews email verification without home content", async ({ page }, info) => {
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const theme of ["light", "dark"]) {
+      await show(page, "UserDashboardLoading", { items: [], activeTab: "dns", pinSettings: true }, theme);
+      await expect(page.getByRole("heading", { name: "Transaction PIN", exact: true })).toBeVisible();
+      await expect(page.getByRole("status")).toContainText("Loading PIN settings…");
+      await expect(page.locator("[data-pin-email-loading]")).toBeVisible();
+      await expect(page.locator("[data-pin-settings-loading] .grid")).toHaveCount(0);
+      await expect(page.locator(".wallet-actions, .dashboard-filter-scroll")).toHaveCount(0);
+      await expect(page.getByText("Loading dashboard…", { exact: true })).toHaveCount(0);
+      expect(await overflow(page)).toEqual([]);
+      await page.screenshot({ path: info.outputPath(`pin-loading-${width}-${theme}.png`) });
+    }
+  }
 });
 
 test("failed vault share fetch ends placeholders and retry recovers", async ({

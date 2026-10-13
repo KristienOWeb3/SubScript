@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { TransactionPinDialog, useInlineTransactionPinPrompt } from "@/components/TransactionPinPrompt";
+import type { TransactionPinPrompt } from "@/lib/client/transactionPin";
 import { flushSync } from "react-dom";
 import RollingNumber from "@/components/ui/RollingNumber";
 import {
@@ -44,7 +46,7 @@ export type Beneficiary = RecentRecipient;
 export type SendSingleModalProps = {
     open: boolean;
     onClose: (details?: { isSuccessful?: boolean; result?: SendResult | null }) => void;
-    onSubmit: (event: React.FormEvent, selectedChainIdOrDomain: string) => Promise<SendResult | void>;
+    onSubmit: (event: React.FormEvent, selectedChainIdOrDomain: string, prompt?: TransactionPinPrompt) => Promise<SendResult | void>;
     getQuote: (input: { amount: string; networkId: string; recipientAddress?: string }) => Promise<SendQuote>;
     recipient: string;
     onRecipientChange: (value: string) => void;
@@ -75,6 +77,7 @@ const EASE = "cubic-bezier(.16,1,.3,1)";
 const EASE_EXP = "cubic-bezier(.32,.72,0,1)";
 const EASE_CLOSE = "cubic-bezier(.45,0,.1,1)";
 const EASE_POP = "cubic-bezier(.22,1,.36,1)";
+const SLIDER_BLUR_LEVELS = [0.25, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function animateFlow(element: Element, frames: Keyframe[] | PropertyIndexedKeyframes, options: KeyframeAnimationOptions): Animation {
@@ -346,6 +349,8 @@ function DesktopSendModal({
     const [routeGasStatus, setRouteGasStatus] = useState<Record<string, { available: boolean; status: string; unavailableReason?: string | null }> | null>(null);
     const [recipientError, setRecipientError] = useState<string | null>(null);
     const [desktopResult, setDesktopResult] = useState<SendResult | null>(null);
+    const pinApproval = useInlineTransactionPinPrompt();
+    const reduceMotion = useReducedMotion();
 
     const recipientInputRef = useRef<HTMLInputElement | null>(null);
     const networkMenuRef = useRef<HTMLDivElement | null>(null);
@@ -389,6 +394,7 @@ function DesktopSendModal({
         if (!open) return;
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== "Escape") return;
+            if (pinApproval.request) { pinApproval.cancel(); return; }
             if (networkMenuOpen) {
                 setNetworkMenuOpen(false);
                 return;
@@ -397,7 +403,7 @@ function DesktopSendModal({
         };
         document.addEventListener("keydown", onKeyDown);
         return () => document.removeEventListener("keydown", onKeyDown);
-    }, [open, loading, onClose, networkMenuOpen, desktopResult]);
+    }, [open, loading, onClose, networkMenuOpen, desktopResult, pinApproval]);
 
     /* Click outside closes network menu */
     useEffect(() => {
@@ -480,7 +486,7 @@ function DesktopSendModal({
         event.preventDefault();
         if (submitBlocked) return;
         try {
-            const result = await onSubmit(event, selectedNetwork);
+            const result = await onSubmit(event, selectedNetwork, pinApproval.prompt);
             if (result?.txHash || result?.circleTxId) {
                 setDesktopResult(result);
                 try {
@@ -525,11 +531,20 @@ function DesktopSendModal({
                     initial={{ opacity: 0, scale: 0.96, y: 8 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.96, y: 8 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    transition={{ duration: reduceMotion ? 0 : 0.15, ease: "easeOut", layout: { duration: reduceMotion ? 0 : 0.16 } }}
                     onClick={(event) => event.stopPropagation()}
+                    layout={!reduceMotion}
                     data-testid="send-desktop"
                     className="dashboard-modal-surface relative my-auto w-full max-w-md max-h-[90vh] overflow-y-auto transform-gpu custom-scrollbar rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-6 shadow-2xl"
                 >
+                    <AnimatePresence mode="wait" initial={false}>
+                        <motion.div key={pinApproval.request ? "pin" : "compose"}
+                            data-send-screen
+                            initial={{ opacity: 0, x: reduceMotion ? 0 : 32, filter: reduceMotion ? "none" : "blur(4px)" }}
+                            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                            exit={{ opacity: 0, x: reduceMotion ? 0 : -32, filter: reduceMotion ? "none" : "blur(4px)", transition: { duration: reduceMotion ? 0 : 0.12 } }}
+                            transition={{ duration: reduceMotion ? 0 : 0.16, ease: [0.16, 1, 0.3, 1] }}>
+                        {pinApproval.request ? <TransactionPinDialog {...pinApproval.request} inline mobileLayout={false} /> : <>
                     <div className="relative z-10 mb-5 flex items-center justify-between">
                         <div>
                             <h3 className="text-sm font-black uppercase tracking-wider text-[#111827]">Send USDC</h3>
@@ -858,6 +873,9 @@ function DesktopSendModal({
                             </div>
                         </form>
                     )}
+                        </>}
+                        </motion.div>
+                    </AnimatePresence>
                 </motion.div>
             </motion.div>
         </AnimatePresence>
@@ -894,7 +912,7 @@ function MobileSendSheet({
     onPresentationPause,
     recentTransactions,
 }: SendSingleModalProps) {
-    const [view, setView] = useState<"compose" | "review">("compose");
+    const [view, setView] = useState<"compose" | "review" | "pin">("compose");
     const [sendMethod, setSendMethod] = useState<"onchain" | "bank">("onchain");
     const [selectedNetwork, setSelectedNetwork] = useState<string>("arc");
     const [networkMenuOpen, setNetworkMenuOpen] = useState(false);
@@ -915,10 +933,10 @@ function MobileSendSheet({
     const tintRef = useRef<HTMLDivElement | null>(null);
     const scrimRef = useRef<HTMLDivElement | null>(null);
     const sliderThumbRef = useRef<HTMLButtonElement | null>(null);
+    const sliderBlurRef = useRef<HTMLSpanElement | null>(null);
     const sliderFillRef = useRef<HTMLDivElement | null>(null);
     const sliderLabelRef = useRef<HTMLDivElement | null>(null);
     const sliderButtonRef = useRef<HTMLDivElement | null>(null);
-    const blurFilterRef = useRef<SVGElement | null>(null);
     const smallLogoRef = useRef<HTMLDivElement | null>(null);
     const heroLogoRef = useRef<HTMLDivElement | null>(null);
     const heroTitleRef = useRef<HTMLHeadingElement | null>(null);
@@ -928,6 +946,38 @@ function MobileSendSheet({
     const okDiscRef = useRef<HTMLDivElement | null>(null);
     const arrivesBRef = useRef<HTMLElement | null>(null);
 
+    const restoreSlider = () => {
+        const th = sliderThumbRef.current;
+        const blur = sliderBlurRef.current;
+        const fl = sliderFillRef.current;
+        const lb = sliderLabelRef.current;
+        const bt = sliderButtonRef.current;
+        const sl = th?.parentElement;
+        [th, fl, lb, bt].forEach(element => element?.getAnimations().forEach(animation => animation.cancel()));
+        if (sl) sl.classList.remove("sl-cf");
+        if (th) {
+            th.style.transform = "translateX(0px)";
+            th.style.animation = "";
+            th.style.filter = "";
+            th.style.opacity = "";
+        }
+        if (blur) blur.style.filter = "";
+        if (fl) { fl.style.transition = ""; fl.style.transform = "translateX(calc(-100% + 58px))"; }
+        if (lb) lb.style.opacity = "1";
+        if (bt) bt.style.opacity = "0";
+    };
+
+    const beginSendingRef = useRef<((fromPin?: boolean) => void) | null>(null);
+    const pinApproval = useInlineTransactionPinPrompt(
+        () => swapToView("pin", 1),
+        async approved => {
+            if (!mountedRef.current || closingRef.current) return;
+            setSendingState(approved ? "confirming" : "idle");
+            if (!approved) restoreSlider();
+            await swapToView("review", approved ? 1 : -1, approved);
+            if (!approved) restoreSlider();
+        },
+    );
     const runTokenRef = useRef(0);
     const intervalRef = useRef<any>(null);
 
@@ -1170,25 +1220,8 @@ function MobileSendSheet({
                 B: s.bottom - b.bottom,
                 L: b.left - s.left,
                 r: b.height / 2,
-                w: b.width,
-                h: b.height,
             };
             const cp = `inset(${g.T}px ${g.R}px ${g.B}px ${g.L}px round ${g.r}px)`;
-
-            const gh = barEl.cloneNode(true) as HTMLElement;
-            gh.id = "ghost-bottom-bar";
-            gh.inert = true;
-            gh.setAttribute("aria-hidden", "true");
-            gh.style.position = "absolute";
-            gh.style.pointerEvents = "none";
-            gh.style.zIndex = "6";
-            gh.style.left = `${g.L}px`;
-            gh.style.top = `${g.T}px`;
-            gh.style.width = `${g.w}px`;
-            gh.style.height = `${g.h}px`;
-            gh.style.right = "auto";
-            gh.style.bottom = "auto";
-            sh.appendChild(gh);
 
             barEl.style.visibility = "hidden";
             if (sc) sc.style.pointerEvents = "auto";
@@ -1200,7 +1233,6 @@ function MobileSendSheet({
             ], { duration: 480, easing: EASE_EXP, fill: "forwards" });
 
             if (tint) animateFlow(tint, { opacity: [1, 0] }, { duration: 340, easing: "ease-out", fill: "forwards" });
-            animateFlow(gh, { opacity: [1, 0], filter: ["blur(0px)", "blur(7px)"] }, { duration: 220, easing: "ease-out", fill: "forwards" }).onfinish = () => gh.remove();
             animateFlow(pg, [
                 { opacity: 0, transform: "translateY(20px)", filter: "blur(10px)" },
                 { opacity: 1, transform: "none", filter: "blur(0px)" },
@@ -1239,14 +1271,13 @@ function MobileSendSheet({
             [pg, tint, sc].forEach(element => element?.getAnimations().forEach(animation => animation.cancel()));
             pendingAnimationsRef.current.forEach(animation => animation.cancel());
             pendingAnimationsRef.current = [];
-            document.getElementById("ghost-bottom-bar")?.remove();
-            document.getElementById("ghost-bottom-bar-close")?.remove();
             if (barEl) barEl.style.visibility = previousVisibility;
         };
     }, [open]);
 
     /* ── BAR-TO-SHEET MORPH: Close Animation ── */
     const handleClose = async () => {
+        if (pinApproval.request) { pinApproval.cancel(); return; }
         if (closingRef.current || transitioningRef.current || loading || sendingState === "sending" || sendingState === "confirming" || (sendingState === "success" && !doneReady)) return;
         closingRef.current = true;
         const isSuccessful = arriveStatus === "arrived" || sentResult?.status === "confirmed";
@@ -1264,6 +1295,12 @@ function MobileSendSheet({
         const barEl = (document.getElementById("mobile-nav-capsule") || document.querySelector("aside[aria-label='Mobile navigation bar'] nav")) as HTMLElement | null;
         const walEl = (document.getElementById("mobile-nav-payments-btn") || document.getElementById("wal")) as HTMLElement | null;
         const FULL = "inset(0px 0px 0px 0px round 28px 28px 0px 0px)";
+        if (sh && view === "review") {
+            // Return the painted background to the card for the existing close morph.
+            const shell = sh.parentElement!;
+            sh.style.setProperty("background-color", getComputedStyle(shell).backgroundColor, "important");
+            shell.style.backgroundColor = "transparent";
+        }
 
         if (sh && pg && barEl) {
             const b = barEl.getBoundingClientRect();
@@ -1274,36 +1311,13 @@ function MobileSendSheet({
                 B: s.bottom - b.bottom,
                 L: b.left - s.left,
                 r: b.height / 2,
-                w: b.width,
-                h: b.height,
             };
             const cp = `inset(${g.T}px ${g.R}px ${g.B}px ${g.L}px round ${g.r}px)`;
-
-            const gh = barEl.cloneNode(true) as HTMLElement;
-            gh.id = "ghost-bottom-bar-close";
-            gh.inert = true;
-            gh.setAttribute("aria-hidden", "true");
-            gh.style.position = "absolute";
-            gh.style.pointerEvents = "none";
-            gh.style.zIndex = "6";
-            gh.style.left = `${g.L}px`;
-            gh.style.top = `${g.T}px`;
-            gh.style.width = `${g.w}px`;
-            gh.style.height = `${g.h}px`;
-            gh.style.right = "auto";
-            gh.style.bottom = "auto";
-            gh.style.opacity = "0";
-            sh.appendChild(gh);
 
             animateFlow(pg, [
                 { opacity: 1, transform: "none", filter: "blur(0px)" },
                 { opacity: 0, transform: "translateY(16px)", filter: "blur(8px)" },
             ], { duration: 200, easing: "cubic-bezier(.5,0,1,1)", fill: "forwards" });
-
-            animateFlow(gh, [
-                { opacity: 0, filter: "blur(6px)" },
-                { opacity: 1, filter: "blur(0px)" },
-            ], { duration: 240, delay: 240, easing: "ease-out", fill: "forwards" });
 
             if (tint) animateFlow(tint, { opacity: [0, 1] }, { duration: 280, delay: 100, fill: "forwards" });
             if (sc) animateFlow(sc, { opacity: [1, 0] }, { duration: 380, fill: "forwards" });
@@ -1324,7 +1338,6 @@ function MobileSendSheet({
 
             barEl.style.visibility = "visible";
             [sh, pg, tint, sc].forEach((e) => e?.getAnimations().forEach((a) => a.cancel()));
-            gh.remove();
             sh.style.display = "none";
             if (sc) sc.style.pointerEvents = "none";
 
@@ -1347,128 +1360,206 @@ function MobileSendSheet({
         onClose({ isSuccessful, result: currentResult });
     };
 
-    /* ── VIEW SWITCH ANIMATION (COMPOSE <-> REVIEW) ── */
-    const swapToView = async (nextView: "compose" | "review", dir: number) => {
-        if (transitioningRef.current || closingRef.current) return;
+    /* ── VIEW SWITCH ANIMATION (COMPOSE <-> REVIEW <-> PIN) ── */
+    const swapToView = async (nextView: "compose" | "review" | "pin", dir: number, enterSending = false) => {
+        if (closingRef.current) return;
+        while (transitioningRef.current) {
+            await wait(20);
+            if (closingRef.current || !mountedRef.current) return;
+        }
         const pg = pageRef.current;
         const sh = sheetRef.current;
         if (!pg || !sh) return;
+        const token = runTokenRef.current;
         transitioningRef.current = true;
         setViewTransitioning(true);
-        const h0 = sh.offsetHeight;
+        const previousHeight = sh.style.height;
+        const previousOpacity = pg.style.opacity;
+        const height = sh.getBoundingClientRect().height;
+        const movingFilter = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "blur(4px)";
+        const animations: Animation[] = [];
+        const track = (animation: Animation) => {
+            animations.push(animation);
+            pendingAnimationsRef.current.push(animation);
+            return animation;
+        };
+        try {
+            await track(animateFlow(pg, [
+                { opacity: 1, transform: "none", filter: "none" },
+                { opacity: 0, transform: `translateX(${-dir * 36}px) scale(.99)`, filter: movingFilter },
+            ], { duration: 120, easing: "ease-out", fill: "forwards" })).finished.catch(() => {});
+            if (!mountedRef.current || token !== runTokenRef.current) return;
 
-        await animateFlow(pg, [
-            { opacity: 1, transform: "none", filter: "blur(0px)" },
-            { opacity: 0, transform: `translateX(${-dir * 52}px) scale(.98)`, filter: "blur(12px)" },
-        ], { duration: 280, easing: "cubic-bezier(.5,0,1,1)", fill: "forwards" }).finished.catch(() => {});
-        if (!mountedRef.current) return;
-
-        // Measure the next view only after React has committed its actual geometry.
-        flushSync(() => setView(nextView));
-        pg.getAnimations().forEach((a) => a.cancel());
-
-        const h1 = sh.offsetHeight;
-        if (h0 !== h1) {
-            animateFlow(sh, [{ height: `${h0}px` }, { height: `${h1}px` }], { duration: 560, easing: EASE });
+            // Keep both the card geometry and outgoing opacity stable while React commits.
+            sh.style.height = `${height}px`;
+            pg.style.opacity = "0";
+            pg.getAnimations().forEach(animation => animation.cancel());
+            flushSync(() => {
+                setView(nextView);
+                if (enterSending) setSendingState("sending");
+            });
+            // Prepare the approved destination before the first incoming frame.
+            if (enterSending) beginSendingRef.current?.(true);
+            sh.scrollTop = 0;
+            const style = getComputedStyle(sh);
+            const parent = sh.closest<HTMLDivElement>("#sheet-wrapper")!;
+            const parentStyle = getComputedStyle(parent);
+            const availableHeight = parent.clientHeight - parseFloat(parentStyle.paddingTop || "0") - parseFloat(parentStyle.paddingBottom || "0");
+            const naturalHeight = pg.getBoundingClientRect().height + parseFloat(style.paddingTop || "0") + parseFloat(style.paddingBottom || "0") + parseFloat(style.borderTopWidth || "0") + parseFloat(style.borderBottomWidth || "0");
+            const nextHeight = Math.min(naturalHeight, availableHeight);
+            const resize = Math.abs(height - nextHeight) > 0.5 ? track(animateFlow(sh,
+                [{ height: `${height}px` }, { height: `${nextHeight}px` }],
+                { duration: 160, easing: EASE, fill: "forwards" },
+            )) : null;
+            const entrance = track(animateFlow(pg, [
+                { opacity: 0, transform: `translateX(${dir * 36}px) scale(.99)`, filter: movingFilter },
+                { opacity: 1, transform: "none", filter: "none" },
+            ], { duration: 160, easing: EASE, fill: "forwards" }));
+            await Promise.all([entrance.finished.catch(() => {}), resize?.finished.catch(() => {})]);
+        } finally {
+            sh.style.height = previousHeight;
+            pg.style.opacity = previousOpacity;
+            animations.forEach(animation => animation.cancel());
+            pendingAnimationsRef.current = pendingAnimationsRef.current.filter(animation => !animations.includes(animation));
+            transitioningRef.current = false;
+            if (mountedRef.current && token === runTokenRef.current) setViewTransitioning(false);
         }
-
-        await animateFlow(pg, [
-            { opacity: 0, transform: `translateX(${dir * 52}px) scale(.98)`, filter: "blur(12px)" },
-            { opacity: 1, transform: "none", filter: "blur(0px)" },
-        ], { duration: 560, easing: EASE }).finished.catch(() => {});
-        transitioningRef.current = false;
-        if (mountedRef.current) setViewTransitioning(false);
     };
 
-    /* ── SWIPE-TO-SEND SLIDER GESTURE WITH LERP & SVG MOTION BLUR ── */
+    /* ── ONE PRIMARY POINTER OWNS THE SLIDER UNTIL RELEASE OR CAPTURE LOSS ── */
     useEffect(() => {
         if (view !== "review") return;
         const th = sliderThumbRef.current;
         const fl = sliderFillRef.current;
         const lb = sliderLabelRef.current;
-        const bl = blurFilterRef.current;
         const sl = th?.parentElement;
-        if (!th || !fl || !lb || !sl) return;
-
-        let x0 = 0;
-        let tgt = 0;
-        let cur = 0;
-        let drag = false;
-        let max = sl.clientWidth - 58;
-        let raf = 0;
-        let resetTimer: ReturnType<typeof setTimeout> | null = null;
-        const restoreThumb = () => {
-            th.style.animation = "";
-            th.style.filter = "";
-            if (bl) bl.setAttribute("stdDeviation", "0 0");
+        const blur = sliderBlurRef.current;
+        if (!th || !fl || !lb || !sl || !blur) return;
+        let pointer: number | null = null;
+        let origin = 0;
+        let current = 0;
+        let maximum = Math.max(0, sl.clientWidth - 58);
+        let returnFrame = 0;
+        let dragFrame = 0;
+        let positionDirty = false;
+        let blurStrength = 0;
+        let blurStarted = 0;
+        let lastMoveTime = 0;
+        const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+        const clearBlur = () => {
+            blurStrength = 0;
+            blur.style.filter = "";
         };
-
-        const update = () => {
-            const v = tgt - cur;
-            cur += v * 0.32;
-            if (bl) {
-                bl.setAttribute("stdDeviation", `${Math.min(8, Math.abs(v) * 0.3)} 0`);
+        const apply = (position: number) => {
+            current = position;
+            th.style.transform = `translateX(${position}px)`;
+            // Move a full-width pill through the clipped track without resizing it.
+            fl.style.transform = `translateX(${position - maximum}px)`;
+            lb.style.opacity = `${maximum ? Math.max(0, 1 - position / maximum * 1.8) : 1}`;
+        };
+        const stopDrag = () => {
+            cancelAnimationFrame(dragFrame);
+            dragFrame = 0;
+            positionDirty = false;
+            clearBlur();
+        };
+        const paintDrag = (now: number) => {
+            dragFrame = 0;
+            if (positionDirty) {
+                apply(current);
+                positionDirty = false;
+                blurStarted = now;
             }
-            th.style.transform = `translateX(${cur}px)`;
-            fl.style.width = `${cur + 58}px`;
-            lb.style.opacity = `${Math.max(0, 1 - (cur / max) * 1.8)}`;
-
-            if (Math.abs(v) > 0.05 || drag) {
-                raf = requestAnimationFrame(update);
-            } else {
-                raf = 0;
-            }
+            if (blurStrength) {
+                const remaining = Math.max(0, 1 - (now - blurStarted) / 180);
+                if (!remaining || motionPreference.matches) clearBlur();
+                else {
+                    // Keep the horizontal filter kernels immutable during the drag.
+                    const strength = blurStrength * remaining * remaining;
+                    const level = SLIDER_BLUR_LEVELS.find(value => value >= strength) ?? 9;
+                    const filter = `url("#mbx-${level}")`;
+                    if (blur.style.filter !== filter) blur.style.filter = filter;
+                    dragFrame = requestAnimationFrame(paintDrag);
+                }
+            } else if (blur.style.filter) clearBlur();
         };
-
-        const kick = () => {
-            if (!raf) raf = requestAnimationFrame(update);
+        const stopReturn = () => { cancelAnimationFrame(returnFrame); returnFrame = 0; };
+        const returnToStart = () => {
+            stopReturn();
+            const from = current;
+            const started = performance.now();
+            const duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180;
+            const tick = (now: number) => {
+                const progress = duration ? Math.min(1, (now - started) / duration) : 1;
+                apply(from * Math.pow(1 - progress, 3));
+                if (progress < 1) returnFrame = requestAnimationFrame(tick);
+                else { returnFrame = 0; apply(0); th.style.animation = ""; }
+            };
+            returnFrame = requestAnimationFrame(tick);
         };
-
-        const onDown = (e: PointerEvent) => {
-            if (sendingState !== "idle" || commitRef.current || transitioningRef.current) return;
-            if (resetTimer) clearTimeout(resetTimer);
-            drag = true;
-            x0 = e.clientX;
-            max = sl.clientWidth - 58;
-            th.setPointerCapture(e.pointerId);
+        const releaseCapture = (id: number) => { if (th.hasPointerCapture(id)) th.releasePointerCapture(id); };
+        const onDown = (event: PointerEvent) => {
+            if (!event.isPrimary || event.button !== 0 || pointer !== null || sendingState !== "idle" || commitRef.current || transitioningRef.current) return;
+            event.preventDefault();
+            stopReturn();
+            stopDrag();
+            maximum = Math.max(0, sl.clientWidth - 58);
+            current = Math.max(0, Math.min(maximum, new DOMMatrixReadOnly(getComputedStyle(th).transform).m41));
+            origin = event.clientX - current;
+            pointer = event.pointerId;
+            lastMoveTime = event.timeStamp;
             th.style.animation = "none";
-            th.style.filter = "url(#mbx)";
-            kick();
+            fl.style.transition = "";
+            apply(current);
+            th.setPointerCapture(event.pointerId);
         };
-
-        const onMove = (e: PointerEvent) => {
-            if (!drag) return;
-            tgt = Math.max(0, Math.min(max, e.clientX - x0));
-            kick();
+        const onMove = (event: PointerEvent) => {
+            if (event.pointerId !== pointer) return;
+            const position = Math.max(0, Math.min(maximum, event.clientX - origin));
+            // Pointer events may arrive faster than the display can paint. Keep only
+            // the latest position and update the position/blur together next frame.
+            blurStrength = motionPreference.matches ? 0 : Math.min(9, Math.abs(position - current) / Math.max(8, event.timeStamp - lastMoveTime) * 1.15);
+            if (blurStrength < 0.1) blurStrength = 0;
+            blurStarted = performance.now();
+            lastMoveTime = event.timeStamp;
+            current = position;
+            positionDirty = true;
+            if (!dragFrame) dragFrame = requestAnimationFrame(paintDrag);
         };
-
-        const onUp = () => {
-            if (!drag) return;
-            drag = false;
-            if (tgt / max > 0.9) {
-                tgt = cur = max;
-                kick();
-                handleCommitSend();
-            } else {
-                tgt = 0;
-                kick();
-                resetTimer = setTimeout(restoreThumb, 500);
-            }
+        const onUp = (event: PointerEvent) => {
+            if (event.pointerId !== pointer) return;
+            stopDrag();
+            pointer = null;
+            releaseCapture(event.pointerId);
+            const position = Math.max(0, Math.min(maximum, event.clientX - origin));
+            apply(position);
+            if (maximum > 0 && position / maximum > 0.9) { apply(maximum); void handleCommitSend(); }
+            else returnToStart();
         };
-
+        const onCancel = (event: PointerEvent) => {
+            if (event.pointerId !== pointer) return;
+            stopDrag();
+            pointer = null;
+            releaseCapture(event.pointerId);
+            apply(current);
+            returnToStart();
+        };
         th.addEventListener("pointerdown", onDown);
         th.addEventListener("pointermove", onMove);
         th.addEventListener("pointerup", onUp);
-        const onCancel = () => { drag = false; tgt = 0; kick(); resetTimer = setTimeout(restoreThumb, 500); };
         th.addEventListener("pointercancel", onCancel);
-
+        th.addEventListener("lostpointercapture", onCancel);
+        motionPreference.addEventListener("change", clearBlur);
         return () => {
             th.removeEventListener("pointerdown", onDown);
             th.removeEventListener("pointermove", onMove);
             th.removeEventListener("pointerup", onUp);
             th.removeEventListener("pointercancel", onCancel);
-            cancelAnimationFrame(raf);
-            if (resetTimer) clearTimeout(resetTimer);
+            th.removeEventListener("lostpointercapture", onCancel);
+            motionPreference.removeEventListener("change", clearBlur);
+            stopDrag();
+            stopReturn();
+            if (pointer !== null) releaseCapture(pointer);
         };
     }, [view, sendingState]);
 
@@ -1480,18 +1571,34 @@ function MobileSendSheet({
         setSendError(null);
         const tok = ++runTokenRef.current;
         setSendingState("confirming");
+        const logoFlightRef = { current: null as Animation | null };
+        let started = false;
+        beginSendingRef.current = (fromPin = false) => {
+            if (started || tok !== runTokenRef.current || !mountedRef.current) return;
+            started = true;
         const th = sliderThumbRef.current;
         const fl = sliderFillRef.current;
         const lb = sliderLabelRef.current;
         const bt = sliderButtonRef.current;
         const sl = th?.parentElement;
 
+        if (fromPin) {
+            if (th && sl) {
+                th.style.transform = `translateX(${Math.max(0, sl.clientWidth - 58)}px)`;
+                th.style.opacity = "0";
+            }
+            if (fl) fl.style.transform = "translateX(0px)";
+            if (lb) lb.style.opacity = "0";
+            if (bt) bt.style.opacity = "1";
+            return;
+        }
+
         if (sl) sl.classList.add("sl-cf");
         // Every activation shares the completed swipe position before the thumb exits.
         if (th && sl) th.style.transform = `translateX(${Math.max(0, sl.clientWidth - 58)}px)`;
         if (fl) {
-            fl.style.transition = "width .15s ease-out";
-            fl.style.width = "100%";
+            fl.style.transition = "transform .15s ease-out";
+            fl.style.transform = "translateX(0px)";
         }
         if (th) {
             animateFlow(th, [
@@ -1519,11 +1626,10 @@ function MobileSendSheet({
 
         // Logo flight to center: grow to 84px with 9px mid-flight blur at offset 0.4
         const hl = heroLogoRef.current;
-        let logoFlight: Animation | null = null;
         if (a && hl) {
             const b = hl.getBoundingClientRect();
             const s = a.width / b.width;
-            logoFlight = animateFlow(hl, [
+            logoFlightRef.current = animateFlow(hl, [
                 { transform: `translate(${a.left + a.width / 2 - b.left - b.width / 2}px, ${a.top + a.height / 2 - b.top - b.height / 2}px) scale(${s})`, filter: "blur(0px)" },
                 { filter: "blur(9px)", offset: 0.4 },
                 { transform: "none", filter: "blur(0px)" },
@@ -1542,17 +1648,19 @@ function MobileSendSheet({
 
         setSendingState("sending");
 
+        };
         // Only a successful platform result can enter the Sent state.
         try {
-            const result = await onSubmit({ preventDefault: () => {} } as React.FormEvent, selectedNetwork);
+            const result = await onSubmit({ preventDefault: () => {} } as React.FormEvent, selectedNetwork, pinApproval.prompt);
             if (!result?.txHash && !result?.circleTxId) throw new Error("The transfer was not completed. Check the status and try again.");
             if (tok !== runTokenRef.current) return;
+            beginSendingRef.current?.();
             // Immediate callback: refresh parent dashboard balances and transaction feed
             // without waiting for additional UI animation delays.
             if (onSendSuccess) onSendSuccess(result);
             // Let the existing logo flight finish before another transform owns it.
             // Settlement and balance refresh are already proceeding independently.
-            if (logoFlight) await logoFlight.finished.catch(() => {});
+            if (logoFlightRef.current) await logoFlightRef.current.finished.catch(() => {});
             if (tok !== runTokenRef.current) return;
             await handleSuccessSequence(tok, result);
         } catch (error) {
@@ -1561,7 +1669,9 @@ function MobileSendSheet({
             setSendingState("idle");
             commitRef.current = false;
             onPresentationPause?.(false);
-            await swapToView("compose", -1);
+            beginSendingRef.current = null;
+            restoreSlider();
+            if (!(error instanceof Error && error.name === "AbortError")) await swapToView("compose", -1);
         }
 
     };
@@ -1813,7 +1923,13 @@ function MobileSendSheet({
     const isReadyForReview = amountIsValid && Boolean(quote) && !exceedsBalance && Boolean(resolved?.address) && !recipientError && !resolutionError && !selfSend && !resolving && currentRouteLive && (isArcRoute || canWithdrawCrossChain);
 
     return (
-        <div id="sheet-wrapper" className="fixed inset-0 overflow-hidden z-[100] flex flex-col justify-end pointer-events-none font-sans select-none">
+        <div
+            id="sheet-wrapper"
+            className="fixed inset-0 overflow-hidden z-[100] flex flex-col justify-end pointer-events-none font-sans select-none"
+            style={{
+                paddingTop: "max(12px, env(safe-area-inset-top, 0px))",
+            }}
+        >
             {/* Scrim Overlay */}
             <div
                 ref={scrimRef}
@@ -1822,14 +1938,20 @@ function MobileSendSheet({
                 className="absolute inset-0 bg-[#2A302A]/70 pointer-events-none opacity-0 transition-opacity"
             />
 
-            {/* SVG Motion Blur Filter for Lerp Slider */}
-            <svg width="0" height="0" className="absolute pointer-events-none" style={{ position: "absolute" }}>
-                <filter id="mbx" x="-60%" y="-60%" width="220%" height="220%">
-                    <feGaussianBlur ref={blurFilterRef as any} stdDeviation="0 0" />
-                </filter>
+            <svg width="0" height="0" className="absolute pointer-events-none" aria-hidden="true">
+                {SLIDER_BLUR_LEVELS.map(level => (
+                    <filter key={level} id={`mbx-${level}`} x="-60%" y="-60%" width="220%" height="220%">
+                        <feGaussianBlur stdDeviation={`${level} 0`} />
+                    </filter>
+                ))}
             </svg>
 
             {/* Bottom Sheet Card */}
+            {/* Keep Review's painted corners outside the scroller; lower curves sit below the viewport. */}
+            <div
+                className={`w-full min-h-0 shrink-0 overflow-hidden rounded-[28px] ${view === "review" ? "bg-[#FDFEF3] dark:bg-[#15181F]" : ""}`}
+                style={{ marginBottom: "-28px", paddingBottom: "28px", clipPath: "inset(0px round 28px 28px 0px 0px)" }}
+            >
             <section
                 ref={sheetRef}
                 id="sheet-card"
@@ -1851,9 +1973,15 @@ function MobileSendSheet({
                         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
                     }
                 }}
-                className="pointer-events-auto relative w-full max-w-[430px] mx-auto bg-[#FDFEF3] dark:bg-[#15181F] text-[#111827] dark:text-[#F1F3F8] rounded-t-[28px] px-[20px] pt-[14px] pb-[22px] shadow-2xl overflow-y-auto overscroll-contain will-change-transform max-h-[94dvh]"
+                className={`pointer-events-auto relative w-full min-h-0 max-w-none ${view === "review" ? "!bg-transparent" : "bg-[#FDFEF3] dark:bg-[#15181F]"} text-[#111827] dark:text-[#F1F3F8] rounded-t-[28px] rounded-b-none px-[20px] pt-[14px] shadow-2xl overflow-y-auto overscroll-contain will-change-transform max-h-full`}
                 style={{
                     boxSizing: "border-box",
+                    overflowAnchor: "none",
+                    borderTopLeftRadius: "28px",
+                    borderTopRightRadius: "28px",
+                    borderBottomLeftRadius: 0,
+                    borderBottomRightRadius: 0,
+                    maxHeight: "calc(100dvh - max(12px, env(safe-area-inset-top, 0px)))",
                     paddingBottom: "max(22px, env(safe-area-inset-bottom, 0px))",
                 }}
             >
@@ -1865,7 +1993,7 @@ function MobileSendSheet({
                 />
 
                 {/* Page Content Container */}
-                <div ref={pageRef} id="sheet-page-content" className="relative z-20">
+                <div ref={pageRef} id="sheet-page-content" className="relative z-20" inert={viewTransitioning}>
                     {/* Top Drag Handle */}
                     <div ref={handleRef} className="w-[40px] h-[4px] rounded-full bg-black/15 dark:bg-white/15 mx-auto mb-[4px] opacity-0" />
 
@@ -2025,13 +2153,13 @@ function MobileSendSheet({
                                     {isArcRoute ? "Recipient wallet address or .sub name" : `Recipient address on ${currentNetwork.name}`}
                                 </label>
                                 <div className="flex items-center gap-2">
-                                    <div className="relative flex-1 flex items-center rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-[#1D2129] px-3.5 py-2.5 shadow-sm focus-within:border-[#2775CA] focus-within:ring-2 focus-within:ring-[#2775CA]/20 transition">
+                                    <div className="relative min-w-0 flex-1 flex items-center rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-[#1D2129] px-3.5 py-2.5 shadow-sm focus-within:border-[#2775CA] focus-within:ring-2 focus-within:ring-[#2775CA]/20 transition">
                                         <input
                                             value={recipient}
                                             onKeyDown={(e) => { if (e.key === " ") { e.preventDefault(); setRecipientError("Spaces are not allowed"); } }}
                                             onChange={(e) => onRecipientChange(validateRecipient(e.target.value))}
                                             placeholder={isArcRoute ? "alice.sub or 0x…" : `0x… address on ${currentNetwork.name}`}
-                                            className="w-full bg-transparent text-xs font-semibold text-[#111827] dark:text-[#FFFFF0] placeholder:text-black/35 dark:placeholder:text-white/35 focus:outline-none"
+                                            className="w-full min-w-0 bg-transparent text-xs font-semibold text-[#111827] dark:text-[#FFFFF0] placeholder:text-black/35 dark:placeholder:text-white/35 focus:outline-none"
                                         />
                                         {/* Pop-in Destination Icon */}
                                         <div className="shrink-0 flex items-center justify-center pl-2">
@@ -2094,7 +2222,7 @@ function MobileSendSheet({
                                             onAmountChange(v);
                                         }}
                                         placeholder="0.00"
-                                        className="w-full bg-transparent text-sm font-bold text-[#111827] dark:text-[#FFFFF0] placeholder:text-black/35 dark:placeholder:text-white/35 focus:outline-none"
+                                        className="w-full min-w-0 bg-transparent text-sm font-bold text-[#111827] dark:text-[#FFFFF0] placeholder:text-black/35 dark:placeholder:text-white/35 focus:outline-none"
                                     />
                                     <button
                                         type="button"
@@ -2105,7 +2233,7 @@ function MobileSendSheet({
                                         MAX
                                     </button>
                                 </div>
-                                <div className="flex justify-between items-center text-[11px] text-black/50 dark:text-white/50 pt-0.5">
+                                <div className="flex flex-wrap gap-x-2 gap-y-1 justify-between items-center text-[11px] text-black/50 dark:text-white/50 pt-0.5">
                                     <span>Available: <strong className="font-mono">{walletBalance.toFixed(2)} USDC</strong></span>
                                     <span data-testid="send-gas-fee">{isArcRoute ? (quote?.feeLabel || "Network fee") : "Platform fee"}: <strong className="font-mono">{quote ? `${displayUsdc(quote.feeUsdc)} USDC` : feeText}</strong></span>
                                 </div>
@@ -2117,7 +2245,7 @@ function MobileSendSheet({
                                 type="button"
                                 disabled={!isReadyForReview || viewTransitioning}
                                 data-testid="send-review"
-                                onClick={() => { setReviewQuote(quote || null); setReviewTarget(resolved); void swapToView("review", 1); }}
+                                onClick={() => { pinApproval.prepareSetup(); setReviewQuote(quote || null); setReviewTarget(resolved); void swapToView("review", 1); }}
                                 className={`flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-xs font-black uppercase tracking-wider text-white shadow-md transition-all duration-300 ${
                                     isReadyForReview
                                         ? "bg-[#2775CA] hover:bg-[#1f62ab] active:scale-95 cursor-pointer"
@@ -2142,11 +2270,15 @@ function MobileSendSheet({
                                 </button>
                             </div>
                         </div>
+                    ) : view === "pin" ? (
+                        <div key="pin-view" data-send-pin className="space-y-0">
+                            {pinApproval.request && <TransactionPinDialog {...pinApproval.request} inline mobileLayout />}
+                        </div>
                     ) : (
                         /* ── STEP 2 & 3: REVIEW & SENDING FLOW ── */
                         <div key="review-view" data-send-review className="space-y-0">
                             {/* Header */}
-                            <div id="sheet-review-header" className="relative flex items-center justify-center h-[40px]">
+                            <div id="sheet-review-header" className="relative flex items-center justify-center h-[40px]" style={{ opacity: sendingState === "sending" || sendingState === "success" ? 0 : 1 }}>
                                 <button
                                     type="button"
                                     onClick={() => { if (!commitRef.current) void swapToView("compose", -1); }}
@@ -2164,7 +2296,11 @@ function MobileSendSheet({
                                 {/* Top Amount & Chain View (Review Stage) */}
                                 <div
                                     id="sheet-review-top"
-                                    className="absolute inset-0 flex flex-col items-center justify-start pt-[6px] text-center"
+                                    className="absolute inset-0 flex flex-col items-center justify-start pt-[6px] text-center transition-opacity duration-300"
+                                    style={{
+                                        opacity: (sendingState === "sending" || sendingState === "success") ? 0 : 1,
+                                        pointerEvents: (sendingState === "sending" || sendingState === "success") ? "none" : undefined,
+                                    }}
                                 >
                                     <div className="text-[46px] leading-[55px] font-semibold tracking-tight text-[#111827] dark:text-white">
                                         {displayUsdc(displayQuote?.amountUsdc || "0")} <small className="text-[18px] text-black/50 dark:text-white/50 font-semibold">USDC</small>
@@ -2235,7 +2371,7 @@ function MobileSendSheet({
                                 <div
                                     id="sheet-sending-hero"
                                     className="absolute inset-0 flex flex-col items-center justify-start pt-[10px] text-center transition-opacity duration-300 pointer-events-none"
-                                    style={{ opacity: sendingState === "idle" ? 0 : 1 }}
+                                    style={{ opacity: (sendingState === "sending" || sendingState === "success") ? 1 : 0 }}
                                 >
                                     <div id="sheet-hero-wrapper" className="relative w-[124px] h-[124px] mx-auto">
                                         {/* Arc Spin & Countdown Ring */}
@@ -2250,7 +2386,7 @@ function MobileSendSheet({
                                                 strokeWidth="3"
                                                 strokeLinecap="round"
                                                 strokeDasharray="80 260"
-                                                style={{ transformOrigin: "62px 62px", animation: "sp 1s linear infinite" }}
+                                                style={{ transformOrigin: "62px 62px", animation: sendingState === "sending" ? "sp 1s linear infinite" : "none" }}
                                             />
                                             <circle
                                                 ref={countdownCircleRef}
@@ -2351,7 +2487,8 @@ function MobileSendSheet({
                             >
                                 <div
                                     ref={sliderFillRef}
-                                    className="absolute left-0 top-0 bottom-0 w-[58px] rounded-full bg-[#2775CA]"
+                                    className="absolute left-0 top-0 bottom-0 w-full rounded-full bg-[#2775CA] will-change-transform"
+                                    style={{ transform: "translateX(calc(-100% + 58px))" }}
                                 />
                                 <div
                                     ref={sliderLabelRef}
@@ -2377,17 +2514,23 @@ function MobileSendSheet({
                                         }
                                     }}
                                     onClick={event => { if (event.detail === 0) void handleCommitSend(); }}
-                                    className="absolute left-[5px] top-[5px] w-[48px] h-[48px] rounded-full bg-white dark:bg-[#FFFFF0] text-[#2775CA] flex items-center justify-center font-bold text-base shadow-md cursor-grab active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-[#2775CA] focus-visible:outline-offset-[-2px]"
-                                    style={{ animation: sendingState === "idle" ? "hl 1.8s infinite" : "none" }}
+                                    className="absolute left-[5px] top-[5px] w-[48px] h-[48px] rounded-full text-[#2775CA] font-bold text-base cursor-grab active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-[#2775CA] focus-visible:outline-offset-[-2px]"
+                                    style={{ animation: sendingState === "idle" ? "hl 1.8s infinite" : "none", willChange: "transform" }}
                                 >
-                                    <OutgoingTransactionIcon className="w-5 h-5 text-[#2775CA]" />
+                                    <span ref={sliderBlurRef} data-slider-blur style={{ contain: "paint layout", willChange: "filter" }} className="absolute inset-0 rounded-full bg-white dark:bg-[#FFFFF0] shadow-md flex items-center justify-center pointer-events-none">
+                                        <OutgoingTransactionIcon className="w-5 h-5 text-[#2775CA]" />
+                                    </span>
                                 </button>
+                                {sendingState === "confirming" && <div role="status" aria-label="Preparing transfer" className="absolute inset-0 flex items-center justify-center gap-2 rounded-full bg-[#2775CA] font-semibold text-white pointer-events-none">
+                                    <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> Preparing…
+                                </div>}
                                 {doneReady && <button type="button" aria-label="Done" onClick={() => void handleClose()} className="absolute inset-0 cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2775CA]" />}
                             </div>
                         </div>
                     )}
                 </div>
             </section>
+            </div>
         </div>
     );
 }

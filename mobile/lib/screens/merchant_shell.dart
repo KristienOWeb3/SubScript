@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../services/haptics_service.dart';
 import '../state/app_controller.dart';
 import '../ui/design_system.dart';
 
@@ -94,7 +95,10 @@ class _MerchantShellState extends State<MerchantShell> {
               final selected = itemIndex == _index;
               return Expanded(
                 child: InkWell(
-                  onTap: () => setState(() => _index = itemIndex),
+                  onTap: () {
+                    SubScriptHaptics.microTick();
+                    setState(() => _index = itemIndex);
+                  },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Column(

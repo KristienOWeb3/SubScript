@@ -5,6 +5,7 @@ import { readPinResponse, readTransactionPinStatus, type TransactionPinStatus } 
 import { getDashboardUrl } from "@/utils/navigation";
 import { validTransactionPin } from "@/lib/auth/transactionPinFormat";
 import TransactionPinInput from "@/components/TransactionPinInput";
+import TransactionPinSettingsSkeleton from "@/components/TransactionPinSettingsSkeleton";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, ChevronLeft, KeyRound, ShieldCheck, Wallet } from "lucide-react";
 
@@ -29,6 +30,9 @@ export default function TransactionPinSettings({ embedded = false, onBack }: { e
     const [attempt, setAttempt] = useState(0);
     const [mobile, setMobile] = useState(false);
     const [step, setStep] = useState(0);
+    const [emailVerified, setEmailVerified] = useState(false);
+    const proof = useRef<{ token: string; action: string; expiresAt: number } | null>(null);
+    const busyRef = useRef(false);
     const reduceMotion = useReducedMotion();
     const steps = action === "change" ? ["code", "current", "new", "confirm"] : ["code", "new", "confirm"];
     const currentStep = steps[step];
@@ -54,13 +58,14 @@ export default function TransactionPinSettings({ embedded = false, onBack }: { e
                 setStatus(pinStatus); setNow(Date.now()); setEmail(typeof session.email === "string" ? session.email : "");
                 setDashboardPath(getDashboardUrl(session.role, "/dashboard")); setAction(value => pinStatus.configured ? value === "enroll" ? "change" : value : "enroll");
             }).catch(() => { if (!signal.aborted) setLoadError("Unable to load PIN settings. Check your connection and sign-in, then retry."); });
-        return () => current.abort();
+        return () => { current.abort(); proof.current = null; };
     }, [refresh]);
     useEffect(() => {
         const timer = window.setInterval(() => setNow(Date.now()), 1_000);
         return () => window.clearInterval(timer);
     }, []);
     function reload() {
+        proof.current = null; setEmailVerified(false);
         setStatus(null); setEmail(""); setLoadError(""); setRefresh(value => value + 1);
     }
     async function post(path: string, body: unknown, stepUpToken?: string) {
@@ -76,36 +81,66 @@ export default function TransactionPinSettings({ embedded = false, onBack }: { e
         return result;
     }
     async function sendCode() {
-        if (busy || Date.now() < resendAt) return;
+        if (busyRef.current || Date.now() < resendAt) return;
+        busyRef.current = true;
         setBusy(true); setFeedback("idle"); setMessage("");
         try {
             const result = await post("/api/auth/otp/send", { email, purpose: "financial_step_up", stepUp: { action: `transaction-pin:${action}` } });
             if (typeof result.challengeId !== "string" || !result.challengeId) throw new Error("Unable to send code. Please retry.");
             if (controller.current.signal.aborted) return;
+            proof.current = null; setEmailVerified(false);
             setStep(0); setCode(""); setPin(""); setConfirm(""); setCurrentPin("");
             setChallengeId(result.challengeId); setMessage("Verification code sent. Check your inbox.");
         } catch (error) { if (!controller.current.signal.aborted) setMessage(error instanceof Error ? error.message : "Unable to send code."); }
-        finally { setBusy(false); }
+        finally { busyRef.current = false; setBusy(false); }
+    }
+    async function verifyEmailCode() {
+        if (busyRef.current || code.length !== 6) return false;
+        busyRef.current = true; setBusy(true); setMessage(""); setFeedback("idle");
+        const startedAt = Date.now();
+        try {
+            const verified = await post("/api/auth/otp/verify", { email, code, challengeId, purpose: "financial_step_up", stepUp: { action: `transaction-pin:${action}` } });
+            if (typeof verified.stepUpToken !== "string" || !verified.stepUpToken) throw new Error("Email verification did not complete. Send a fresh code and retry.");
+            if (controller.current.signal.aborted) return false;
+            const seconds = typeof verified.expiresInSeconds === "number" && verified.expiresInSeconds > 0 ? Math.min(verified.expiresInSeconds, 300) : 300;
+            proof.current = { token: verified.stepUpToken, action, expiresAt: startedAt + seconds * 1000 };
+            setFeedback("success"); setMessage("Email verified.");
+            await new Promise(resolve => setTimeout(resolve, reduceMotion ? 120 : 380));
+            if (controller.current.signal.aborted) return false;
+            setEmailVerified(true); setCode(""); setFeedback("idle"); setMessage("Email verified.");
+            return true;
+        } catch (error) {
+            if (!controller.current.signal.aborted) {
+                proof.current = null; setEmailVerified(false); setCode(""); setFeedback("error"); setAttempt(value => value + 1);
+                setMessage(error instanceof Error ? error.message : "Unable to verify email code. Please retry.");
+            }
+            return false;
+        } finally { busyRef.current = false; setBusy(false); }
     }
     async function save(event: React.FormEvent) {
         event.preventDefault();
-        if (busy) return;
-        if (mobile && step < steps.length - 1) { nextStep(); return; }
+        if (busyRef.current) return;
+        if (mobile && step < steps.length - 1) { void nextStep(); return; }
+        if (!emailVerified) { await verifyEmailCode(); return; }
+        const authorization = proof.current;
+        if (!authorization || authorization.action !== action || authorization.expiresAt <= Date.now()) {
+            proof.current = null; setEmailVerified(false); setChallengeId(""); setStep(0); setCode(""); setPin(""); setConfirm(""); setCurrentPin("");
+            setMessage("Email verification expired. Send a fresh code before continuing."); return;
+        }
         if (pin !== confirm) { setFeedback("error"); setAttempt(value => value + 1); setMessage("The new PINs do not match."); return; }
         if (!validTransactionPin(pin)) { setFeedback("error"); setAttempt(value => value + 1); setMessage("Choose a six-digit PIN without a repeated or sequential pattern."); return; }
-        const newPin = pin; const oldPin = currentPin; const otp = code;
+        const newPin = pin; const oldPin = currentPin;
+        proof.current = null; busyRef.current = true;
         setPin(""); setConfirm(""); setCurrentPin(""); setCode(""); setBusy(true); setFeedback("idle"); setMessage("");
         try {
-            const verified = await post("/api/auth/otp/verify", { email, code: otp, challengeId, purpose: "financial_step_up", stepUp: { action: `transaction-pin:${action}` } });
-            if (typeof verified.stepUpToken !== "string" || !verified.stepUpToken) throw new Error("Email verification did not complete. Send a fresh code and retry.");
-            const result = await post(`/api/user/transaction-pin/${action}`, { pin: newPin, ...(action === "change" ? { currentPin: oldPin } : {}) }, verified.stepUpToken);
+            const result = await post(`/api/user/transaction-pin/${action}`, { pin: newPin, ...(action === "change" ? { currentPin: oldPin } : {}) }, authorization.token);
             if (result.success !== true || result.configured !== true) throw new Error("PIN update could not be confirmed. Check its status before retrying.");
             if (controller.current.signal.aborted) return;
             setFeedback("success");
             await new Promise(resolve => setTimeout(resolve, 380));
             if (controller.current.signal.aborted) return;
             setStatus({ required: true, configured: true, coolingOffUntil: result.coolingOffUntil });
-            setChallengeId(""); setAction("change");
+            setChallengeId(""); setEmailVerified(false); setAction("change");
             setMessage(action === "reset" ? "Transaction PIN reset. Outbound transactions are held for 24 hours during recovery." : "Transaction PIN saved.");
         } catch (error) {
             if (!controller.current.signal.aborted) {
@@ -118,11 +153,21 @@ export default function TransactionPinSettings({ embedded = false, onBack }: { e
                 reload();
             }
         }
-        finally { setBusy(false); }
+        finally { busyRef.current = false; setBusy(false); }
     }
     const stepValue = currentStep === "code" ? code : currentStep === "current" ? currentPin : currentStep === "new" ? pin : confirm;
-    function nextStep() {
-        if (busy || stepValue.length !== 6) return;
+    async function nextStep() {
+        if (busyRef.current) return;
+        if (currentStep === "code") {
+            if (emailVerified && proof.current && proof.current.expiresAt > Date.now()) { setStep(value => value + 1); setMessage(""); return; }
+            if (emailVerified) {
+                proof.current = null; setEmailVerified(false); setChallengeId(""); setStep(0); setCode(""); setPin(""); setConfirm(""); setCurrentPin("");
+                setMessage("Email verification expired. Send a fresh code before continuing."); return;
+            }
+            if (await verifyEmailCode() && !controller.current.signal.aborted) { setStep(value => value + 1); setMessage(""); }
+            return;
+        }
+        if (stepValue.length !== 6) return;
         if (currentStep === "new" && !validTransactionPin(pin)) {
             setFeedback("error"); setAttempt(value => value + 1);
             setMessage("Choose a six-digit PIN without a repeated or sequential pattern."); return;
@@ -130,7 +175,7 @@ export default function TransactionPinSettings({ embedded = false, onBack }: { e
         setStep(value => value + 1); setFeedback("idle"); setMessage("");
     }
     const Container = embedded ? "div" : "main";
-    return <Container className={`ph-no-capture ph-mask text-gray-900 dark:text-white ${embedded ? "space-y-6" : `min-h-screen bg-[#FFFFF0] px-4 dark:bg-[#060608] ${enteringPin ? "py-6" : "py-10"}`}`} data-ph-no-capture>
+    return <Container className={`transaction-pin-settings ph-no-capture ph-mask text-gray-900 dark:text-white ${embedded ? "space-y-6" : `min-h-screen bg-[#FFFFF0] px-4 dark:bg-[#060608] ${enteringPin ? "py-6" : "py-10"}`}`} data-ph-no-capture>
         {embedded && <div className="flex items-center gap-4">
             <button type="button" aria-label="Back to Security" onClick={onBack} className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"><ChevronLeft aria-hidden="true" className="h-5 w-5" /></button>
             <h2 className="text-sm font-black uppercase tracking-wider text-black">Transaction PIN</h2>
@@ -143,30 +188,30 @@ export default function TransactionPinSettings({ embedded = false, onBack }: { e
             </div></>}
             {!enteringPin && required && <p className="mt-4 text-sm leading-relaxed text-[#082824]/65 dark:text-white/65">Protect payments from your SubScript wallet with a private six-digit PIN. Verify your email whenever you set, change, or reset it.</p>}
             {status && !required && <div className="mt-6 rounded-2xl border border-[#082824]/10 bg-[#D3E3E8]/25 p-5 dark:border-white/10 dark:bg-white/5"><Wallet aria-hidden="true" className="h-5 w-5 text-[#2775CA]" /><h2 className="mt-3 text-base font-semibold">Your wallet handles approvals</h2><p className="mt-2 text-sm leading-relaxed text-[#082824]/65 dark:text-white/65">External wallets do not need a transaction PIN. Review and approve outgoing payments in your connected wallet.</p></div>}
-            {!status && !loadError && !message && <p role="status" className="mt-4 text-sm">Loading PIN settings…</p>}
+            {!status && !loadError && !message && <TransactionPinSettingsSkeleton />}
             {loadError && <div className="mt-4 space-y-3"><p role="alert">{loadError}</p><button type="button" onClick={reload} className="rounded-xl border px-4 py-2">Retry loading PIN settings</button></div>}
             {status?.lockedUntil && Date.parse(status.lockedUntil) > now && <p className="mt-3 text-sm">PIN locked until {new Date(status.lockedUntil).toLocaleString()}.</p>}
             {status?.coolingOffUntil && Date.parse(status.coolingOffUntil) > now && <p className="mt-3 text-sm">Cooling-off period ends {new Date(status.coolingOffUntil).toLocaleString()}.</p>}
-            {required && status?.configured && !enteringPin && <div className="my-5 flex gap-2 rounded-2xl bg-[#082824]/5 p-1 dark:bg-white/5">{(["change", "reset"] as const).map(value => <button key={value} disabled={busy} aria-pressed={action === value} className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${action === value ? "bg-white text-[#082824] shadow-sm dark:bg-white/10 dark:text-white" : "text-[#082824]/55 dark:text-white/60"}`} onClick={() => { setAction(value); setStep(0); setFeedback("idle"); setChallengeId(""); setCode(""); setPin(""); setConfirm(""); setCurrentPin(""); setMessage(""); }}>{value === "change" ? "Change PIN" : "Forgot PIN"}</button>)}</div>}
+            {required && status?.configured && !enteringPin && <div className="my-5 flex gap-2 rounded-2xl bg-[#082824]/5 p-1 dark:bg-white/5">{(["change", "reset"] as const).map(value => <button key={value} disabled={busy} aria-pressed={action === value} className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${action === value ? "bg-white text-[#082824] shadow-sm dark:bg-white/10 dark:text-white" : "text-[#082824]/55 dark:text-white/60"}`} onClick={() => { proof.current = null; setEmailVerified(false); setAction(value); setStep(0); setFeedback("idle"); setChallengeId(""); setCode(""); setPin(""); setConfirm(""); setCurrentPin(""); setMessage(""); }}>{value === "change" ? "Change PIN" : "Forgot PIN"}</button>)}</div>}
             {status && required && !email && <p role="alert" className="mt-4">Link and verify an email in dashboard settings before setting up a PIN.</p>}
             {status && required && email && <form onSubmit={save} className="mt-6 space-y-5">
-                {(!enteringPin || currentStep === "code") && <div className="space-y-3 rounded-2xl border border-[#082824]/10 bg-white/50 p-4 dark:border-white/10 dark:bg-white/5"><p className="flex items-center gap-2 text-xs font-semibold text-[#082824]/65 dark:text-white/65"><ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-[#2775CA]" />Email verification</p><p className="break-all text-sm">Verification email: {email}</p>
+                {(!enteringPin || currentStep === "code") && <div className="space-y-3 rounded-2xl border border-[#082824]/10 bg-white/50 p-4 dark:border-white/10 dark:bg-white/5"><p className="flex items-center gap-2 text-xs font-semibold text-[#082824]/65 dark:text-white/65"><ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-[#2775CA]" />Email verification</p><p className="text-sm leading-relaxed"><span className="block text-xs text-[#082824]/55 dark:text-white/55">Verification email</span><span className="block break-words [overflow-wrap:anywhere]">{email}</span></p>
                 <button type="button" disabled={busy || resendSeconds > 0} onClick={sendCode} className="rounded-xl border border-[#2775CA]/25 bg-[#2775CA]/5 px-4 py-2.5 text-sm font-semibold text-[#2775CA] transition-colors hover:bg-[#2775CA]/10 disabled:opacity-50">{resendSeconds > 0 ? `Request another code in ${resendSeconds}s` : challengeId ? "Send a fresh code" : "Send verification code"}</button></div>}
                 {challengeId && <>
+                    {emailVerified && (!mobile || currentStep === "code") && <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Email verified.</p>}
                     {mobile && <div className="space-y-2.5"><p aria-live="polite" className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#082824]/50 dark:text-white/50">Step {step + 1} of {steps.length}</p><div aria-hidden="true" className="flex gap-1.5">{steps.map((value, index) => <span key={value} className={`h-1 flex-1 rounded-full transition-colors duration-200 ${index <= step ? "bg-[#2775CA]" : "bg-[#082824]/10 dark:bg-white/10"}`} />)}</div></div>}
                     <motion.div key={mobile ? currentStep : "desktop"} initial={reduceMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-4">
-                        {(!mobile || currentStep === "code") && (mobile ? <TransactionPinInput label="Email code" value={code} onChange={value => { setCode(value); setFeedback("idle"); }} autoComplete="one-time-code" disabled={busy} feedback={feedback} attempt={attempt} keypadOpen /> :
-                        <label className="block text-sm">Email code<input type="password" className="mt-2 w-full rounded-xl border border-gray-400 bg-transparent p-3" value={code} onChange={event => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" data-private="true" data-ph-no-capture="true" maxLength={6} pattern="[0-9]{6}" required autoComplete="one-time-code" disabled={busy} /></label>)}
-                        {action === "change" && (!mobile || currentStep === "current") && <TransactionPinInput label="Current PIN" value={currentPin} onChange={value => { setCurrentPin(value); setFeedback("idle"); }} disabled={busy} feedback={feedback} attempt={attempt} filled={busy && feedback !== "error" ? 6 : currentPin.length} keypadOpen={mobile} />}
-                        {(!mobile || currentStep === "new") && <><TransactionPinInput label="New PIN" value={pin} onChange={value => { setPin(value); setFeedback("idle"); }} disabled={busy} feedback={feedback} attempt={attempt} filled={busy && feedback !== "error" ? 6 : pin.length} describedBy="pin-format-hint" keypadOpen={mobile} />
+                        {(!mobile || currentStep === "code") && !emailVerified && <TransactionPinInput label="Email code" value={code} onChange={value => { setCode(value); proof.current = null; setEmailVerified(false); setFeedback("idle"); }} autoComplete="one-time-code" disabled={busy} feedback={feedback} attempt={attempt} keypadOpen={mobile} />}
+                        {emailVerified && action === "change" && (!mobile || currentStep === "current") && <TransactionPinInput label="Current PIN" value={currentPin} onChange={value => { setCurrentPin(value); setFeedback("idle"); }} disabled={busy} feedback={feedback} attempt={attempt} filled={busy && feedback !== "error" ? 6 : currentPin.length} keypadOpen={mobile} />}
+                        {emailVerified && (!mobile || currentStep === "new") && <><TransactionPinInput label="New PIN" value={pin} onChange={value => { setPin(value); setFeedback("idle"); }} disabled={busy} feedback={feedback} attempt={attempt} filled={busy && feedback !== "error" ? 6 : pin.length} describedBy="pin-format-hint" keypadOpen={mobile} />
                         <p id="pin-format-hint" className="text-xs leading-relaxed text-[#082824]/55 dark:text-white/55">Avoid repeated digits and consecutive sequences.</p></>}
-                        {(!mobile || currentStep === "confirm") && <TransactionPinInput label="Confirm new PIN" value={confirm} onChange={value => { setConfirm(value); setFeedback("idle"); }} disabled={busy} feedback={feedback} attempt={attempt} filled={busy && feedback !== "error" ? 6 : confirm.length} keypadOpen={mobile} />}
+                        {emailVerified && (!mobile || currentStep === "confirm") && <TransactionPinInput label="Confirm new PIN" value={confirm} onChange={value => { setConfirm(value); setFeedback("idle"); }} disabled={busy} feedback={feedback} attempt={attempt} filled={busy && feedback !== "error" ? 6 : confirm.length} keypadOpen={mobile} />}
                     </motion.div>
                     {action === "reset" && <p className="text-sm">Resetting a forgotten PIN starts a 24-hour cooling-off period. Outbound transactions are held during recovery.</p>}
                     <div className={mobile ? "flex items-center gap-3" : ""}>
                     {mobile && step > 0 && <button type="button" aria-label="Back" disabled={busy} onClick={() => { setStep(value => value - 1); setFeedback("idle"); setMessage(""); }} className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all disabled:opacity-50"><ChevronLeft aria-hidden="true" className="h-5 w-5" /></button>}
-                    {mobile && step < steps.length - 1 ? <button type="button" disabled={busy || stepValue.length !== 6} onClick={nextStep} className="w-full rounded-xl bg-[#2775CA] p-3 font-bold text-white disabled:opacity-50">Continue</button> :
-                    <button disabled={busy || pin.length !== 6 || confirm.length !== 6 || code.length !== 6 || (action === "change" && currentPin.length !== 6)} className="w-full rounded-xl bg-[#2775CA] p-3 font-bold text-white disabled:opacity-50">{busy ? "Verifying…" : "Verify and save PIN"}</button>}
+                    {mobile && step < steps.length - 1 ? <button type="button" disabled={busy || (currentStep === "code" && emailVerified ? false : stepValue.length !== 6)} onClick={() => void nextStep()} className="w-full rounded-xl bg-[#2775CA] p-3 font-bold text-white disabled:opacity-50">{busy && currentStep === "code" ? "Verifying code…" : "Continue"}</button> : !emailVerified ? <button type="button" disabled={busy || code.length !== 6} onClick={() => void verifyEmailCode()} className="w-full rounded-xl bg-[#2775CA] p-3 font-bold text-white disabled:opacity-50">{busy ? "Verifying code…" : "Verify email code"}</button> :
+                    <button disabled={busy || pin.length !== 6 || confirm.length !== 6 || (action === "change" && currentPin.length !== 6)} className="w-full rounded-xl bg-[#2775CA] p-3 font-bold text-white disabled:opacity-50">{busy ? "Verifying…" : "Save PIN"}</button>}
                     </div>
                 </>}
             </form>}

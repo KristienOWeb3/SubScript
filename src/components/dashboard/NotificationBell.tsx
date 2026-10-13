@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Bell, X, CheckCircle, RefreshCw, ShieldAlert, CreditCard, ArrowRightLeft } from "@/components/icons";
 import { normalizeNotificationActionUrl } from "@/lib/notifications/actionUrl";
 
@@ -81,11 +81,23 @@ export default function NotificationBell({
     const [unread, setUnread] = useState(0);
     const [loading, setLoading] = useState(false);
     const [failed, setFailed] = useState(false);
+    const [actionError, setActionError] = useState("");
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [markingAll, setMarkingAll] = useState(false);
+    const [writing, setWriting] = useState(false);
+    const [mutationVersion, setMutationVersion] = useState(0);
     const [mounted, setMounted] = useState(false);
     const [desktopPos, setDesktopPos] = useState<{ top: number; right: number }>({ top: 80, right: 20 });
 
     const buttonRef = useRef<HTMLButtonElement | null>(null);
     const panelRef = useRef<HTMLDivElement | null>(null);
+    const panelId = useId();
+    const reduceMotion = useReducedMotion();
+    const loadController = useRef<AbortController | null>(null);
+    const revisionRef = useRef(0);
+    const pendingWrites = useRef(0);
+    const loadedMoreRef = useRef(false);
     /* Ids already being deleted, so a bubbled second click can't double-count. */
     const dismissingRef = useRef<Set<string>>(new Set());
     /* A click means the notification was viewed. Guard repeated taps while the read receipt is
@@ -115,19 +127,36 @@ export default function NotificationBell({
         setDesktopPos({ top, right });
     }, []);
 
-    const load = useCallback(async () => {
-        setLoading(true);
+    const cancelLoad = useCallback(() => {
+        loadController.current?.abort(); loadController.current = null;
+        revisionRef.current++;
+    }, []);
+
+    const load = useCallback(async (cursor?: string) => {
+        if (loadController.current || pendingWrites.current) return;
+        const controller = new AbortController();
+        loadController.current = controller;
+        const revision = revisionRef.current;
+        if (cursor) setLoadingMore(true); else setLoading(true);
         try {
-            const res = await fetch(`/api/notifications?audience=${audience}`);
+            const res = await fetch(`/api/notifications?audience=${audience}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, {cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)])});
             if (!res.ok) throw new Error(String(res.status));
             const data = await res.json();
-            setItems(Array.isArray(data.notifications) ? data.notifications : []);
-            setUnread(Number(data.unreadCount) || 0);
+            if (!Array.isArray(data.notifications) || !Number.isFinite(data.unreadCount) || data.unreadCount < 0) throw new Error("Invalid notifications response");
+            if (controller.signal.aborted || revision !== revisionRef.current) return;
+            setItems(current => cursor || loadedMoreRef.current ? Array.from(new Map([...current, ...data.notifications].map(item => [item.id, item])).values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : data.notifications);
+            setUnread(data.unreadCount);
+            if (cursor || !loadedMoreRef.current) setNextCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
+            if (cursor) loadedMoreRef.current = true;
             setFailed(false);
         } catch {
+            if (controller.signal.aborted || revision !== revisionRef.current) return;
             setFailed(true);
         } finally {
-            setLoading(false);
+            if (loadController.current === controller) {
+                loadController.current = null;
+                setLoading(false); setLoadingMore(false);
+            }
         }
     }, [audience]);
 
@@ -136,8 +165,8 @@ export default function NotificationBell({
         const interval = setInterval(() => {
             void load();
         }, 15000);
-        return () => clearInterval(interval);
-    }, [load]);
+        return () => { clearInterval(interval); cancelLoad(); };
+    }, [load, cancelLoad]);
 
     useEffect(() => {
         if (!open) return;
@@ -145,48 +174,62 @@ export default function NotificationBell({
         window.addEventListener("resize", updatePosition);
         window.addEventListener("scroll", updatePosition, true);
 
-        const onPointerDown = (event: MouseEvent) => {
+        const onPointerDown = (event: PointerEvent) => {
             const target = event.target as Node;
             if (buttonRef.current?.contains(target)) return;
             if (panelRef.current?.contains(target)) return;
             setOpen(false);
         };
         const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") setOpen(false);
+            if (event.key === "Escape") { setOpen(false); buttonRef.current?.focus(); }
         };
 
-        document.addEventListener("mousedown", onPointerDown);
+        document.addEventListener("pointerdown", onPointerDown);
         document.addEventListener("keydown", onKeyDown);
         return () => {
             window.removeEventListener("resize", updatePosition);
             window.removeEventListener("scroll", updatePosition, true);
-            document.removeEventListener("mousedown", onPointerDown);
+            document.removeEventListener("pointerdown", onPointerDown);
             document.removeEventListener("keydown", onKeyDown);
         };
     }, [open, updatePosition]);
 
-    const hasMarkedReadRef = useRef(false);
+    function startWrite() {
+        pendingWrites.current++;
+        setWriting(true); cancelLoad();
+        setLoading(false); setLoadingMore(false); setActionError("");
+    }
+    function finishWrite() {
+        pendingWrites.current--;
+        setWriting(pendingWrites.current > 0);
+        setMutationVersion(value => value + 1);
+    }
 
     const markAllRead = async () => {
+        if (pendingWrites.current) return;
+        startWrite(); setMarkingAll(true);
         const previous = items;
         const previousUnread = unread;
         const now = new Date().toISOString();
         setItems((current) => current.map((item) => ({ ...item, readAt: item.readAt ?? now })));
         setUnread(0);
-        hasMarkedReadRef.current = true;
         try {
             const res = await fetch("/api/notifications", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ audience, all: true }),
+                signal: AbortSignal.timeout(15_000),
             });
             if (!res.ok) throw new Error(String(res.status));
             const data = await res.json();
-            setUnread(Number(data.unreadCount) || 0);
+            if (!Number.isFinite(data.unreadCount) || data.unreadCount < 0) throw new Error("Invalid unread count");
+            setUnread(data.unreadCount);
         } catch {
             setItems(previous);
             setUnread(previousUnread);
-            hasMarkedReadRef.current = false;
+            setActionError("Couldn't mark notifications read. Please try again.");
+        } finally {
+            setMarkingAll(false); finishWrite();
         }
     };
 
@@ -195,30 +238,37 @@ export default function NotificationBell({
            inside it, and the anchor's click bubbles. Without this the same row was deleted twice and
            the unread badge dropped by two. */
         if (dismissingRef.current.has(id)) return;
-        dismissingRef.current.add(id);
-
         const target = items.find((item) => item.id === id);
+        if (!target) return;
+        dismissingRef.current.add(id);
+        startWrite();
         setItems((current) => current.filter((item) => item.id !== id));
         /* Only an unread row was ever counted, so only an unread row decrements. */
         if (target && !target.readAt) setUnread((prev) => Math.max(0, prev - 1));
 
         try {
-            await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+            const response = await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, { method: "DELETE", keepalive: true, signal: AbortSignal.timeout(15_000) });
+            if (!response.ok) throw new Error(String(response.status));
         } catch (error) {
             console.warn("Failed to delete notification:", error);
+            setItems(current => current.some(item => item.id === id) ? current : [...current, target].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+            if (!target.readAt) setUnread(current => current + 1);
+            setActionError("Couldn't clear notifications. Please try again.");
+        } finally {
+            dismissingRef.current.delete(id); finishWrite();
         }
     };
 
     const markViewed = async (id: string) => {
-        if (viewingRef.current.has(id)) return;
+        if (markingAll || viewingRef.current.has(id)) return;
         const target = items.find((item) => item.id === id);
         if (!target || target.readAt) return;
         viewingRef.current.add(id);
+        startWrite();
 
         const now = new Date().toISOString();
         setItems((current) => current.map((item) => item.id === id ? { ...item, readAt: now } : item));
         setUnread((current) => Math.max(0, current - 1));
-        hasMarkedReadRef.current = true;
 
         try {
             const response = await fetch("/api/notifications", {
@@ -226,20 +276,23 @@ export default function NotificationBell({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ audience, ids: [id] }),
                 keepalive: true,
+                signal: AbortSignal.timeout(15_000),
             });
             if (!response.ok) throw new Error(String(response.status));
         } catch (error) {
             console.warn("Failed to mark notification viewed:", error);
             setItems((current) => current.map((item) => item.id === id ? { ...item, readAt: null } : item));
             setUnread((current) => current + 1);
+            setActionError("Couldn't mark this notification read. Please try again.");
         } finally {
-            viewingRef.current.delete(id);
+            viewingRef.current.delete(id); finishWrite();
         }
     };
 
     const togglePanel = () => {
         const next = !open;
         if (next) {
+            loadedMoreRef.current = false;
             updatePosition();
             void load();
         }
@@ -248,12 +301,15 @@ export default function NotificationBell({
 
     /* While the panel is open, note every transient row on screen. */
     useEffect(() => {
-        if (!open) return;
-        for (const item of items) {
-            if (TRANSIENT_SOURCES.has(item.source?.toUpperCase())) {
-                viewedTransientRef.current.add(item.id);
+        if (!open || !panelRef.current) return;
+        const observer = new IntersectionObserver(entries => {
+            for (const entry of entries) if (entry.isIntersecting) {
+                const id = (entry.target as HTMLElement).dataset.notificationId;
+                if (id) viewedTransientRef.current.add(id);
             }
-        }
+        }, { root: panelRef.current.querySelector("[data-notification-scroll]") });
+        panelRef.current.querySelectorAll('[data-notification-transient="true"]').forEach(row => observer.observe(row));
+        return () => observer.disconnect();
     }, [open, items]);
 
     const wasOpenRef = useRef(false);
@@ -264,7 +320,7 @@ export default function NotificationBell({
             wasOpenRef.current = true;
             return;
         }
-        if (!wasOpenRef.current) return;
+        if (!wasOpenRef.current || pendingWrites.current) return;
         wasOpenRef.current = false;
 
         const seen = Array.from(viewedTransientRef.current);
@@ -275,19 +331,22 @@ export default function NotificationBell({
             }
         }
 
-        if (hasMarkedReadRef.current || items.some((item) => Boolean(item.readAt))) {
-            hasMarkedReadRef.current = false;
+        const readRows = items.filter(item => item.readAt && !seen.includes(item.id));
+        if (readRows.length > 0) {
+            startWrite();
             setItems((current) => current.filter((item) => !item.readAt));
-            setUnread(0);
             void fetch(`/api/notifications?audience=${audience}&allRead=true`, {
                 method: "DELETE",
                 keepalive: true,
-            }).catch((err) => {
+                signal: AbortSignal.timeout(15_000),
+            }).then(response => { if (!response.ok) throw new Error(String(response.status)); }).catch((err) => {
                 console.warn("Failed to delete read notifications on close:", err);
-            });
+                setItems(current => Array.from(new Map([...current, ...readRows].map(item => [item.id, item])).values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+                setActionError("Couldn't clear notifications. Please try again.");
+            }).finally(finishWrite);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, audience, items]);
+    }, [open, audience, items, mutationVersion]);
 
     const skeletonContent = (
         <div role="status" aria-label="Loading notifications" className="p-4 space-y-3">
@@ -327,7 +386,8 @@ export default function NotificationBell({
                         <button
                             type="button"
                             onClick={markAllRead}
-                            className="text-sm font-semibold transition hover:opacity-80 flex items-center gap-1.5"
+                            disabled={writing}
+                            className="min-h-11 text-sm font-semibold transition hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
                             style={{ color: accentInk }}
                         >
                             <CheckCircle className="w-3.5 h-3.5" /> Mark all read
@@ -335,9 +395,9 @@ export default function NotificationBell({
                     )}
                     <button
                         type="button"
-                        onClick={() => setOpen(false)}
+                        onClick={() => { setOpen(false); buttonRef.current?.focus(); }}
                         aria-label="Close notifications"
-                        className="notification-panel-icon-button rounded-full p-1 text-black/40 dark:text-white/40 transition hover:bg-black/10 dark:hover:bg-white/10 hover:text-black dark:hover:text-white"
+                        className="notification-panel-icon-button grid h-11 w-11 place-items-center rounded-full text-black/40 dark:text-white/40 transition hover:bg-black/10 dark:hover:bg-white/10 hover:text-black dark:hover:text-white focus-visible:outline-2 focus-visible:outline-[#2775CA]"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -345,10 +405,12 @@ export default function NotificationBell({
             </div>
 
             {/* Content List */}
-            <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+            {actionError && <p role="alert" className="shrink-0 px-4 py-2 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
+            {failed && items.length > 0 && <div role="status" className="shrink-0 px-4 py-2 text-sm">Couldn't refresh notifications. <button type="button" onClick={() => void load()} className="min-h-11 font-semibold underline">Try again</button></div>}
+            <div data-notification-scroll className="flex-1 overflow-y-auto min-h-0 overscroll-contain custom-scrollbar">
                 {loading && items.length === 0 ? (
                     skeletonContent
-                ) : failed ? (
+                ) : failed && items.length === 0 ? (
                     <div className="px-5 py-12 text-center space-y-3">
                         <p className="text-sm text-black/60 dark:text-white/60">We couldn&apos;t load your notifications.</p>
                         <button
@@ -381,7 +443,7 @@ export default function NotificationBell({
                                     </div>
                                     <div className="min-w-0 flex-1 space-y-1">
                                         <div className="flex items-start justify-between gap-2">
-                                            <p className={`text-sm leading-snug ${isUnread ? "font-extrabold text-[#111827] dark:text-white" : "font-semibold text-black/75 dark:text-white/70"}`}>
+                                            <p className={`min-w-0 [overflow-wrap:anywhere] text-sm leading-snug ${isUnread ? "font-extrabold text-[#111827] dark:text-white" : "font-semibold text-black/75 dark:text-white/70"}`}>
                                                 {item.title}
                                             </p>
                                             {isUnread && (
@@ -391,7 +453,7 @@ export default function NotificationBell({
                                                 />
                                             )}
                                         </div>
-                                        <p className="text-sm leading-relaxed text-black/60 dark:text-white/60">{item.body}</p>
+                                        <p className="[overflow-wrap:anywhere] text-sm leading-relaxed text-black/60 dark:text-white/60">{item.body}</p>
                                         <p className="text-xs text-black/45 dark:text-white/45 pt-0.5">
                                             {relativeTime(item.createdAt)}
                                         </p>
@@ -402,6 +464,8 @@ export default function NotificationBell({
                             return (
                                 <li
                                     key={item.id}
+                                    data-notification-id={item.id}
+                                    data-notification-transient={TRANSIENT_SOURCES.has(item.source?.toUpperCase()) ? "true" : undefined}
                                     data-unread={isUnread ? "true" : "false"}
                                     className={`notification-panel-row px-5 py-3.5 transition-all ${isUnread ? "bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.05] dark:hover:bg-white/[0.05]" : "hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"}`}
                                 >
@@ -409,7 +473,8 @@ export default function NotificationBell({
                                         <a
                                             href={actionUrl}
                                             className="block"
-                                            onClick={() => {
+                                            onClick={event => {
+                                                if (markingAll) { event.preventDefault(); return; }
                                                 void markViewed(item.id);
                                                 setOpen(false);
                                             }}
@@ -419,6 +484,7 @@ export default function NotificationBell({
                                     ) : (
                                         <button
                                             type="button"
+                                            disabled={markingAll}
                                             className="block w-full text-left"
                                             onClick={() => void markViewed(item.id)}
                                         >
@@ -430,6 +496,7 @@ export default function NotificationBell({
                         })}
                     </ul>
                 )}
+                {nextCursor && <div className="p-4"><button type="button" disabled={loadingMore || writing} onClick={() => void load(nextCursor)} className="min-h-11 w-full rounded-xl border border-black/10 px-4 py-2 text-sm font-semibold disabled:opacity-50 dark:border-white/15">{loadingMore ? "Loading more…" : "Load more notifications"}</button></div>}
             </div>
         </div>
     );
@@ -443,7 +510,9 @@ export default function NotificationBell({
                 onClick={togglePanel}
                 aria-label={open ? "Close notifications" : unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
                 aria-expanded={open}
-                className={`relative grid h-9 w-9 place-items-center rounded-full border transition-all duration-200 focus:outline-none ${
+                aria-haspopup="dialog"
+                aria-controls={open ? panelId : undefined}
+                className={`relative grid h-11 w-11 place-items-center rounded-full border transition-all duration-200 focus-visible:outline-2 focus-visible:outline-[#2775CA] ${
                     open
                         ? "border-black/30 bg-black/10 text-black dark:border-white/25 dark:bg-white/15 dark:text-white scale-105"
                         : "border-black/10 bg-black/[0.04] text-black/70 hover:border-black/30 hover:bg-black/[0.08] hover:text-black dark:border-white/10 dark:bg-white/[0.06] dark:text-white/80 dark:hover:border-white/20 dark:hover:bg-white/[0.12] dark:hover:text-white"
@@ -485,42 +554,22 @@ export default function NotificationBell({
                 createPortal(
                     <AnimatePresence>
                         {open && (
-                            <>
-                                {/* Mobile Overlay Panel */}
-                                <motion.div
-                                    key="mobile-portal-panel"
-                                    role="dialog"
-                                    aria-label="Notifications"
-                                    initial={{ opacity: 0, y: -20, scale: 0.96 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: -20, scale: 0.96 }}
-                                    transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                                    className="notification-panel-shell fixed left-3 right-3 top-[calc(76px+env(safe-area-inset-top))] bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[99999] sm:hidden flex flex-col overflow-hidden rounded-3xl border border-black/15 dark:border-white/15 bg-[#FFFFF0] dark:bg-[#0e0f12] backdrop-blur-2xl shadow-[0_30px_70px_rgba(0,0,0,0.35)]"
-                                    style={{ "--nb-accent": accent } as React.CSSProperties}
-                                >
-                                    {panelContent}
-                                </motion.div>
-
-                                {/* Desktop Floating Popover Panel */}
-                                <motion.div
-                                    key="desktop-portal-panel"
-                                    role="dialog"
-                                    aria-label="Notifications"
-                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                                    transition={{ type: "spring", stiffness: 420, damping: 28 }}
-                                    className="notification-panel-shell fixed z-[99999] w-[390px] max-w-[calc(100vw-2rem)] max-h-[32rem] hidden sm:flex flex-col overflow-hidden rounded-3xl border border-black/15 dark:border-white/15 bg-[#FFFFF0] dark:bg-[#0e0f12] backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
-                                    style={{
-                                        top: `${desktopPos.top}px`,
-                                        right: `${desktopPos.right}px`,
-                                        maxHeight: `min(32rem, calc(100dvh - ${desktopPos.top + 12}px))`,
-                                        "--nb-accent": accent,
-                                    } as React.CSSProperties}
-                                >
-                                    {panelContent}
-                                </motion.div>
-                            </>
+                            <motion.div
+                                key="notification-panel" id={panelId} role="dialog" aria-label="Notifications"
+                                initial={reduceMotion ? false : { opacity: 0, y: -10, scale: 0.96 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -10, scale: 0.96 }}
+                                transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 350, damping: 28 }}
+                                className="notification-panel-shell fixed left-3 right-3 top-[calc(76px+env(safe-area-inset-top))] bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[99999] flex flex-col overflow-hidden rounded-3xl border border-black/15 dark:border-white/15 bg-[#FFFFF0] dark:bg-[#0e0f12] backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.25)] sm:left-auto sm:right-[var(--notification-right)] sm:top-[var(--notification-top)] sm:bottom-auto sm:w-[390px] sm:max-w-[calc(100vw-2rem)] sm:max-h-[min(32rem,var(--notification-height))]"
+                                style={{
+                                    "--notification-top": desktopPos.top + "px",
+                                    "--notification-right": desktopPos.right + "px",
+                                    "--notification-height": "calc(100dvh - " + (desktopPos.top + 12) + "px)",
+                                    "--nb-accent": accent,
+                                } as React.CSSProperties}
+                            >
+                                {panelContent}
+                            </motion.div>
                         )}
                     </AnimatePresence>,
                     document.body

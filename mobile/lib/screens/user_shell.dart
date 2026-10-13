@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../services/api_client.dart';
+import '../services/haptics_service.dart';
 import '../state/app_controller.dart';
 import '../ui/design_system.dart';
 
@@ -157,7 +158,10 @@ class _BottomNav extends StatelessWidget {
                   selected: selected,
                   label: labels[itemIndex],
                   child: InkWell(
-                    onTap: () => onChanged(itemIndex),
+                    onTap: () {
+                      SubScriptHaptics.microTick();
+                      onChanged(itemIndex);
+                    },
                     borderRadius: BorderRadius.circular(18),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
@@ -247,7 +251,11 @@ class _HomePage extends StatelessWidget {
         .where((item) => item is Map && item['status'] == 'ACTIVE')
         .toList();
     return RefreshIndicator(
-      onRefresh: controller.refresh,
+      onRefresh: () async {
+        SubScriptHaptics.lightSnap();
+        await controller.refresh();
+        SubScriptHaptics.microTick();
+      },
       color: SubScriptColors.lime,
       backgroundColor: SubScriptColors.panel,
       child: ListView(
@@ -408,6 +416,7 @@ class _HomePage extends StatelessWidget {
               ElevatedButton.icon(
                 onPressed: () async {
                   await Clipboard.setData(ClipboardData(text: wallet));
+                  await SubScriptHaptics.successDouble();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Wallet address copied.')),
@@ -520,6 +529,7 @@ class _PaymentLinksPageState extends State<_PaymentLinksPage> {
                 OutlinedButton.icon(
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(text: _result!));
+                    await SubScriptHaptics.successDouble();
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Payment link copied.')),
@@ -540,9 +550,11 @@ class _PaymentLinksPageState extends State<_PaymentLinksPage> {
   Future<void> _create() async {
     if (double.tryParse(_amount.text) == null ||
         double.parse(_amount.text) <= 0) {
+      SubScriptHaptics.error();
       _showError('Enter a valid amount.');
       return;
     }
+    SubScriptHaptics.mediumImpact();
     setState(() => _busy = true);
     try {
       final url = await context.read<AppController>().createPaymentLink(
@@ -550,8 +562,10 @@ class _PaymentLinksPageState extends State<_PaymentLinksPage> {
             title: _title.text.trim(),
             description: _note.text.trim(),
           );
+      SubScriptHaptics.successDouble();
       if (mounted) setState(() => _result = url);
     } on ApiException catch (error) {
+      SubScriptHaptics.error();
       _showError(error.message);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -606,7 +620,35 @@ class _SendPageState extends State<_SendPage> {
                 '${controller.balance.toStringAsFixed(2)} USDC',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  for (final pct in [0.25, 0.50, 1.0])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        label: Text(
+                          pct == 1.0 ? 'MAX' : '${(pct * 100).toInt()}%',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: SubScriptColors.lime,
+                          ),
+                        ),
+                        backgroundColor: SubScriptColors.lime.withOpacity(0.12),
+                        side: BorderSide(
+                          color: SubScriptColors.lime.withOpacity(0.3),
+                        ),
+                        onPressed: () {
+                          SubScriptHaptics.lightSnap();
+                          final val = (controller.balance * pct).toStringAsFixed(2);
+                          _amount.text = val;
+                        },
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: _recipient,
                 decoration: const InputDecoration(
@@ -658,9 +700,11 @@ class _SendPageState extends State<_SendPage> {
   Future<void> _send() async {
     final amount = double.tryParse(_amount.text);
     if (_recipient.text.trim().isEmpty || amount == null || amount <= 0) {
+      SubScriptHaptics.error();
       _show('Enter a valid recipient and amount.');
       return;
     }
+    SubScriptHaptics.mediumImpact();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -691,11 +735,16 @@ class _SendPageState extends State<_SendPage> {
             recipient: _recipient.text.trim(),
             amount: _amount.text.trim(),
           );
+      SubScriptHaptics.successDouble();
       _recipient.clear();
       _amount.clear();
       _show('Transfer submitted successfully.');
     } on ApiException catch (error) {
+      SubScriptHaptics.error();
       _show(error.message);
+    } catch (_) {
+      SubScriptHaptics.error();
+      rethrow;
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -809,9 +858,14 @@ class _DmPage extends StatelessWidget {
   }
 }
 
-class _ProfilePage extends StatelessWidget {
+class _ProfilePage extends StatefulWidget {
   const _ProfilePage();
 
+  @override
+  State<_ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<_ProfilePage> {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
@@ -876,6 +930,20 @@ class _ProfilePage extends StatelessWidget {
           subtitle: 'Push, email and debit alerts',
           onTap: () => controller.openWebRoute('/user?tab=dns'),
         ),
+        _SettingsSwitchTile(
+          icon: Icons.vibration_rounded,
+          title: 'Haptic Feedback',
+          subtitle: 'Tactile responses on interactions',
+          value: SubScriptHaptics.enabled,
+          onChanged: (val) {
+            setState(() {
+              SubScriptHaptics.enabled = val;
+            });
+            if (val) {
+              SubScriptHaptics.lightSnap();
+            }
+          },
+        ),
         const SizedBox(height: 22),
         _SectionHeader(
           title: 'Recent Activity',
@@ -900,7 +968,12 @@ class _ProfilePage extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         OutlinedButton.icon(
-          onPressed: controller.busy ? null : controller.logout,
+          onPressed: controller.busy
+              ? null
+              : () {
+                  SubScriptHaptics.heavyThud();
+                  controller.logout();
+                },
           icon: const Icon(Icons.logout_rounded),
           label: const Text('Sign out'),
           style: OutlinedButton.styleFrom(
@@ -927,7 +1000,10 @@ class _QuickAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        SubScriptHaptics.lightSnap();
+        onTap();
+      },
       borderRadius: BorderRadius.circular(19),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 15),
@@ -1050,6 +1126,7 @@ class _SubscriptionCard extends StatelessWidget {
   }
 
   Future<void> _confirmCancel(BuildContext context) async {
+    SubScriptHaptics.warning();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1078,12 +1155,17 @@ class _SubscriptionCard extends StatelessWidget {
       await context.read<AppController>().cancelSubscription(
             data['subscriptionId']?.toString() ?? '',
           );
+      SubScriptHaptics.holdLatch();
     } on ApiException catch (error) {
+      SubScriptHaptics.error();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(error.message)),
         );
       }
+    } catch (_) {
+      SubScriptHaptics.error();
+      rethrow;
     }
   }
 }
@@ -1170,6 +1252,61 @@ class _SettingsTile extends StatelessWidget {
               ),
             ),
             const Icon(Icons.chevron_right_rounded, color: Colors.white24),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsSwitchTile extends StatelessWidget {
+  const _SettingsSwitchTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, color: SubScriptColors.lime),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            Switch.adaptive(
+              value: value,
+              onChanged: onChanged,
+              activeColor: SubScriptColors.lime,
+            ),
           ],
         ),
       ),

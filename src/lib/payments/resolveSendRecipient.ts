@@ -9,7 +9,8 @@ export type SendRecipient = {
 export async function resolveSendRecipient(
   input: string,
   signal: AbortSignal,
-  timeoutMs = 8_000,
+  // Next dev compiles this API route on its first request; production stays bounded at eight seconds.
+  timeoutMs = process.env.NODE_ENV === "development" ? 30_000 : 8_000,
 ): Promise<SendRecipient> {
   const normalized = input.trim().toLowerCase();
   const isAddress = /^0x[a-f0-9]{40}$/.test(normalized);

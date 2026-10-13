@@ -39,12 +39,12 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
         return { ok: false, error: "Push notifications aren't configured yet. Check back soon." };
     }
 
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") {
-        return { ok: false, error: "Notification permission was denied." };
-    }
-
+    let newSubscription: PushSubscription | null = null;
     try {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+            return { ok: false, error: "Notification permission was denied." };
+        }
         const registration = await navigator.serviceWorker.register("/sw.js");
         await navigator.serviceWorker.ready;
 
@@ -55,6 +55,7 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(vapidKey) as unknown as BufferSource,
             }));
+        if (!existing) newSubscription = subscription;
 
         const res = await fetch("/api/push/subscribe", {
             method: "POST",
@@ -63,30 +64,45 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
         });
         if (!res.ok) {
             const data = await res.json().catch(() => ({}));
-            return { ok: false, error: data.error || "Could not register for push notifications." };
+            throw new Error(data.error || "Could not register for push notifications.");
         }
         return { ok: true };
     } catch (err: any) {
+        if (newSubscription) {
+            try {
+                if (!(await newSubscription.unsubscribe())) {
+                    return { ok: false, error: "Push registration failed and the browser subscription could not be removed. Please try again." };
+                }
+            } catch {
+                return { ok: false, error: "Push registration failed and the browser subscription could not be removed. Please try again." };
+            }
+        }
         return { ok: false, error: err?.message || "Could not enable push notifications." };
     }
 }
 
-export async function disablePush(): Promise<{ ok: boolean }> {
+export async function disablePush(): Promise<{ ok: boolean; error?: string }> {
     if (!pushSupported()) return { ok: true };
     try {
         const registration = await navigator.serviceWorker.getRegistration();
         const subscription = await registration?.pushManager.getSubscription();
         if (subscription) {
-            await fetch("/api/push/subscribe", {
+            const response = await fetch("/api/push/subscribe", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ endpoint: subscription.endpoint }),
-            }).catch(() => {});
-            await subscription.unsubscribe();
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                return { ok: false, error: data.error || "Could not unregister push notifications. Please try again." };
+            }
+            if (!(await subscription.unsubscribe())) {
+                return { ok: false, error: "The browser could not disable push notifications. Please try again." };
+            }
         }
         return { ok: true };
-    } catch {
-        return { ok: true };
+    } catch (err: any) {
+        return { ok: false, error: err?.message || "Could not disable push notifications. Please try again." };
     }
 }
 

@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "@/components/icons";
 import { Wallet } from "@/components/icons";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
+import { haptics } from "@/lib/client/haptics";
 
 export interface MobileNavTab<T extends string = string> {
   readonly id: T;
@@ -393,7 +394,10 @@ export default function MobileFloatingNav<T extends string = string>({
                 aria-pressed={isActive}
                 aria-current={isActive ? "page" : undefined}
                 aria-label={tab.label}
-                onClick={() => onSelectTab(tab.id)}
+                onClick={() => {
+                  haptics.microTick();
+                  onSelectTab(tab.id);
+                }}
                 className={`relative h-8.5 shrink-0 flex items-center justify-center rounded-full bg-transparent active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#353935] dark:focus-visible:ring-[#2775CA] ${
                   isActive
                     ? "text-[#FFFFF0] dark:text-white"
@@ -454,6 +458,7 @@ export default function MobileFloatingNav<T extends string = string>({
           data-retracted-selected={isRetracted && isRightSelected ? "true" : undefined}
           aria-current={isInboxActive ? "page" : undefined}
           onClick={() => {
+            haptics.microTick();
             updateRetractionState(false);
             onSelectTab("inbox" as unknown as T);
           }}

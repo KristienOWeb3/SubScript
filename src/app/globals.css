@@ -919,6 +919,39 @@ body {
   background-color: #ffffff !important;
 }
 
+/* PIN Input slots: error and success states must override general dashboard form input styles */
+input[data-pin-slot] {
+  transition: border-color 0.15s ease, background-color 0.15s ease !important;
+}
+
+input[data-pin-slot][data-pin-slot-feedback="error"],
+.user-dashboard-redesign input[data-pin-slot][data-pin-slot-feedback="error"] {
+  border-color: var(--color-red-500, #ef4444) !important;
+  border-width: 2px !important;
+  box-shadow: none !important;
+}
+
+input[data-pin-slot][data-pin-slot-feedback="error"]:focus,
+.user-dashboard-redesign input[data-pin-slot][data-pin-slot-feedback="error"]:focus {
+  border-color: var(--color-red-500, #ef4444) !important;
+  border-width: 2px !important;
+  box-shadow: none !important;
+}
+
+input[data-pin-slot][data-pin-slot-feedback="success"],
+.user-dashboard-redesign input[data-pin-slot][data-pin-slot-feedback="success"] {
+  border-color: var(--color-emerald-500, #10b981) !important;
+  border-width: 2px !important;
+  box-shadow: none !important;
+}
+
+input[data-pin-slot][data-pin-slot-feedback="success"]:focus,
+.user-dashboard-redesign input[data-pin-slot][data-pin-slot-feedback="success"]:focus {
+  border-color: var(--color-emerald-500, #10b981) !important;
+  border-width: 2px !important;
+  box-shadow: none !important;
+}
+
 .user-dashboard-content [class*="text-[#ccff00]"]:not([data-dm-bubble="dark"] *),
 .user-dashboard-redesign [role="dialog"] [class*="text-[#ccff00]"],
 .user-dashboard-content [class*="text-emerald"]:not([data-dm-bubble="dark"] *),
@@ -2054,6 +2087,22 @@ aside [class~="bg-[#FFFFF0]"] *,
   background-color: var(--dk-field) !important;
 }
 
+[data-theme="dark"] [data-pin-feedback] input[data-pin-slot][data-pin-field][data-pin-slot-feedback="error"],
+[data-theme="dark"] [data-pin-feedback] input[data-pin-slot][data-pin-field][data-pin-slot-feedback="error"]:focus {
+  border-color: var(--color-red-500, #ef4444) !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] [data-pin-feedback] input[data-pin-slot][data-pin-field][data-pin-slot-feedback="success"],
+[data-theme="dark"] [data-pin-feedback] input[data-pin-slot][data-pin-field][data-pin-slot-feedback="success"]:focus {
+  border-color: var(--color-emerald-500, #10b981) !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] [data-pin-feedback] input[data-pin-slot][data-pin-field][type="password"] {
+  color: transparent !important;
+}
+
 [data-theme="dark"] .merchant-dashboard-workspace select option,
 [data-theme="dark"] .user-dashboard-redesign select option {
   background-color: #1f2023 !important;
@@ -2745,6 +2794,14 @@ aside [class~="bg-[#FFFFF0]"] *,
 /* Full-viewport opacity and backdrop-filter animations force Chromium to rebuild the dashboard's
    compositing layer. On blur-heavy dashboard pages that presents as a bright flash when a dialog
    opens or closes. Keep the scrim stable and animate only the dialog's transform. */
+/* Hide real navigation in the same paint as a modal, including its entrance and exit. Keep its
+   geometry available for the Send/Deposit capsule morph and restore it after the last overlay. */
+body:has(.dashboard-modal-overlay, #sheet-wrapper, #deposit-sheet-wrapper) #mobile-bottom-bar,
+body:has(.dashboard-modal-overlay, #sheet-wrapper, #deposit-sheet-wrapper) #mobile-bottom-bar * {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .dashboard-modal-overlay {
   opacity: 1 !important;
   backdrop-filter: none !important;
@@ -2937,4 +2994,10 @@ aside [class~="bg-[#FFFFF0]"] *,
   25% { transform: translateX(-6px); }
   50% { transform: translateX(5px); }
   75% { transform: translateX(-3px); }
+}
+
+/* Preserve the PIN components' theme-aware surfaces and visible controls. */
+.transaction-pin-settings :is(button, input):focus-visible {
+  outline: 2px solid #2775ca;
+  outline-offset: 3px;
 }
