@@ -14,7 +14,7 @@ permissions:
 jobs:
   live-surface:
     name: test:live-surface
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
 
   e2e:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       E2E_RATE_LIMIT_BYPASS_TOKEN: subscript-ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:

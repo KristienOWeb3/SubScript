@@ -96,8 +96,11 @@ export default function DashboardHeader({
     }, [propMerchantAlias]);
 
     useEffect(() => {
-        const handleScroll = () => setScrolled(window.scrollY > 30);
-        window.addEventListener("scroll", handleScroll);
+        const handleScroll = () => {
+            const isScrolled = window.scrollY > 30;
+            setScrolled((prev) => (prev !== isScrolled ? isScrolled : prev));
+        };
+        window.addEventListener("scroll", handleScroll, { passive: true });
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
@@ -216,7 +219,7 @@ export default function DashboardHeader({
     return (
         <>
             {/* Floating Minimal Dashboard Header */}
-            <div className="fixed top-5 left-0 right-0 z-40 px-2 sm:px-6 flex justify-center pointer-events-none">
+            <div className="fixed floating-header-top left-0 right-0 z-40 px-2 sm:px-6 flex justify-center pointer-events-none">
                 <header className={`w-full max-w-5xl liquid-glass rounded-full px-3 sm:px-6 py-2.5 sm:py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/50 backdrop-blur-xl" : "bg-black/30 backdrop-blur-lg"}`}>
                     
                     {/* Mobile Header Layout (Strictly blueprint aligned) */}

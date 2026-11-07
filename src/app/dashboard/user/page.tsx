@@ -599,11 +599,12 @@ export default function UserDashboard() {
     if (typeof window === "undefined") return;
     const handleResize = () => {
       const isMobileSize = window.innerWidth < 768;
-      setIsMobile(isMobileSize);
-      setIsTablet(!isMobileSize && window.innerWidth < 1200);
+      const isTabletSize = !isMobileSize && window.innerWidth < 1200;
+      setIsMobile((prev) => (prev !== isMobileSize ? isMobileSize : prev));
+      setIsTablet((prev) => (prev !== isTabletSize ? isTabletSize : prev));
     };
     handleResize();
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", handleResize, { passive: true });
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
@@ -4617,7 +4618,7 @@ export default function UserDashboard() {
       <main className={`w-full min-w-0 flex flex-col ${
         activeTab === "inbox"
           ? (isMobile ? "flex-1 h-full min-h-0 max-w-none px-3 overflow-hidden" : "flex-1 h-full min-h-0 max-w-none p-3 lg:p-6 overflow-hidden")
-          : "mx-auto max-w-7xl px-4 sm:px-5 lg:px-8 " + (!isMobile ? "pt-6 lg:pt-8 pb-12 " : "pt-20 pb-[calc(8rem+env(safe-area-inset-bottom))] ") + (isActiveMobileDm ? "h-full overflow-hidden !pb-0" : "")
+          : "mx-auto max-w-7xl px-4 sm:px-5 lg:px-8 " + (!isMobile ? "pt-6 lg:pt-8 pb-12 " : "pt-[calc(5rem+env(safe-area-inset-top,0px))] pb-[calc(8rem+env(safe-area-inset-bottom))] ") + (isActiveMobileDm ? "h-full overflow-hidden !pb-0" : "")
       }`}>
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
         {!isMobile && activeTab !== "inbox" && (
@@ -8879,7 +8880,7 @@ function HomeHeader({
   };
 
   return (
-    <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+    <div className="fixed floating-header-top left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
       <header className="w-full max-w-md px-1 py-2 pointer-events-auto transition-all duration-300">
         <div className="flex items-center justify-between w-full">
           <button type="button" onClick={handleProfileClick} aria-label={profileExpanded ? "Open settings" : "Show DNS name"} className={profileExpanded ? "profile-trigger profile-trigger-expanded flex h-12 max-w-[calc(100vw-7rem)] items-center gap-2 overflow-hidden rounded-2xl border border-black/15 bg-[#2775CA]/20 px-2 text-black transition-all duration-300" : "profile-trigger flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-0 bg-transparent p-0 text-black transition-all duration-300"}>
@@ -8942,7 +8943,7 @@ function ChatHeader({
   onUnblock?: () => void;
 }) {
   return (
-    <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+    <div className="fixed floating-header-top left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
       <header
         data-testid="mobile-chat-header"
         className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10"
@@ -9286,7 +9287,7 @@ function OpenedDmSkeleton({
 
       {/* Mobile Peer Chat Top Bar Skeleton (when mobile) */}
       {isMobile && onBack && (
-        <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+        <div className="fixed floating-header-top left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
           <header className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <button

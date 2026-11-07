@@ -90,7 +90,7 @@ test("resume-service enforces the 2 USDC platform minimum and notifies the merch
 });
 
 test("re-committing clears the cancellation and resolves the pause card", () => {
-    const route = source("src/app/api/user/vault/commit/route.ts");
+    const route = source("src/app/api/user/vault/commit/route.ts") + "\n" + source("src/lib/vault/commitRecovery.ts");
     assert.match(route, /cancelRequestedAt: null, cancelReason: null/);
     assert.match(route, /messageType: \{ in: \["COMMIT_EXHAUSTED", "SERVICE_PAUSED"\] \}/);
 });

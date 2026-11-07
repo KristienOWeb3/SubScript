@@ -99,7 +99,11 @@ function FloatingCoin({ coin }: { coin: Coin }) {
         <motion.div
             aria-hidden="true"
             className={`pointer-events-none absolute ${coin.wrapper}`}
-            style={{ opacity: coin.opacity }}
+            style={{
+                opacity: coin.opacity,
+                transform: "translateZ(0)",
+                willChange: "transform",
+            }}
             animate={reduce ? undefined : { y: [0, coin.drift, 0] }}
             transition={reduce ? undefined : { duration: coin.duration, repeat: Infinity, ease: "easeInOut", delay: coin.delay }}
         >
@@ -109,7 +113,7 @@ function FloatingCoin({ coin }: { coin: Coin }) {
                 width={coin.size}
                 height={coin.size}
                 priority={coin.priority}
-                className={`max-w-none drop-shadow-[0_20px_40px_rgba(39,117,202,0.28)] ${coin.blur ?? ""}`}
+                className={`max-w-none ${coin.blur ?? ""} ${coin.id.startsWith("m-") ? "drop-shadow-[0_10px_20px_rgba(39,117,202,0.20)]" : "drop-shadow-[0_20px_40px_rgba(39,117,202,0.28)]"}`}
             />
         </motion.div>
     );
@@ -211,7 +215,10 @@ function LandingHeader() {
     const closeTimer = useRef<number | undefined>(undefined);
 
     useEffect(() => {
-        const onScroll = () => setScrolled(window.scrollY > 20);
+        const onScroll = () => {
+            const isScrolled = window.scrollY > 20;
+            setScrolled((prev) => (prev !== isScrolled ? isScrolled : prev));
+        };
         onScroll();
         window.addEventListener("scroll", onScroll, { passive: true });
         return () => window.removeEventListener("scroll", onScroll);
@@ -234,16 +241,16 @@ function LandingHeader() {
     return (
         <>
             {/* Floating, contained pill — no longer full-bleed, so it never stretches on wide screens. */}
-            <header className="fixed inset-x-0 top-4 z-40 px-4">
+            <header className="fixed inset-x-0 top-[max(1rem,calc(env(safe-area-inset-top,0px)+0.5rem))] z-40 px-4">
                 <div className="relative mx-auto max-w-5xl" onMouseLeave={scheduleClose}>
                     <nav
                         aria-label="Primary"
-                        className={`flex items-center justify-between border px-5 py-2.5 backdrop-blur-xl transition-all duration-300 ${
+                        className={`flex items-center justify-between border px-5 py-2.5 backdrop-blur-md md:backdrop-blur-xl transition-all duration-300 ${
                             openMenu
                                 ? "rounded-t-[28px] rounded-b-none border-b-0 border-black/10 bg-white shadow-none"
                                 : scrolled
                                 ? "rounded-full border-black/10 bg-[#FFFFF0]/95 shadow-[0_10px_30px_rgba(11,18,32,0.10)]"
-                                : "rounded-full border-black/[0.06] bg-[#FFFFF0]/80 shadow-[0_6px_20px_rgba(11,18,32,0.06)]"
+                                : "rounded-full border-black/[0.06] bg-[#FFFFF0]/85 shadow-[0_6px_20px_rgba(11,18,32,0.06)]"
                         }`}
                     >
                         <Link href="/" className="group flex items-center gap-2.5" aria-label="SubScript home">
@@ -600,10 +607,21 @@ export default function Home() {
                     id="get-started"
                     className="relative flex min-h-[88vh] w-full items-center justify-center overflow-hidden pb-20 pt-32 sm:pt-40"
                 >
-                    {/* Soft blue atmosphere behind the coins — light, never darkening the cream. */}
+                    {/* Soft blue atmosphere behind the coins — light, never darkening the cream.
+                        Using radial-gradient instead of 120px Gaussian blur for silky 60/120fps scrolling on iOS WebKit. */}
                     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-0">
-                        <div className="absolute right-[8%] top-[18%] h-[380px] w-[380px] rounded-full bg-[#2775CA]/12 blur-[120px]" />
-                        <div className="absolute left-[6%] bottom-[12%] h-[320px] w-[320px] rounded-full bg-[#2775CA]/8 blur-[120px]" />
+                        <div
+                            className="absolute right-[8%] top-[18%] h-[400px] w-[400px] rounded-full"
+                            style={{
+                                background: "radial-gradient(circle, rgba(39, 117, 202, 0.16) 0%, rgba(39, 117, 202, 0.05) 45%, transparent 70%)",
+                            }}
+                        />
+                        <div
+                            className="absolute left-[6%] bottom-[12%] h-[340px] w-[340px] rounded-full"
+                            style={{
+                                background: "radial-gradient(circle, rgba(39, 117, 202, 0.12) 0%, rgba(39, 117, 202, 0.04) 45%, transparent 70%)",
+                            }}
+                        />
                     </div>
 
                     {/* The signature coin field */}
@@ -759,7 +777,10 @@ export default function Home() {
                         />
                         {/* Continuous marquee: two identical groups, translated left by one group's width for a
                             seamless loop. Hovering pauses it so a logo can actually be read. */}
-                        <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,#000_9%,#000_91%,transparent)]">
+                        <div className="relative overflow-hidden">
+                            {/* Left and right fade gradients instead of CSS mask-image for silky 60/120fps on mobile WebKit */}
+                            <div className="pointer-events-none absolute left-0 top-0 bottom-0 z-10 w-12 sm:w-24 bg-gradient-to-r from-[#FFFFF0] to-transparent" />
+                            <div className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-12 sm:w-24 bg-gradient-to-l from-[#FFFFF0] to-transparent" />
                             <div className="marquee-track flex w-max">
                                 {[0, 1].map((group) => (
                                     <ul

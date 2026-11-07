@@ -5709,7 +5709,7 @@ Please complete the following implementation tasks:
                 </div>
             )}
             {/* Dashboard Content */}
-            <main className="@container/merchant min-w-0 mx-auto max-w-[1600px] px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-12 pt-6 sm:px-7 md:pt-8">
+            <main className="@container/merchant min-w-0 mx-auto max-w-[1600px] px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-12 pt-[calc(1.5rem+env(safe-area-inset-top,0px))] sm:px-7 md:pt-8">
                 {/* Top Workspace Header */}
                 <div className="mb-6 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">

@@ -26,7 +26,7 @@ test('upgrade binder freezes the charge and detects changed derived subscription
  const declarations=['resolveUpgrade','bindUpgradeAuthorization'].map(name=>ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text===name));
  assert.ok(declarations.every(Boolean));
  const compiled=ts.transpileModule(declarations.map(node=>node.getText(ast)).join('\n'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
- const context=vm.createContext({Date,BigInt,resolveUpgradeTarget:async()=>({ok:true,value:target}),prisma:{subscription:{findFirst:async()=>({...current})}},onActiveContract:()=>({}),getSubscriptionOnChain:async()=>({...chain}),upgradeCheckoutTerms:terms,subscriptionUpgradeSnapshot:snapshot,financialPinContext:async()=>({actor:wallet}),TransactionPinError:class extends Error{constructor(status,code,message){super(message);this.status=status;this.code=code;}}});
+ const context=vm.createContext({Date,BigInt,resolveUpgradeTarget:async()=>({ok:true,value:target}),prisma:{subscription:{findFirst:async()=>({...current})}},onActiveContract:()=>({}),getSubscriptionOnChain:async()=>({...chain}),getSubscriptionPaidThrough:async()=>chain.nextPayment,upgradeCheckoutTerms:terms,subscriptionUpgradeSnapshot:snapshot,financialPinContext:async()=>({actor:wallet}),TransactionPinError:class extends Error{constructor(status,code,message){super(message);this.status=status;this.code=code;}}});
  vm.runInContext(compiled,context);
  const bind=()=>context.bindUpgradeAuthorization({planId:target.id},{wallet},new Request('https://test/api/user/subscription/upgrade'),{quotedAt});
  const approved=await bind();

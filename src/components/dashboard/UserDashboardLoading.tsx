@@ -50,7 +50,7 @@ export default function UserDashboardLoading({
 
         {/* Content Pane Skeleton — mirrors the destination on mobile and desktop */}
         <div className="user-dashboard-content relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] dark:bg-[#060608] md:mt-[14px] md:rounded-tl-[20px] md:border md:border-black/10 dark:md:border-white/10 overflow-hidden h-[100dvh] md:h-[calc(100dvh-14px)]">
-          <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+          <div className="md:hidden fixed floating-header-top left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
             <div className="flex w-full max-w-md items-center justify-between px-1 py-2 pointer-events-auto">
               <div
                 aria-label="Loading profile"
@@ -66,7 +66,7 @@ export default function UserDashboardLoading({
             </div>
           </div>
 
-          <main className={`flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-4 ${pinSettings ? "sm:px-5" : "sm:px-6"} lg:px-8 pt-20 pb-28 md:pt-6 lg:pt-8 md:pb-12`}>
+          <main className={`flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-4 ${pinSettings ? "sm:px-5" : "sm:px-6"} lg:px-8 pt-[calc(5rem+env(safe-area-inset-top,0px))] pb-28 md:pt-6 lg:pt-8 md:pb-12`}>
             {pinSettings && <div className="hidden md:flex items-center gap-3 mb-8 pb-6 border-b border-black/10 dark:border-white/10"><h1 className="min-w-0 text-2xl xl:text-3xl font-extrabold text-[#111827] dark:text-white uppercase tracking-tight">User Dashboard</h1><Skeleton className="h-9 w-9 shrink-0 rounded-full" /></div>}
             {pinSettings ? <div className="transaction-pin-settings space-y-6">
               <div className="flex items-center gap-4"><Skeleton className="h-11 w-11 rounded-full" /><h2 className="text-sm font-black uppercase tracking-wider">Transaction PIN</h2></div>
