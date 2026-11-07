@@ -7,6 +7,7 @@ import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { sendSettlementReceipts, type SettlementKind } from "@/lib/email/settlementReceipts";
 import { resolveRecipient, renderEmailLayout, htmlEscape } from "@/lib/email/core";
 import { enqueueEmail, processEmailOutbox } from "@/lib/email/outbox";
+import { reconcileSubmittedSpendingLimitOperation } from "@/lib/spendingLimits";
 
 export type ReceiptJobKind = "wallet_transfer" | "vault_topup" | "vault_withdraw" | "vault_reclaim" | "vault_claim" | "router_withdraw" | "payout_change";
 type Job = {
@@ -143,6 +144,9 @@ export async function processSettlementReceiptJobs(limit=5, readTimeoutMs=3000) 
             const receipt=await boundedReceiptRead(provider.getTransactionReceipt(txHash), readBudget());
             if(!receipt) {await finish(job.state);counts.pending++;continue;}
             const checked=inspectSettlementReceipt(job,receipt);
+            if (job.kind === 'wallet_transfer' && job.provider_id && checked.state !== 'pending') {
+                await reconcileSubmittedSpendingLimitOperation(job.funding_wallet,job.provider_id,checked.state);
+            }
             if(checked.state!=='confirmed') {await finish(checked.state==='failed'?'failed':job.state);counts[checked.state==='failed'?'failed':'pending']++;continue;}
             // Pre-release completed jobs used a UUID-based email key. Honor their
             // durable enqueue marker as well as the new key to avoid replaying old mail.

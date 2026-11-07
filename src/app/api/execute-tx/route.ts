@@ -31,6 +31,7 @@ import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdr
 import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
 import { bindTxToReceipt } from "@/lib/receipts/binding";
 import { authorizeFinancialStepUp } from "@/lib/auth/stepUp";
+import { executeUserTransfer, UserTransferPolicyError } from "@/lib/payments/userTransferPolicy";
 import { dispatchSettlementReceipts, prepareSettlementReceiptJob, recordSettlementReceiptSubmission, confirmSettlementReceiptJob } from "@/lib/payments/settlementReceiptRecovery";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
@@ -586,7 +587,13 @@ async function handlePOST(request: Request) {
             /* Custody routing: execute through Circle's contract-execution API. */
             const custody = await getWalletCustody(wallet.toLowerCase());
 
-            const { txHash } = await custody.executeContract({
+            const { txHash } = accountRole === "USER" && action === "transferUsdc"
+                ? { txHash: await executeUserTransfer({
+                    wallet, recipient: String(args.to), amountMicros: userPaidTransferAmount!,
+                    identity: deterministicIdempotencyKey(`req:${requestId}:${action}`),
+                    receiptJobId: receiptJobId ?? undefined,
+                }) }
+                : await custody.executeContract({
                 contractAddress,
                 abi: contractAbi,
                 functionName,
@@ -650,6 +657,10 @@ async function handlePOST(request: Request) {
 
         } catch (err: any) {
             console.error("EVM execution error:", err);
+            if (err instanceof UserTransferPolicyError) {
+                return NextResponse.json({ error: err.message, code: err.code, operationId: err.operationId,
+                    status: err.status === 202 ? "pending" : "failed" }, { status: err.status });
+            }
             
             if (err instanceof CirclePaymasterPolicyError || err?.code === "CIRCLE_PAYMASTER_POLICY_REQUIRED") {
                 return NextResponse.json({

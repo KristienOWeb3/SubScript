@@ -18,6 +18,7 @@ import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import {
     modifyFromEmbedded,
     getSubscriptionOnChain,
+    getSubscriptionPaidThrough,
     proratedUpgradeDelta,
 } from "@/lib/subscriptions/onchain";
 import { payMerchantLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
@@ -173,6 +174,7 @@ async function handlePOST(request: Request) {
             }, { status: 403 });
         }
 
+        const paidThrough = await getSubscriptionPaidThrough(fromSubscriptionId, current);
         const isUpgrade = true;
 
         /* Single-flight guard: a double-submit or retry must not charge the prorated difference or
@@ -292,7 +294,7 @@ async function handlePOST(request: Request) {
                 plan.amountUsdc,
                 current.period,
                 plan.periodSeconds,
-                current.nextPayment,
+                paidThrough,
                 nowSeconds,
             );
             if (proratedChargeMicros > BigInt(0)) {
@@ -331,6 +333,7 @@ async function handlePOST(request: Request) {
 
         /* Mirror the new amount/period so the dashboard reflects the change. */
         await mirrorSubscriptionModified({
+            anchorNextPaymentSeconds: paidThrough,
             subscriptionId: fromSubscriptionId,
             amountUsdc: plan.amountUsdc,
             periodSeconds: plan.periodSeconds,

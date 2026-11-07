@@ -7,24 +7,25 @@ import { assertAuthorizedMerchantDestination } from "@/lib/auth/financialAuthori
 import { NextResponse, after } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
-import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
+import { requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
-import { commitFromEmbedded, readUsdcBalance, syncVaultMirror } from "@/lib/vault/onchain";
+import { readUsdcBalance } from "@/lib/vault/onchain";
 import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
-import { dispatchSettlementReceipts, prepareSettlementReceiptJob, recordSettlementReceiptSubmission, confirmSettlementReceiptJob } from "@/lib/payments/settlementReceiptRecovery";
+import { dispatchSettlementReceipts, prepareSettlementReceiptJob } from "@/lib/payments/settlementReceiptRecovery";
 import { CirclePaymasterPolicyError, deterministicIdempotencyKey } from "@/lib/custody";
 import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
-import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { haltGuard } from "@/lib/accountHalt";
 import { isCommitSlug } from "@/lib/merchants/identity";
-import crypto from "crypto";
+import { getAccountKycTier } from "@/lib/kyc/tier";
+import { advanceAuthorizedVaultCommit, commitIntentOutcome, COMMIT_ENVIRONMENT, isCurrentCommitNetwork, observeWithin, reconcileVaultCommitIntent } from "@/lib/vault/commitRecovery";
 
 export const maxDuration = 120;
 
 async function handlePOST(request: Request) {
+    const requestStartedAt = new Date();
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
@@ -42,7 +43,6 @@ async function handlePOST(request: Request) {
            spend platform gas budget on a commit that policy will reject. */
         const held = await haltGuard(wallet);
         if (held) return held;
-        const { getAccountKycTier } = await import("@/lib/kyc/tier");
         const tierInfo = await getAccountKycTier(wallet);
         if (tierInfo.tier < 1) {
             return NextResponse.json(
@@ -115,74 +115,54 @@ async function handlePOST(request: Request) {
         const normalizedWallet = wallet.toLowerCase();
         const normalizedMerchant = merchantAddress.toLowerCase();
 
-        /* Reject an impossible commit before creating a durable intent, reserving sponsor budget,
-           or submitting an allowance transaction. Without this preflight, Circle can poll until
-           the route times out and an edge proxy may return HTML to the JSON client. */
-        const availableBalance = await readUsdcBalance(normalizedWallet);
-        if (availableBalance < amount) {
-            return NextResponse.json({
-                error: "Insufficient balance. top up and try again",
-                code: "INSUFFICIENT_WALLET_BALANCE",
-                availableBalanceUsdcMicros: availableBalance.toString(),
-                requiredBalanceUsdcMicros: amount.toString(),
-            }, { status: 422 });
+        // Reconcile the durable identity before checking spendable balance. A prior
+        // accepted debit may already have consumed that balance.
+        let intent = await prisma.vaultCommitIntent.findUnique({ where: { requestId } });
+        if (intent && (intent.userAddress !== normalizedWallet || intent.merchantAddress !== normalizedMerchant
+            || BigInt(intent.amountUsdc.toString()) !== amount || !isCurrentCommitNetwork(intent))) {
+            return NextResponse.json({ error: "This request id belongs to a different commit or network.", code: "REQUEST_ID_CONFLICT" }, { status: 409 });
         }
-
+        if (intent) {
+            intent = await reconcileVaultCommitIntent(requestId, wallet);
+            if (intent?.status === "MIRRORED" || intent?.status === "SUBMITTED") {
+                return NextResponse.json({ ...commitIntentOutcome(intent), success: true, resumed: true });
+            }
+            if (intent?.status === "FAILED") {
+                return NextResponse.json({ ...commitIntentOutcome(intent), error: intent.lastError || "The previous commit failed. Start a new operation.", code: "COMMIT_FAILED" }, { status: 409 });
+            }
+            if (intent?.commitProviderId) {
+                return NextResponse.json({ ...commitIntentOutcome(intent), success: false, code: "COMMIT_PENDING" }, { status: 202 });
+            }
+        }
+        // A submission-start marker without acceptance is ambiguous. Reusing the exact
+        // custody key is the only safe retry; low balance cannot prove it failed.
+        if (!intent?.submissionStartedAt) {
+            const availableBalance = await readUsdcBalance(normalizedWallet);
+            if (availableBalance < amount) {
+                return NextResponse.json({ error: "Insufficient balance. Top up and try again", code: "INSUFFICIENT_WALLET_BALANCE",
+                    availableBalanceUsdcMicros: availableBalance.toString(), requiredBalanceUsdcMicros: amount.toString() }, { status: 422 });
+            }
+        }
         const sponsorRequestKey = `vault-commit:${requestId}:${normalizedWallet}:${normalizedMerchant}:${amount.toString()}`;
         const custodyIdempotencyKey = deterministicIdempotencyKey(
             `req:${requestId}:vault-commit:${normalizedWallet}:${normalizedMerchant}:${amount.toString()}`);
-
-        /* Persist the intent BEFORE anything can move money. A reload/retry resolves this row
-           and reuses the same custody idempotency key instead of submitting a second commit. */
-        let intent;
-        try {
-            intent = await prisma.vaultCommitIntent.create({
-                data: {
-                    requestId,
-                    userAddress: normalizedWallet,
-                    merchantAddress: normalizedMerchant,
-                    amountUsdc: amount.toString(),
-                    custodyIdempotencyKey,
-                    sponsorRequestKey,
-                },
-            });
-        } catch (e: any) {
-            if (e?.code !== "P2002") throw e;
-            intent = await prisma.vaultCommitIntent.findUnique({ where: { requestId } });
-            if (!intent
-                || intent.userAddress !== normalizedWallet
-                || intent.merchantAddress !== normalizedMerchant
-                || BigInt(intent.amountUsdc.toString()) !== amount) {
-                return NextResponse.json({
-                    error: "This request id was already used for a different commit.",
-                    code: "REQUEST_ID_CONFLICT",
-                }, { status: 409 });
+        if (!intent) {
+            try {
+                intent = await prisma.vaultCommitIntent.create({ data: { requestId, userAddress: normalizedWallet,
+                    merchantAddress: normalizedMerchant, amountUsdc: amount.toString(), custodyIdempotencyKey, sponsorRequestKey,
+                    environment: COMMIT_ENVIRONMENT, chainId: BigInt(SUBSCRIPT_VAULT_CHAIN_ID),
+                    contractAddress: SUBSCRIPT_VAULT_ADDRESS.toLowerCase(), requestStartedAt, preflightCompletedAt: new Date() } });
+            } catch (error: any) {
+                if (error?.code !== "P2002") throw error;
+                // Another authorized request owns this identity. Read it without submitting
+                // another operation; a subsequent same-id request can continue if needed.
+                const existing = await reconcileVaultCommitIntent(requestId, wallet);
+                if (!existing || existing.merchantAddress !== normalizedMerchant || BigInt(existing.amountUsdc.toString()) !== amount
+                    || !isCurrentCommitNetwork(existing)) {
+                    return NextResponse.json({ error: "Request id conflict", code: "REQUEST_ID_CONFLICT" }, { status: 409 });
+                }
+                return NextResponse.json({ ...commitIntentOutcome(existing), success: ["MIRRORED", "SUBMITTED"].includes(existing.status), code: "COMMIT_PENDING" }, { status: 202 });
             }
-            if (intent.status === "MIRRORED" && intent.txHash) {
-                /* Terminal success: return it idempotently, with a fresh mirror read. */
-                const mirrored = await syncVaultMirror(wallet, merchantAddress);
-                return NextResponse.json({
-                    success: true,
-                    txHash: intent.txHash,
-                    resumed: true,
-                    vault: {
-                        balanceUsdc: mirrored.balance.toString(),
-                        owedUsdc: mirrored.owed.toString(),
-                        commitUsdc: mirrored.commitNeeded.toString(),
-                        active: mirrored.active,
-                    },
-                }, { status: 200 });
-            }
-            if (intent.status === "FAILED") {
-                return NextResponse.json({
-                    error: intent.lastError || "The previous commit failed before submission. Start a new commit with a new request id.",
-                    code: "COMMIT_FAILED",
-                    requestId,
-                }, { status: 409 });
-            }
-            /* PENDING/SUBMITTED: fall through — the deterministic custody key makes the
-               resubmission below dedupe at Circle, and mirror sync completes a half-finished
-               attempt. FAILED is terminal and requires a fresh user operation. */
         }
 
         /* Pay For Me: custody-aware, durable and budget-bounded. The commit amount is declared
@@ -222,130 +202,41 @@ async function handlePOST(request: Request) {
             chainId: SUBSCRIPT_VAULT_CHAIN_ID,
         });
 
-        let txHash: string;
-        try {
-            txHash = await commitFromEmbedded(wallet, merchantAddress, amount, custodyIdempotencyKey, id => recordSettlementReceiptSubmission(receiptJobId, id));
-            if (receiptJobId && txHash) {
-                await confirmSettlementReceiptJob(receiptJobId, txHash).catch(() => null);
-                after(async () => { await dispatchSettlementReceipts().catch(() => null); });
-            }
-        } catch (commitError: any) {
-            /* Circle rejects this before accepting a transaction, so unlike polling timeouts it is
-               definitive: close the intent and tell the client no funds moved. */
-            if (commitError instanceof CirclePaymasterPolicyError) {
-                await prisma.vaultCommitIntent.update({
-                    where: { requestId },
-                    data: { status: "FAILED", lastError: commitError.message.slice(0, 500) },
-                }).catch(() => {});
-                return NextResponse.json({
-                    error: commitError.message,
-                    code: commitError.code,
-                    requestId,
-                }, { status: 503 });
-            }
-            /* A custody error after submission started is AMBIGUOUS — Circle may have accepted
-               the transaction. Record the error but keep the intent open; the client must retry
-               with the SAME request id (deduped by the idempotency key), never a fresh one. */
-            await prisma.vaultCommitIntent.update({
-                where: { requestId },
-                data: { lastError: String(commitError?.message || commitError).slice(0, 500) },
-            }).catch(() => {});
-            return NextResponse.json({
-                error: "The commit could not be confirmed and may still be processing. Retry with the same request id — do not start a new commit.",
-                code: "COMMIT_AMBIGUOUS",
-                requestId,
-            }, { status: 502 });
-        }
-
-        await prisma.vaultCommitIntent.update({
-            where: { requestId },
-            data: { status: "SUBMITTED", txHash: txHash.toLowerCase(), lastError: null },
-        }).catch((persistError: unknown) => {
-            console.error("[vault-commit] CRITICAL: submitted commit not recorded durably:", persistError);
-        });
-
-        let v;
-        try {
-            v = await syncVaultMirror(wallet, merchantAddress);
-        } catch (syncError: unknown) {
-            console.error("[vault-commit] mirror sync failed after successful on-chain commit:", syncError);
-        }
-
-        if (v) {
-            await prisma.vaultCommitIntent.update({
-                where: { requestId },
-                data: { status: "MIRRORED" },
-            }).catch(() => { /* SUBMITTED remains resumable; the GET resolver reports it */ });
-        }
-        const commitEnvironment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";
-        await prisma.meteredVault.updateMany({
-            where: {
-                userAddress: wallet.toLowerCase(),
-                merchantAddress: merchantAddress.toLowerCase(),
-                environment: commitEnvironment,
-                settlementChainId: BigInt(SUBSCRIPT_VAULT_CHAIN_ID),
-            },
-            data: { usageNotifiedBps: 0, cancelRequestedAt: null, cancelReason: null },
-        }).catch(() => {});
-        if (v?.active) {
-            await prisma.subscriptDm.updateMany({
-                where: {
-                    senderAddress: merchantAddress.toLowerCase(),
-                    receiverAddress: wallet.toLowerCase(),
-                    messageType: { in: ["COMMIT_EXHAUSTED", "SERVICE_PAUSED"] },
-                    status: "PENDING",
-                },
-                data: { status: "DISMISSED" },
-            });
-        }
-
-        await recordMerchantEvent({
-            merchantAddress: normalizedMerchant,
-            environment: commitEnvironment as "TEST" | "LIVE",
-            eventType: "vault.activated",
-            resourceType: "vault",
-            resourceId: `${normalizedWallet}:${normalizedMerchant}`,
-            resourceVersion: 1,
-            data: {
-                user_address: normalizedWallet,
-                merchant_address: normalizedMerchant,
-                amount_usdc_micros: amount.toString(),
-                vault_balance_usdc_micros: v?.balance?.toString() ?? "unknown",
-                tx_hash: txHash,
-                active: v?.active ?? null,
-            },
-            correlationId: requestId,
-            transitionKey: `vault_commit:${txHash.toLowerCase()}`,
-        }).catch(err => console.error("[vault/commit] webhook dispatch error:", err));
-
+        await prisma.vaultCommitIntent.updateMany({ where: { requestId, receiptJobId: null }, data: { receiptJobId } });
+        // Observe at most 12 seconds. Acceptance callbacks persist provider identities
+        // even if the caller disconnects; independent GET/cron recovery observes finality.
+        const work = advanceAuthorizedVaultCommit(requestId);
         after(async () => {
-            await dispatchSettlementReceipts().catch(() => null);
+            await work.catch(() => undefined);
+            await dispatchSettlementReceipts().catch(() => undefined);
         });
-
-        return NextResponse.json({
-            success: true,
-            txHash,
-            ...(v ? {
-                vault: {
-                    balanceUsdc: v.balance.toString(),
-                    owedUsdc: v.owed.toString(),
-                    commitUsdc: v.commitNeeded.toString(),
-                    active: v.active,
-                },
-            } : {
-                syncPending: true,
-            }),
-        }, { status: 200 });
+        try {
+            const outcome = await observeWithin(work, 12_000);
+            if (outcome?.status === "MIRRORED" || outcome?.status === "SUBMITTED") {
+                return NextResponse.json({ ...commitIntentOutcome(outcome), success: true });
+            }
+            if (outcome?.status === "FAILED") {
+                return NextResponse.json({ ...commitIntentOutcome(outcome), error: outcome.lastError || "The commit failed.", code: "COMMIT_FAILED" }, { status: 409 });
+            }
+            return NextResponse.json({ ...(outcome ? commitIntentOutcome(outcome) : { requestId, pending: true }),
+                success: false, code: "COMMIT_PENDING" }, { status: 202 });
+        } catch (commitError: unknown) {
+            // A policy rejection before any commit acceptance is definitive. Unknown
+            // provider outcomes retain the durable id and must never start a new debit.
+            const latest = await prisma.vaultCommitIntent.findUnique({ where: { requestId } });
+            if (commitError instanceof CirclePaymasterPolicyError && !latest?.commitProviderId) {
+                await prisma.vaultCommitIntent.updateMany({ where: { requestId, status: "PENDING", commitProviderId: null },
+                    data: { status: "FAILED", lastError: commitError.message.slice(0, 500) } });
+                return NextResponse.json({ error: commitError.message, code: commitError.code, requestId }, { status: 503 });
+            }
+            await prisma.vaultCommitIntent.updateMany({ where: { requestId, status: "PENDING" },
+                data: { lastError: "Awaiting provider reconciliation. Resume with the same request id." } }).catch(() => undefined);
+            return NextResponse.json({ success: false, pending: true, code: "COMMIT_AMBIGUOUS", requestId }, { status: 202 });
+        }
     } catch (error: any) {
         console.error("Vault commit failed:", error);
         return NextResponse.json({ error: error.message || "Failed to commit to vault" }, { status: 500 });
     }
-}
-
-function formatUsdcMicros(amount: bigint): string {
-    const whole = amount / BigInt(1_000_000);
-    const fraction = (amount % BigInt(1_000_000)).toString().padStart(6, "0").replace(/0+$/, "");
-    return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
 /* Resolve a prior commit intent for the authenticated user. The browser calls this on reload
@@ -359,18 +250,11 @@ export async function GET(request: Request) {
         if (!/^[A-Za-z0-9._:-]{8,128}$/.test(requestId)) {
             return NextResponse.json({ error: "Invalid requestId" }, { status: 400 });
         }
-        const intent = await prisma.vaultCommitIntent.findUnique({ where: { requestId } });
-        if (!intent || intent.userAddress !== wallet.toLowerCase()) {
+        const intent = await reconcileVaultCommitIntent(requestId, wallet);
+        if (!intent) {
             return NextResponse.json({ exists: false });
         }
-        return NextResponse.json({
-            exists: true,
-            status: intent.status,
-            txHash: intent.txHash,
-            merchantAddress: intent.merchantAddress,
-            amountUsdc: intent.amountUsdc.toString(),
-            lastError: intent.lastError,
-        });
+        return NextResponse.json(commitIntentOutcome(intent), { headers: { "Cache-Control": "private, no-store, max-age=0" } });
     } catch (error: any) {
         console.error("Vault commit intent lookup failed:", error);
         return NextResponse.json({ error: "Unable to read commit intent" }, { status: 503 });

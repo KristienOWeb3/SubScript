@@ -124,28 +124,17 @@ test("sponsored plan requests dispatch in-app DM cards and merchant confirmation
 });
 
 test("resubscribing to the same plan with time remaining reactivates without extra initial charge", () => {
-    /* The guarantee is unchanged; the implementation that provides it is not. This used to assert a
-       branch inside subscribe/route.ts that flipped the mirror row back to ACTIVE. That branch was
-       unreachable (an earlier guard returned first for every row it could match) and wrong where it
-       would have fired, because cancelling revokes the on-chain authorization — so it produced a
-       subscription the keeper could never bill. Resuming is now its own endpoint that mints a real
-       authorization whose first cycle is free and whose length is the time still left, so the
-       no-extra-charge promise holds for ANY remaining time rather than only beyond one day. */
+    /* Deferred renewal terms: resuming uses createSubscriptionWithDeferredFirstPayment so the
+       authorization itself preserves the full plan cadence, moving no funds today and delaying the
+       first charge until the paid-through timestamp. */
     const resume = source("src/app/api/user/subscription/resume/route.ts");
     const bridge = source("src/lib/subscriptions/resumeBridge.ts");
 
-    /* No charge today: a zero introductory amount transfers nothing at signup. */
-    assert.match(bridge, /introAmountUsdc: BigInt\(0\)/);
-    assert.match(bridge, /introCycles: 1/);
-    assert.match(resume, /FREE_BRIDGE_INTRO_TERMS/);
-    assert.match(resume, /chargedNow: "0"/);
-
-    /* And the next charge lands on the date the subscriber had already paid through. */
-    assert.match(bridge, /bridgePeriodSeconds: remainingSeconds/);
-    assert.match(resume, /anchorNextPaymentSeconds/);
-
-    /* Allowance still has to cover full-price renewals after the free cycle. */
-    assert.match(resume, /allowancePeriodSeconds/);
+    /* Full recurring period is preserved in the authorization */
+    assert.match(bridge, /recurringPeriodSeconds: period/);
+    assert.match(bridge, /firstChargeAt: new Date/);
+    assert.match(resume, /resumeBridgeTerms/);
+    assert.match(resume, /firstPaymentSeconds/);
 
     /* The superseded run is closed so two rows never both claim to be billable. */
     assert.match(resume, /status:\s*"CANCELED"/);

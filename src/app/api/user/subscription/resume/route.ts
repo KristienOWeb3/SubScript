@@ -1,34 +1,21 @@
 import { assertAuthorizedFinancialRecord } from "@/lib/auth/financialAuthorizationContext";
 import { financialPinContext } from "@/lib/auth/financialPinPolicy";
 import { withTransactionPin } from "@/lib/auth/transactionPin";
-/* Resume a subscription the subscriber canceled but is still inside the paid period.
- *
- * Not a flag flip. Cancelling revokes the on-chain PSA authorization immediately and on purpose
- * (see subscription/cancel), `cancelSubscription` sets `isActive = false` permanently, and the PSA
- * is immutable with no reactivate — so resuming has to mint a new authorization. Doing that the
- * obvious way charges the subscriber a second time for a period they already paid for, which is
- * exactly what the previous implementation did: the dashboard's resume routed through
- * subscription/subscribe, whose own comment conceded it was "a genuine re-subscribe".
- *
- * Instead this creates a bridge authorization whose introductory cycle is free and whose period is
- * the time still left on the paid period. Nothing is charged today and the first charge lands on the
- * day the paid period was always going to end. See lib/subscriptions/resumeBridge for the
- * arithmetic and why the cadence afterwards is safe.
- *
- * Server-signed from the embedded wallet; gas covered by SubScript.
- */
+/* Resume preserves paid-through access without another debit. The new authorization uses the
+   original recurring interval and an independent first charge date, both enforced on-chain. */
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
+import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
+import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { prisma } from "@/lib/prisma";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
-import { getSubscriptionOnChain, subscribeFromEmbedded } from "@/lib/subscriptions/onchain";
+import { getSubscriptionOnChain, getSubscriptionPaidThrough, supportsDeferredSubscriptions, subscribeFromEmbedded, verifyExternalDeferredSubscriptionTx, horizonAllowance } from "@/lib/subscriptions/onchain";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { subscriptionKey } from "@/lib/subscriptions/contractBinding";
 import {
-    FREE_BRIDGE_INTRO_TERMS,
     resumeBridgeTerms,
 } from "@/lib/subscriptions/resumeBridge";
 import { sendReactivatedDm } from "@/lib/dms/lifecycle";
@@ -98,7 +85,7 @@ async function handlePOST(request: Request) {
         const planPeriodSeconds = Number(row.billingIntervalSeconds);
 
         /* The chain is authoritative for what was paid for: cancelling flips isActive but leaves the
-           authorization struct intact, so its nextPayment still records the paid-through date. */
+           authorization struct intact, so confirmed settlement evidence records the paid-through date. */
         const onChain = await getSubscriptionOnChain(subscriptionId);
         if (!onChain) {
             return NextResponse.json({
@@ -106,7 +93,7 @@ async function handlePOST(request: Request) {
                 code: "CHAIN_READ_FAILED",
             }, { status: 503 });
         }
-        const paidThroughAt = new Date(Number(onChain.nextPayment) * 1000);
+        const paidThroughAt = new Date(Number(await getSubscriptionPaidThrough(subscriptionId, onChain)) * 1000);
 
         /* Branch 1: the revocation never landed, so the original authorization is still live. Clearing
            the cancellation is the whole job — minting a second authorization would leave the
@@ -152,11 +139,18 @@ async function handlePOST(request: Request) {
                period, which is the bug this endpoint exists to fix — the subscriber decides. */
             return NextResponse.json({
                 error: terms.code === "RESUME_WINDOW_TOO_SHORT"
-                    ? "This billing period ends within the hour, so it can't be resumed. Subscribe again once it ends and you'll start a fresh period."
+                    ? "This billing period ends within the next minute, so it can't be resumed. Subscribe again once it ends and you'll start a fresh period."
                     : "This billing period has already ended. Subscribe again to start a new one.",
                 code: terms.code,
                 paidThroughAt: paidThroughAt.toISOString(),
             }, { status: 409 });
+        }
+
+        if (!await supportsDeferredSubscriptions()) {
+            return NextResponse.json({
+                error: "Resume requires the updated subscription contract. Your paid access is preserved.",
+                code: "DEFERRED_RENEWAL_DEPLOYMENT_REQUIRED",
+            }, { status: 503 });
         }
 
         /* Stable across retries: a resubmitted resume must return the original transaction from the
@@ -167,7 +161,25 @@ async function handlePOST(request: Request) {
         const resumeRequestKey = deterministicIdempotencyKey(
             `resume:${row.contractAddress}:${subscriptionId}`,
         );
-        await requireSponsoredGas({
+        const custodial = isCustodialWallet(await getWalletCustody(subscriber));
+        const externalTxHash = typeof body.txHash === "string" ? body.txHash : null;
+        const firstPaymentSeconds = BigInt(Math.floor(terms.firstChargeAt.getTime() / 1000));
+        if (!custodial && !externalTxHash) {
+            return NextResponse.json({
+                requiresWalletResume: true,
+                contractAddress: STANDARD_CONTRACT_ADDRESS,
+                merchant,
+                amountUsdcMicros: amountUsdc.toString(),
+                periodSeconds: String(planPeriodSeconds),
+                firstPaymentSeconds: firstPaymentSeconds.toString(),
+                allowanceUsdcMicros: horizonAllowance(amountUsdc, BigInt(planPeriodSeconds)).toString(),
+                error: "Confirm the restored recurring authorization in your connected wallet. Nothing is charged today.",
+            }, { status: 409 });
+        }
+        if (!custodial && !/^0x[0-9a-fA-F]{64}$/.test(externalTxHash || "")) {
+            return NextResponse.json({ error: "A valid confirmed resume transaction hash is required." }, { status: 400 });
+        }
+        if (custodial) await requireSponsoredGas({
             /* Shares the `subscribe` budget on purpose — a resume mints an authorization exactly as a
                subscribe does, so it belongs in the same per-action daily bucket. */
             wallet: subscriber,
@@ -175,17 +187,20 @@ async function handlePOST(request: Request) {
             requestKey: resumeRequestKey,
         });
 
-        const { txHash, subId: newSubscriptionId } = await subscribeFromEmbedded(
+        const { txHash, subId: newSubscriptionId } = !custodial
+            ? await verifyExternalDeferredSubscriptionTx({
+                txHash: externalTxHash!, subscriber, merchant, amount: amountUsdc,
+                period: BigInt(planPeriodSeconds), firstPaymentSeconds,
+            })
+            : await subscribeFromEmbedded(
             subscriber,
             merchant,
             amountUsdc,
-            BigInt(terms.bridgePeriodSeconds),
+            BigInt(planPeriodSeconds),
             resumeRequestKey,
-            FREE_BRIDGE_INTRO_TERMS,
-            /* Allowance is sized on the plan period, not the short bridge period: horizonAllowance
-               scales cycles-per-year off the period, so the bridge would approve a far larger
-               ceiling than this subscription will ever need. */
-            { allowancePeriodSeconds: BigInt(planPeriodSeconds) },
+            null,
+            /* The same recurring cadence and first-charge anchor are enforced by the contract. */
+            { allowancePeriodSeconds: BigInt(planPeriodSeconds), firstPaymentSeconds },
         );
         if (!newSubscriptionId) {
             await recordPaymentReconciliationRequired({
@@ -211,7 +226,7 @@ async function handlePOST(request: Request) {
             merchantAddress: merchant,
             subscriber,
             amountUsdc,
-            /* The mirror carries the PLAN cadence; only the on-chain bridge period is short. */
+            /* Chain and mirror carry the same recurring cadence. */
             periodSeconds: BigInt(planPeriodSeconds),
             beneficiaryAddress: row.beneficiaryAddress,
             /* Preserved rather than restarted: resuming must not newly lock in a subscriber whose

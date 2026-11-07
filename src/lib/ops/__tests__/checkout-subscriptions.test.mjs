@@ -265,7 +265,7 @@ test("metadata-backed subscription sessions execute createSubscription and canno
     assert.match(subscribeRoute, /status:\s*"PAID"/);
     /* Plain subscribes call createSubscription; promo subscribes call the intro-terms
        variant — both are subscription creates on the standard contract, never a deposit. */
-    assert.match(onchain, /functionName:\s*introTerms\s*\?\s*"createSubscriptionWithIntroductoryTerms"\s*:\s*"createSubscription"/);
+    assert.match(onchain, /introTerms\s*\?\s*"createSubscriptionWithIntroductoryTerms"\s*:\s*"createSubscription"/);
     assert.doesNotMatch(subscribeRoute, /depositForMerchant/);
 });
 

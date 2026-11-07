@@ -7,6 +7,7 @@
    ids restart at 1 on redeploy, so the id alone identifies nothing — see
    @/lib/subscriptions/contractBinding for why, and never reintroduce a bare { subscriptionId }. */
 import { prisma } from "@/lib/prisma";
+import { getSubscriptionOnChain, getSubscriptionPaidThrough } from "./onchain";
 import { activeSubscriptionContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
 
 export async function mirrorSubscriptionCreated({
@@ -53,6 +54,11 @@ export async function mirrorSubscriptionCreated({
     const id = BigInt(subscriptionId);
     const period = BigInt(periodSeconds);
     const now = new Date();
+    if (!anchorNextPaymentSeconds) {
+        const onChain = await getSubscriptionOnChain(subscriptionId);
+        if (!onChain) throw new Error("Cannot mirror subscription without confirmed on-chain entitlement.");
+        anchorNextPaymentSeconds = await getSubscriptionPaidThrough(subscriptionId, onChain);
+    }
         /* Fresh creates bill one period from now; reconciled subs bill at the chain's
            recorded nextPayment. lastSettlement is anchored one period earlier so the DB
            trigger derives the identical next_billing_date. */
@@ -143,6 +149,7 @@ export async function mirrorSubscriptionModified({
     externalReference,
     sourceCheckoutId,
     planId,
+    anchorNextPaymentSeconds,
 }: {
     subscriptionId: string | bigint;
     amountUsdc: bigint;
@@ -151,12 +158,17 @@ export async function mirrorSubscriptionModified({
     externalReference?: string;
     sourceCheckoutId?: string;
     planId?: string;
+    anchorNextPaymentSeconds?: bigint;
 }) {
     await prisma.subscription.update({
         where: subscriptionKey(subscriptionId),
         data: {
             amountCapUsdc: amountUsdc.toString(),
             billingIntervalSeconds: BigInt(periodSeconds),
+            ...(anchorNextPaymentSeconds ? {
+                nextBillingDate: new Date(Number(anchorNextPaymentSeconds) * 1000),
+                lastSettlementTimestamp: new Date(Number(anchorNextPaymentSeconds - periodSeconds) * 1000),
+            } : {}),
             kind: "CUSTOMER",
             ...(externalReference !== undefined
                 ? { externalReference: externalReference.trim() || null }

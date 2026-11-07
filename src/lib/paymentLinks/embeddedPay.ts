@@ -6,13 +6,11 @@
    settles it through the exact same path (no special-casing downstream). */
 import { getWalletCustody } from "@/lib/custody";
 import { ensureUsdcAllowance } from "@/lib/vault/onchain";
-import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
+import { executeUserTransfer } from "@/lib/payments/userTransferPolicy";
 
 const ROUTER_DEPOSIT_ABI = [
     "function depositForMerchant(address _merchant, uint256 _amount, string _memo)",
-];
-const USDC_TRANSFER_ABI = [
-    "function transfer(address to, uint256 amount) returns (bool)",
 ];
 
 /* Pay a merchant payment link from the user's embedded wallet via the router's depositForMerchant,
@@ -55,15 +53,7 @@ export async function payPeerLinkFromEmbedded(
     amountMicros: bigint,
     idempotencyKey: string,
 ): Promise<string> {
-    const custody = await getWalletCustody(walletAddress);
-    const { txHash } = await custody.executeContract({
-        contractAddress: USDC_NATIVE_GAS_ADDRESS,
-        abi: USDC_TRANSFER_ABI,
-        functionName: "transfer",
-        args: [recipient.toLowerCase(), amountMicros],
-        /* Peer (user-to-user) settlement: the payer bears Arc gas via fee-recovery at the route. */
-        gasPayer: "wallet",
-        idempotencyKey,
+    return executeUserTransfer({
+        wallet: walletAddress, recipient, amountMicros, identity: idempotencyKey,
     });
-    return txHash;
 }

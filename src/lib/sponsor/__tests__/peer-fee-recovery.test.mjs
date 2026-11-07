@@ -92,7 +92,8 @@ test("execute-tx no longer sponsors transferUsdc and recovers its fee", () => {
 
 test("embedded pay marks peer transfers user-paid and merchant deposits platform-sponsored", () => {
     const embedded = source("src/lib/paymentLinks/embeddedPay.ts");
-    assert.match(embedded, /gasPayer: "wallet"/);
+    assert.match(embedded, /return executeUserTransfer\(/);
+    assert.match(source("src/lib/payments/userTransferPolicy.ts"), /gasPayer: "wallet"/);
     assert.match(embedded, /gasPayer: "platform"/);
     const payRoute = source("src/app/api/user/payment-links/[id]/pay/route.ts");
     assert.match(payRoute, /if \(settlesDirectlyToUser\)[\s\S]*chargeNetworkFee/);

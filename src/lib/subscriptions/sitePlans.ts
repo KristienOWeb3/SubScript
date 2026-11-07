@@ -135,6 +135,56 @@ function assertPublishableCheckout(
     }
 }
 
+/** Every catalog edit reads current state under the same lock as publication. */
+export async function updateMerchantPlanCatalogEntry(
+    merchantAddress: string,
+    planId: string,
+    data: { active?: boolean; description?: string | null; detailsUrl?: string | null },
+): Promise<MerchantPlan> {
+    if (data.active !== undefined && typeof data.active !== "boolean") {
+        throw new SitePlanPublicationError("active must be a boolean.", 400, "INVALID_ACTIVE");
+    }
+    const merchant = merchantAddress.toLowerCase();
+    return prisma.$transaction(async tx => {
+        await lockMerchantPlanCatalog(tx, merchant);
+        const plan = await tx.merchantPlan.findUnique({ where: { id: planId } });
+        if (!plan || plan.merchantAddress.toLowerCase() !== merchant) {
+            throw new SitePlanPublicationError("Plan not found.", 404, "PLAN_NOT_FOUND");
+        }
+        if (data.active === true && plan.targetSubscriber) {
+            if (!plan.sourceCheckoutId) {
+                throw new SitePlanPublicationError("Targeted offer has no source checkout.", 409, "CHECKOUT_NOT_PUBLISHABLE");
+            }
+            const locked = await tx.$queryRaw<Array<{ id: string }>>`
+                SELECT id FROM payment_links WHERE id = ${plan.sourceCheckoutId}::uuid FOR UPDATE
+            `;
+            const link = locked.length ? await tx.paymentLink.findUnique({ where: { id: plan.sourceCheckoutId } }) : null;
+            if (!link || link.merchantAddress.toLowerCase() !== merchant) {
+                throw new SitePlanPublicationError("Subscription checkout not found.", 404, "CHECKOUT_NOT_FOUND");
+            }
+            const meta = readSubscriptionCheckoutMeta(link.stateSnapshot);
+            if (!meta || meta.subscriber?.toLowerCase() !== plan.targetSubscriber.toLowerCase()) {
+                throw new SitePlanPublicationError("Checkout does not match this targeted offer.", 409, "CHECKOUT_NOT_PUBLISHABLE");
+            }
+            if (!link.active || link.status !== "PENDING") {
+                throw new SitePlanPublicationError(
+                    "A consumed or canceled targeted subscription offer cannot be reactivated.",
+                    409,
+                    "CHECKOUT_NOT_PUBLISHABLE",
+                );
+            }
+            assertPublishableCheckout(link, meta, plan.periodSeconds);
+        }
+        if (data.active === true && !plan.active && !plan.targetSubscriber) {
+            const activeCount = await tx.merchantPlan.count({ where: { merchantAddress: merchant, active: true, targetSubscriber: null } });
+            if (activeCount >= MAX_ACTIVE_MERCHANT_PLANS) {
+                throw new SitePlanPublicationError(`You can have at most ${MAX_ACTIVE_MERCHANT_PLANS} active public plans.`, 403, "PLAN_LIMIT_REACHED");
+            }
+        }
+        return tx.merchantPlan.update({ where: { id: planId }, data });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+}
+
 async function publishSitePlanFromCheckoutInTransaction(
     tx: Prisma.TransactionClient,
     merchant: string,

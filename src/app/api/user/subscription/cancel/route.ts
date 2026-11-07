@@ -2,9 +2,10 @@
    exit survey. Server-signed from the embedded wallet; gas covered by SubScript. */
 import { after, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
+import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
-import { cancelFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
+import { cancelFromEmbedded, getSubscriptionOnChain, getSubscriptionPaidThrough } from "@/lib/subscriptions/onchain";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { mirrorSubscriptionCanceled, mirrorSubscriptionCancelAtPeriodEnd } from "@/lib/subscriptions/mirror";
 import { triggerExitSurvey } from "@/lib/payments/email";
@@ -41,9 +42,7 @@ export async function POST(request: Request) {
         if (!sub || sub.subscriber !== wallet.toLowerCase()) {
             return NextResponse.json({ error: "Subscription not found for this account" }, { status: 404 });
         }
-        if (!sub.isActive) {
-            return NextResponse.json({ error: "This subscription is already inactive" }, { status: 409 });
-        }
+
         const mirrored = await prisma.subscription.findUnique({
             where: subscriptionKey(subscriptionId),
             select: {
@@ -59,19 +58,25 @@ export async function POST(request: Request) {
         /* Authorization and entitlement are separate concerns. The on-chain PSA authorization is
            revoked IMMEDIATELY — executePayment is permissionless, so anything left isActive stays
            chargeable no matter what the database says. The user's already-paid access survives
-           off-chain: the mirror row stays ACTIVE with cancel_at_period_end until nextPayment, and
+           off-chain: the mirror row stays ACTIVE with cancel_at_period_end until paid-through, and
            the keeper finalizes the local status and final webhook when that paid period ends. */
         const nowSec = BigInt(Math.floor(Date.now() / 1000));
-        if (sub.nextPayment > nowSec) {
+        const paidThrough = await getSubscriptionPaidThrough(subscriptionId, sub);
+        if (paidThrough > nowSec) {
             let revocationTxHash: string | null = null;
             let requiresWalletCancellation = false;
             try {
-                await requireSponsoredGas({
-                    wallet: wallet.toLowerCase(),
-                    action: "subscription_cancel",
-                    requestKey: `cancel:${subscriptionId}`,
-                });
-                revocationTxHash = await cancelFromEmbedded(wallet, subscriptionId);
+                if (sub.isActive) {
+                    if (!isCustodialWallet(await getWalletCustody(wallet))) {
+                        throw new Error("external_wallet requires subscriber signature");
+                    }
+                    await requireSponsoredGas({
+                        wallet: wallet.toLowerCase(),
+                        action: "subscription_cancel",
+                        requestKey: `cancel:${subscriptionId}`,
+                    });
+                    revocationTxHash = await cancelFromEmbedded(wallet, subscriptionId);
+                }
             } catch (revokeError: any) {
                 const message = String(revokeError?.message || revokeError || "");
                 if (/no server-held key|connect a browser wallet|external_wallet/i.test(message)) {
@@ -88,11 +93,11 @@ export async function POST(request: Request) {
                 subscriber: wallet.toLowerCase(),
                 amountUsdc: sub.amount,
                 periodSeconds: sub.period,
-                nextPaymentSeconds: sub.nextPayment,
+                nextPaymentSeconds: paidThrough,
                 revocationTxHash,
                 /* While the authorization may still be live on-chain, the row must stay inside
                    the retry worker's queue — it is never terminal while chargeable. */
-                revocationPending: !revocationTxHash,
+                revocationPending: sub.isActive && !revocationTxHash,
             });
             /* This mirror row is the only record that stops future billing; if it didn't persist we
                must not tell the user the cancellation is booked. */
@@ -100,7 +105,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "We couldn't record the cancellation. Please try again." }, { status: 500 });
             }
 
-            const accessUntil = new Date(Number(sub.nextPayment) * 1000).toISOString();
+            const accessUntil = new Date(Number(paidThrough) * 1000).toISOString();
 
             /* Fact sheet for the customer's email, built once and shared by the two outcomes
                below. Section 3.5 of docs/email-audit.md calls the cancellation confirmation
@@ -127,7 +132,7 @@ export async function POST(request: Request) {
              * merchant still believed it was live. The two wallet types told the merchant different
              * stories about the same action: an embedded-wallet subscriber generated this event, an
              * external-wallet one generated nothing until period end. */
-            const revocationState = revocationTxHash
+            const revocationState = !sub.isActive || revocationTxHash
                 ? "Cancellation requested; on-chain authorization revoked, access continues until period end"
                 : requiresWalletCancellation
                     ? "Cancellation requested; the subscriber's own wallet must sign the on-chain revocation, so the authorization may still be chargeable"
@@ -150,7 +155,7 @@ export async function POST(request: Request) {
                        gates entitlement on this event should still honour access until period end
                        either way; this only says whether the chain agrees yet. */
                     revocation_pending: !revocationTxHash,
-                    revocationPending: !revocationTxHash,
+                    revocationPending: sub.isActive && !revocationTxHash,
                     access_until: accessUntil,
                     accessUntil,
                 }, `customer-cancel-scheduled:${subscriptionId}`);
@@ -260,7 +265,7 @@ export async function POST(request: Request) {
                             regularAmountUsdcMicros: winback.regularAmountUsdc,
                             offerCycles: winback.introductoryCycles,
                             periodSeconds: mirrored.billingIntervalSeconds ?? sub.period,
-                            accessUntil: new Date(Number(sub.nextPayment) * 1000),
+                            accessUntil: new Date(Number(paidThrough) * 1000),
                             expiresAt: winback.expiresAt,
                         });
                     }
@@ -277,27 +282,110 @@ export async function POST(request: Request) {
                     subscriberAddress: wallet.toLowerCase(),
                     facts: cancellationEmailFacts,
                     revocationTxHash,
+                    authorizationRevoked: !sub.isActive || Boolean(revocationTxHash),
                 });
             });
 
             return NextResponse.json({
                 success: true,
                 cancelAtPeriodEnd: true,
-                revoked: Boolean(revocationTxHash),
-                revocationPending: !revocationTxHash,
+                revoked: !sub.isActive || Boolean(revocationTxHash),
+                revocationPending: sub.isActive && !revocationTxHash,
                 txHash: revocationTxHash,
                 accessUntil,
             }, { status: 200 });
         }
 
         /* Period already lapsed — no remaining days to preserve, so cancel on-chain immediately. */
-        await requireSponsoredGas({
-            wallet: wallet.toLowerCase(),
-            action: "subscription_cancel",
-            requestKey: `cancel:${subscriptionId}`,
-        });
+        let txHash: string | null = null;
+        let requiresWalletCancellation = false;
+        try {
+            if (sub.isActive) {
+                if (!isCustodialWallet(await getWalletCustody(wallet))) {
+                    throw new Error("external_wallet requires subscriber signature");
+                }
+                await requireSponsoredGas({
+                    wallet: wallet.toLowerCase(),
+                    action: "subscription_cancel",
+                    requestKey: `cancel:${subscriptionId}`,
+                });
+                txHash = await cancelFromEmbedded(wallet, subscriptionId);
+            }
+        } catch (revokeError: any) {
+            const message = String(revokeError?.message || revokeError || "");
+            if (/no server-held key|connect a browser wallet|external_wallet/i.test(message)) {
+                /* External wallet: only the subscriber's own key can sign the revocation. */
+                requiresWalletCancellation = true;
+            } else {
+                console.error(`[subscription/cancel] immediate revocation failed for sub ${subscriptionId}:`, message);
+                throw revokeError;
+            }
+        }
 
-        const txHash = await cancelFromEmbedded(wallet, subscriptionId);
+        if (requiresWalletCancellation) {
+            const recorded = await mirrorSubscriptionCancelAtPeriodEnd({
+                subscriptionId,
+                merchantAddress: sub.merchant,
+                subscriber: wallet.toLowerCase(),
+                amountUsdc: sub.amount,
+                periodSeconds: sub.period,
+                nextPaymentSeconds: paidThrough,
+                revocationTxHash: null,
+                revocationPending: true,
+            });
+            if (!recorded) {
+                return NextResponse.json({ error: "We couldn't record the cancellation. Please try again." }, { status: 500 });
+            }
+
+            const accessUntil = new Date(Number(paidThrough) * 1000).toISOString();
+            const cancellationEmailFacts = {
+                subscriptionId,
+                planName: mirrored?.plan?.name ?? null,
+                amountUsdcMicros: sub.amount,
+                periodSeconds: mirrored?.billingIntervalSeconds ?? sub.period,
+                merchantAddress: sub.merchant,
+                accessUntil,
+                requestedAt: new Date(Number(nowSec) * 1000),
+                contractAddress: activeSubscriptionContract(),
+            };
+
+            await createDmAndNotify({
+                senderAddress: wallet.toLowerCase(),
+                receiverAddress: sub.merchant,
+                messageType: "SUBSCRIPTION_CANCELED",
+                status: "APPROVED",
+                title: "A subscriber canceled",
+                description: `Subscription sub_${subscriptionId} was canceled by the subscriber. The subscriber still needs to sign the on-chain revocation from their own wallet.`,
+                dedupeKey: `subscription-cancel-immediate:${subscriptionId}`,
+            }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
+
+            await createDmAndNotify({
+                senderAddress: sub.merchant,
+                receiverAddress: wallet.toLowerCase(),
+                messageType: "SUBSCRIPTION_CANCELED",
+                status: "APPROVED",
+                title: "Subscription canceled",
+                description: `Your subscription sub_${subscriptionId} is canceled. One step left — sign the on-chain revocation from your wallet.`,
+                dedupeKey: `subscription-cancel-immediate-subscriber:${subscriptionId}`,
+            }).catch((err) => console.error("[subscription/cancel] subscriber DM notification failed:", err));
+
+            after(async () => {
+                await sendSubscriptionCancellationNeedsSignatureEmail({
+                    subscriberAddress: wallet.toLowerCase(),
+                    facts: cancellationEmailFacts,
+                });
+            });
+
+            return NextResponse.json({
+                success: false,
+                requiresWalletCancellation: true,
+                subscriptionId,
+                error: "Your connected wallet must sign the on-chain cancellation. Until that transaction confirms, this subscription remains chargeable on-chain.",
+                accessUntil,
+            }, { status: 409 });
+        }
+
+        const confirmedTxHash = txHash;
 
         /* Reflect the cancellation in the dashboard mirror (best-effort). */
         await mirrorSubscriptionCanceled(subscriptionId);
@@ -309,12 +397,12 @@ export async function POST(request: Request) {
                 amountUsdcMicros: sub.amount,
                 subscriber: wallet.toLowerCase(),
                 merchantAddress: sub.merchant,
-                txHash,
+                txHash: confirmedTxHash,
                 beneficiary: mirrored?.beneficiaryAddress ?? null,
                 externalReference: mirrored?.externalReference ?? null,
                 sourceCheckoutId: mirrored?.sourceCheckoutId ?? null,
                 reason: "Canceled by subscriber",
-            }), `customer-canceled:${subscriptionId}:${txHash.toLowerCase()}`);
+            }), `customer-canceled:${subscriptionId}:${confirmedTxHash?.toLowerCase() || "already-revoked"}`);
         } catch (webhookError) {
             console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
         }
@@ -365,11 +453,11 @@ export async function POST(request: Request) {
                     requestedAt: new Date(),
                     contractAddress: activeSubscriptionContract(),
                 },
-                cancellationTxHash: txHash,
+                cancellationTxHash: confirmedTxHash,
             });
         });
 
-        return NextResponse.json({ success: true, txHash, cancelAtPeriodEnd: false }, { status: 200 });
+        return NextResponse.json({ success: true, txHash: confirmedTxHash, cancelAtPeriodEnd: false }, { status: 200 });
     } catch (error: any) {
         console.error("Cancel subscription failed:", error);
         return NextResponse.json({ error: error.message || "Failed to cancel subscription" }, { status: 500 });

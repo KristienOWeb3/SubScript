@@ -198,7 +198,9 @@ test("custody financial routes prepare durable jobs before signing and process v
     for (const path of ["app/api/merchant/vault/claim/route.ts", "app/api/user/vault/commit/route.ts",
         "app/api/user/vault/withdraw/route.ts", "app/api/user/vault/reclaim/route.ts",
         "app/api/execute-tx/route.ts", "app/api/user/wallet/send/route.ts"]) {
-        const code = source(path);
+        const code = path === "app/api/user/vault/commit/route.ts"
+            ? source(path) + "\n" + source("lib/vault/commitRecovery.ts")
+            : source(path);
         assert.match(code, /prepareSettlementReceiptJob\(/, path);
         assert.match(code, /recordSettlementReceiptSubmission\(/, path);
         assert.match(code, /confirmSettlementReceiptJob\(/, path);

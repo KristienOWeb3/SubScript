@@ -32,6 +32,8 @@ export interface ContractCall {
      * `deterministicIdempotencyKey(seed)` to build a well-formed UUID from an application seed.
      */
     idempotencyKey?: string;
+    /** Stable application reference for read-only recovery after a lost acceptance response. */
+    refId?: string;
     /**
      * Explicit gas-payer policy for this call. "platform" (default) is a sponsored merchant-commerce
      * or keeper operation; "wallet" marks a USER-PAID call (peer send / withdrawal) whose gas the
@@ -193,6 +195,7 @@ class CircleCustody implements WalletCustody {
             callData,
             fee: { type: "level", config: { feeLevel: "MEDIUM" } },
             idempotencyKey,
+            ...(call.refId ? { refId: call.refId } : {}),
         } as const;
 
         const submissionStart = performance.now();

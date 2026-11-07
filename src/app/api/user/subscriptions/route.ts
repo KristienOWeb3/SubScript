@@ -8,8 +8,10 @@ import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import {
     findActiveOnChainSubscriptionId,
     getSubscriptionOnChain,
+    getSubscriptionPaidThrough,
     getIntroductoryTermsOnChain,
 } from "@/lib/subscriptions/onchain";
+import { onActiveContract } from "@/lib/subscriptions/contractBinding";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 
 /* Self-heal the mirror gap: a subscription can exist on-chain (user was charged, has the
@@ -21,7 +23,7 @@ import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 async function reconcileMerchantSubscription(subscriber: string, merchantAddress: string) {
     const merchant = merchantAddress.toLowerCase();
     const existing = await prisma.subscription.findFirst({
-        where: { subscriber, merchantAddress: merchant, kind: "CUSTOMER", status: "ACTIVE" },
+        where: { ...onActiveContract(), subscriber, merchantAddress: merchant, kind: "CUSTOMER", status: "ACTIVE" },
         select: { subscriptionId: true },
     });
     if (existing) return;
@@ -48,7 +50,7 @@ async function reconcileMerchantSubscription(subscriber: string, merchantAddress
         amountUsdc: onChain.amount,
         periodSeconds: onChain.period,
         planId,
-        anchorNextPaymentSeconds: onChain.nextPayment,
+        anchorNextPaymentSeconds: await getSubscriptionPaidThrough(onChainId, onChain),
         promotion: intro
             ? { promotionId: null, introAmountUsdc: intro.introAmountUsdc, introCycles: intro.introCycles }
             : null,
@@ -74,6 +76,7 @@ export async function GET(request: Request) {
 
         const subscriptions = await prisma.subscription.findMany({
             where: {
+                ...onActiveContract(),
                 subscriber: wallet.toLowerCase()
             },
             include: {

@@ -221,6 +221,7 @@ jobs:
             /api/cron/gdpr-hard-delete \
             /api/cron/payment-reminders \
             /api/cron/email-delivery \
+            /api/cron/vault-commit-recovery \
             /api/keeper/vault-topup \
             /api/keeper/cctp; do
             echo "→ GET ${path}"

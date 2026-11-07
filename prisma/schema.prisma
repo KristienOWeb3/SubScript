@@ -941,6 +941,21 @@ model VaultCommitIntent {
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
 
+  // Nullable on legacy intents: never infer network/finality from updated_at.
+  chainId               BigInt?  @map("chain_id")
+  contractAddress       String?  @map("contract_address")
+  receiptJobId          String?  @map("receipt_job_id")
+  approvalProviderId    String?  @map("approval_provider_id")
+  commitProviderId      String?  @map("commit_provider_id")
+  requestStartedAt      DateTime? @map("request_started_at") @db.Timestamptz(6)
+  preflightCompletedAt  DateTime? @map("preflight_completed_at") @db.Timestamptz(6)
+  approvalSubmittedAt   DateTime? @map("approval_submitted_at") @db.Timestamptz(6)
+  approvalConfirmedAt   DateTime? @map("approval_confirmed_at") @db.Timestamptz(6)
+  submissionStartedAt   DateTime? @map("submission_started_at") @db.Timestamptz(6)
+  submittedAt           DateTime? @map("submitted_at") @db.Timestamptz(6)
+  confirmedAt           DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  mirroredAt            DateTime? @map("mirrored_at") @db.Timestamptz(6)
+
   @@index([userAddress, createdAt(sort: Desc)])
   @@map("vault_commit_intents")
 }

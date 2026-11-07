@@ -399,7 +399,10 @@ test("financial routes sponsor gas strictly before submitting the financial tran
     const subscribe = readFileSync(new URL("../../../app/api/user/subscription/subscribe/route.ts", import.meta.url), "utf8");
     const change = readFileSync(new URL("../../../app/api/user/subscription/change/route.ts", import.meta.url), "utf8");
 
-    assert.ok(vaultCommit.indexOf("requireSponsoredGas") < vaultCommit.indexOf("commitFromEmbedded(wallet"),
+    const commitEscrowCall = vaultCommit.includes("advanceAuthorizedVaultCommit(")
+        ? "advanceAuthorizedVaultCommit("
+        : "commitFromEmbedded(wallet";
+    assert.ok(vaultCommit.indexOf("requireSponsoredGas") < vaultCommit.indexOf(commitEscrowCall),
         "vault commit sponsors before escrowing");
     assert.ok(subscribe.indexOf("requireSponsoredGas") < subscribe.indexOf("subscribeFromEmbedded("),
         "subscribe sponsors before charging");

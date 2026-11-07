@@ -10,6 +10,29 @@
 html {
   font-size: 108%;
   scrollbar-gutter: stable;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --header-floating-top: max(1.25rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));
+}
+
+.floating-header-top {
+  top: max(1.25rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));
 }
 
 @layer components {
@@ -306,6 +329,8 @@ body {
 
 .marquee-track {
   animation: marqueeScroll 32s linear infinite;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 /* The global `* { max-width: 100% }` guard (see @layer base) clamps the track to its container
@@ -625,7 +650,6 @@ body {
 
 /* 60fps/120fps GPU Hardware Acceleration & Silky Transitions */
 .gpu-accelerated,
-.subscript-skeleton,
 .subscript-checkout,
 .liquid-glass,
 .glass-card,
@@ -635,43 +659,37 @@ body {
   backface-visibility: hidden;
 }
 
-/* Subtle Motion Blur Animation Utility (barely visible 0.5px-1.5px blur settling to 0px) */
+/* Subtle Motion Animation Utility — pure compositor transform & opacity */
 @keyframes subtle-motion-fade-in {
   0% {
     opacity: 0;
-    transform: translate3d(0, 14px, 0);
-    filter: blur(1.5px);
+    transform: translate3d(0, 10px, 0);
   }
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0);
-    filter: blur(0px);
   }
 }
 
 @keyframes subtle-motion-slide-in {
   0% {
     opacity: 0;
-    transform: translate3d(16px, 0, 0);
-    filter: blur(1.5px);
+    transform: translate3d(12px, 0, 0);
   }
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0);
-    filter: blur(0px);
   }
 }
 
 @keyframes subtle-motion-scale-up {
   0% {
     opacity: 0;
-    transform: scale3d(0.95, 0.95, 1) translate3d(0, 10px, 0);
-    filter: blur(1.5px);
+    transform: scale3d(0.96, 0.96, 1) translate3d(0, 8px, 0);
   }
   100% {
     opacity: 1;
     transform: scale3d(1, 1, 1) translate3d(0, 0, 0);
-    filter: blur(0px);
   }
 }
 
@@ -815,8 +833,8 @@ body {
   border-color: transparent !important;
 }
 
-.user-dashboard-content .text-white:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
-.user-dashboard-content [class*="text-white/"]:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
+.user-dashboard-content .text-white:not(.transaction-pin-settings *):not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
+.user-dashboard-content [class*="text-white/"]:not(.transaction-pin-settings *):not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
 .user-dashboard-redesign [role="dialog"] .text-white,
 .user-dashboard-redesign [role="dialog"] [class*="text-white/"] {
   color: #000000 !important;
@@ -1081,8 +1099,8 @@ input[data-pin-slot][data-pin-slot-feedback="success"]:focus,
   border: 1px solid rgb(0 0 0 / 18%);
   background: rgb(39 117 202 / 20%) !important;
   box-shadow: none !important;
-  backdrop-filter: blur(22px) saturate(125%) !important;
-  -webkit-backdrop-filter: blur(22px) saturate(125%) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
 }
 
 .user-dashboard-redesign nav[aria-label="Primary navigation"][data-retracted-selected="true"] {
@@ -1090,8 +1108,8 @@ input[data-pin-slot][data-pin-slot-feedback="success"]:focus,
   background: #353935 !important;
   color: #fffff0 !important;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35) !important;
-  backdrop-filter: blur(22px) saturate(125%) !important;
-  -webkit-backdrop-filter: blur(22px) saturate(125%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"]:not([data-nav-motion]) {
@@ -1265,8 +1283,8 @@ input[data-pin-slot][data-pin-slot-feedback="success"]:focus,
 .user-dashboard-content > [aria-hidden="true"][class*="top-0"] {
   height: 10rem;
   background-color: rgb(255 255 240 / 96%) !important;
-  backdrop-filter: blur(34px) saturate(145%);
-  -webkit-backdrop-filter: blur(34px) saturate(145%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 /* Merchant dashboard wireframe palette. Scoped so user/admin dashboards retain their themes. */
@@ -2839,34 +2857,34 @@ body:has(.dashboard-modal-overlay, #sheet-wrapper, #deposit-sheet-wrapper) #mobi
 }
 
 @keyframes sendReviewReady {
-  0% { transform: scale(.96); filter: blur(3px); }
-  60% { transform: scale(1.02); filter: blur(0px); }
-  100% { transform: scale(1); filter: blur(0px); }
+  0% { transform: scale(.96); opacity: 0.85; }
+  60% { transform: scale(1.01); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .send-recipient-reveal {
-  animation: sendRecipientReveal 380ms cubic-bezier(.16,1,.3,1);
+  animation: sendRecipientReveal 280ms cubic-bezier(.16,1,.3,1);
 }
 @keyframes sendRecipientReveal {
-  from { opacity: 0; transform: scale(.6); filter: blur(4px); }
-  to { opacity: 1; transform: none; filter: blur(0px); }
+  from { opacity: 0; transform: scale(.88); }
+  to { opacity: 1; transform: none; }
 }
 .send-validation-hint {
   height: 0;
   overflow: hidden;
   opacity: 0;
-  transition: height 350ms, opacity 300ms, margin 300ms;
+  transition: height 250ms, opacity 200ms, margin 200ms;
 }
 .send-validation-hint.is-visible { height: 18px; opacity: 1; margin-top: 7px; }
-.send-receipt-reveal { animation: sendReceiptReveal 220ms 160ms both; }
-.send-fee-row { transition: opacity 160ms, filter 160ms; }
-.send-fee-row.is-replaced { opacity: 0; filter: blur(3px); pointer-events: none; }
+.send-receipt-reveal { animation: sendReceiptReveal 200ms 120ms both; }
+.send-fee-row { transition: opacity 160ms; }
+.send-fee-row.is-replaced { opacity: 0; pointer-events: none; }
 #sheet-card [data-send-details] > div { min-height: 42px; padding-top: 0; }
 #sheet-card [data-testid="send-review"],
 #sheet-card [data-testid="send-review"] .koboyo-icon { color: #fff !important; }
 @keyframes sendReceiptReveal {
-  from { opacity: 0; filter: blur(3px); }
-  to { opacity: 1; filter: blur(0px); }
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 .send-confirming-dot { animation: dt 1.2s infinite; }
 #sheet-wrapper .send-live-dot { animation: lv 1.6s infinite; }
@@ -2953,39 +2971,33 @@ body:has(.dashboard-modal-overlay, #sheet-wrapper, #deposit-sheet-wrapper) #mobi
 @keyframes popIn {
   0% {
     opacity: 0;
-    transform: scale(0.95);
-    filter: blur(4px);
+    transform: scale(0.96);
   }
   100% {
     opacity: 1;
     transform: none;
-    filter: blur(0px);
   }
 }
 
 @keyframes netPopupIn {
   0% {
     opacity: 0;
-    transform: translateY(-10px) scale(0.97);
-    filter: blur(8px);
+    transform: translateY(-8px) scale(0.98);
   }
   100% {
     opacity: 1;
     transform: none;
-    filter: blur(0px);
   }
 }
 
 @keyframes netItemIn {
   0% {
     opacity: 0;
-    transform: translateY(8px);
-    filter: blur(4px);
+    transform: translateY(6px);
   }
   100% {
     opacity: 1;
     transform: none;
-    filter: blur(0px);
   }
 }
 

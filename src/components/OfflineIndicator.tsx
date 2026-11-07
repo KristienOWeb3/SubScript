@@ -62,7 +62,7 @@ export default function OfflineIndicator() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -16, scale: 0.95 }}
                     transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                    className="fixed top-3 inset-x-0 mx-auto z-[9999] flex justify-center px-4 pointer-events-none"
+                    className="fixed top-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] inset-x-0 mx-auto z-[9999] flex justify-center px-4 pointer-events-none"
                     role="status"
                     aria-live="polite"
                 >

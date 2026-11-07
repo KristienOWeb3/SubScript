@@ -142,9 +142,10 @@ export default function Navbar() {
 
     useEffect(() => {
         const handleScroll = () => {
-            setScrolled(window.scrollY > 30);
+            const isScrolled = window.scrollY > 30;
+            setScrolled((prev) => (prev !== isScrolled ? isScrolled : prev));
         };
-        window.addEventListener("scroll", handleScroll);
+        window.addEventListener("scroll", handleScroll, { passive: true });
 
         checkNetwork();
 
@@ -175,10 +176,10 @@ export default function Navbar() {
     return (
         <>
             {/* Header landmark wrapping floating navbar */}
-            <header className="fixed top-5 left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
+            <header className="fixed floating-header-top left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
                 <nav
                     aria-label="Main Navigation"
-                    className={`w-full max-w-5xl rounded-full px-6 py-3.5 flex items-center justify-between pointer-events-auto transition-all duration-300 border ${scrolled ? "bg-[#FFFFF0]/95 border-black/10 shadow-[0_8px_28px_rgba(11,18,32,0.10)]" : "bg-[#FFFFF0]/80 border-black/[0.06] shadow-[0_6px_20px_rgba(11,18,32,0.06)]"} backdrop-blur-xl`}
+                    className={`w-full max-w-5xl rounded-full px-6 py-3.5 flex items-center justify-between pointer-events-auto transition-all duration-300 border ${scrolled ? "bg-[#FFFFF0]/95 border-black/10 shadow-[0_8px_28px_rgba(11,18,32,0.10)]" : "bg-[#FFFFF0]/80 border-black/[0.06] shadow-[0_6px_20px_rgba(11,18,32,0.06)]"} backdrop-blur-md md:backdrop-blur-xl`}
                 >
                     {/* Logo - Icon + Text */}
                     <Link href="/" className="flex items-center gap-2.5 group" aria-label="SubScript Home">
@@ -276,7 +277,7 @@ export default function Navbar() {
                         animate="visible"
                         exit="exit"
                     >
-                        <div className="flex items-center justify-between px-6 py-5 border-b border-black/10">
+                        <div className="flex items-center justify-between px-6 pt-[calc(1.25rem+env(safe-area-inset-top,0px))] pb-5 border-b border-black/10">
                             {/* Logo */}
                             <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileMenuOpen(false)} aria-label="SubScript Home">
                                 <Image

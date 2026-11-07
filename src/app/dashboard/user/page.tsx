@@ -33,6 +33,7 @@ import {
   GAS_FEE_TREASURY_ADDRESS,
   CCTP_CONFIG,
   SOLANA_CCTP_CONFIG,
+  STANDARD_CONTRACT_ADDRESS,
 } from "@/lib/contracts/constants";
 import { calculateBridgeFee, formatFeeBps, formatMicros, listBridgeRoutes } from "@/lib/cctp/feeEngine";
 import { createSendQuote, microsToUsdc, nativeGasToMicros, quoteEmbeddedArcReceipt, usdcToMicros, type SendQuoteRequest, type SendResult } from "@/lib/payments/sendQuote";
@@ -598,11 +599,12 @@ export default function UserDashboard() {
     if (typeof window === "undefined") return;
     const handleResize = () => {
       const isMobileSize = window.innerWidth < 768;
-      setIsMobile(isMobileSize);
-      setIsTablet(!isMobileSize && window.innerWidth < 1200);
+      const isTabletSize = !isMobileSize && window.innerWidth < 1200;
+      setIsMobile((prev) => (prev !== isMobileSize ? isMobileSize : prev));
+      setIsTablet((prev) => (prev !== isTabletSize ? isTabletSize : prev));
     };
     handleResize();
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", handleResize, { passive: true });
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
@@ -2161,12 +2163,46 @@ export default function UserDashboard() {
         await runAction(`resume-sub-${subscription.subscriptionId}`, async () => {
           setPlanManagerStatus("Restoring your subscription on-chain...");
           setPlanManagerError(null);
-          const res = await fetchWithTransactionPin("/api/user/subscription/resume", {
+          let res = await fetchWithTransactionPin("/api/user/subscription/resume", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ subscriptionId: subscription.subscriptionId }),
           }, { operation: "Resume subscription spending authorization", details: { merchant: subscription.merchantAddress, merchantName: subscription.merchantName, subscriptionId: subscription.subscriptionId, recurringAmountCapUsdcMicros: subscription.amountCapUsdc, billingIntervalSeconds: subscription.billingIntervalSeconds, nextBillingDate: subscription.nextBillingDate, chargeTodayUsdc: "0" } });
-          const data = await res.json().catch(() => ({}));
+          let data = await res.json().catch(() => ({}));
+          if (data.requiresWalletResume) {
+            if (chainId !== activeArcChain.id) await switchChainAsync({ chainId: activeArcChain.id });
+            const approvalAbi = [
+              { type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], outputs: [{ type: "uint256" }] },
+              { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }] },
+            ] as const;
+            const allowance = await publicClient.readContract({
+              address: USDC_NATIVE_GAS_ADDRESS, abi: approvalAbi, functionName: "allowance",
+              args: [userWallet as `0x${string}`, STANDARD_CONTRACT_ADDRESS as `0x${string}`],
+            });
+            if (allowance < BigInt(data.allowanceUsdcMicros)) {
+              setPlanManagerStatus("Approve future renewals in your connected wallet...");
+              const approvalHash = await writeContractAsync({
+                address: USDC_NATIVE_GAS_ADDRESS, abi: approvalAbi, functionName: "approve",
+                args: [STANDARD_CONTRACT_ADDRESS as `0x${string}`, BigInt(data.allowanceUsdcMicros)],
+              });
+              const approval = await publicClient.waitForTransactionReceipt({ hash: approvalHash, timeout: 120_000 });
+              if (approval.status !== "success") throw new Error("The renewal approval did not confirm.");
+            }
+            setPlanManagerStatus("Confirm resume in your connected wallet. Nothing is charged today...");
+            const hash = await writeContractAsync({
+              address: STANDARD_CONTRACT_ADDRESS as `0x${string}`,
+              abi: [{ type: "function", name: "createSubscriptionWithDeferredFirstPayment", stateMutability: "nonpayable", inputs: [{ type: "address", name: "merchant" }, { type: "uint256", name: "amount" }, { type: "uint256", name: "period" }, { type: "uint256", name: "firstPayment" }], outputs: [{ type: "uint256" }] }] as const,
+              functionName: "createSubscriptionWithDeferredFirstPayment",
+              args: [data.merchant as `0x${string}`, BigInt(data.amountUsdcMicros), BigInt(data.periodSeconds), BigInt(data.firstPaymentSeconds)],
+            });
+            const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+            if (receipt.status !== "success") throw new Error("The resume authorization did not confirm.");
+            res = await fetchWithTransactionPin("/api/user/subscription/resume", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ subscriptionId: subscription.subscriptionId, txHash: hash }),
+            }, { operation: "Confirm resumed subscription", details: { subscriptionId: subscription.subscriptionId, chargeTodayUsdc: "0" } });
+            data = await res.json().catch(() => ({}));
+          }
           if (!res.ok || !data.success) {
             /* The period is ending or has ended, so no free bridge exists. Say that rather than
                reporting a generic failure — resubscribing from here is a new paid period. */
@@ -2269,7 +2305,7 @@ export default function UserDashboard() {
       setConfirmModal({
         open: true,
         title: "Cancel Subscription",
-        description: "This will cancel the subscription on-chain. Access may stop immediately, and the cancellation cannot be undone.",
+        description: "Stop future payments and keep access through the period you've already paid for.",
         confirmLabel: "Cancel Plan",
         variant: "warning",
         onConfirm: async () => {
@@ -2277,12 +2313,30 @@ export default function UserDashboard() {
           await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
             setPlanManagerStatus("Cancelling subscription...");
             setPlanManagerError(null);
-            const res = await fetchWithTransactionPin("/api/user/subscription/cancel", {
+            let res = await fetchWithTransactionPin("/api/user/subscription/cancel", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
             });
-            const data = await res.json().catch(() => ({}));
+            let data = await res.json().catch(() => ({}));
+            if (data.requiresWalletCancellation) {
+              if (chainId !== activeArcChain.id) await switchChainAsync({ chainId: activeArcChain.id });
+              setPlanManagerStatus("Confirm cancellation in your connected wallet...");
+              const hash = await writeContractAsync({
+                address: STANDARD_CONTRACT_ADDRESS as `0x${string}`,
+                abi: [{ type: "function", name: "cancelSubscription", stateMutability: "nonpayable", inputs: [{ name: "subId", type: "uint256" }], outputs: [] }] as const,
+                functionName: "cancelSubscription",
+                args: [BigInt(activeSub.subscriptionId)],
+              });
+              const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+              if (receipt.status !== "success") throw new Error("The cancellation did not confirm. Your authorization is still active.");
+              /* Re-read the authoritative chain and finish the entitlement mirror after signing. */
+              res = await fetchWithTransactionPin("/api/user/subscription/cancel", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
+              });
+              data = await res.json().catch(() => ({}));
+            }
             if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
             setSubscriptions((prev) =>
               prev.map((s) =>
@@ -2798,6 +2852,7 @@ export default function UserDashboard() {
         // Embedded wallet: SubScript signs server-side (and sponsors gas).
         const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
         const intentStorageKey = "subscript_vault_commit_intent";
+        const pinOperationId = crypto.randomUUID();
         if (vaultActionMode === "commit") {
           /* Durable money-moving operation id: persisted in localStorage until terminal
              resolution, so a reload cannot mint a fresh id for the same commit. Any prior
@@ -2840,12 +2895,17 @@ export default function UserDashboard() {
           headers: {
             "Content-Type": "application/json",
             ...(vaultActionMode === "commit" && vaultCommitRequestKey.current
-              ? { "x-request-id": vaultCommitRequestKey.current }
+              ? { "x-request-id": vaultCommitRequestKey.current, "x-transaction-operation-id": pinOperationId }
               : {}),
           },
           body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount, acknowledgeUnverified: acknowledgedUnverified || undefined }),
         });
         const data = await res.json().catch(() => null);
+        if (res.status === 202) {
+          triggerToast(data?.resumeRequired ? "Allowance confirmed. Retry this same commit to continue." : "Commit pending. Its status will recover automatically; retry resumes the same operation.");
+          await loadVaults().catch(() => {});
+          return;
+        }
         if (!res.ok || !data?.success) {
           /* An ambiguous commit stays persisted — the retry reuses the same request id and
              dedupes at Circle instead of escrowing twice. */
@@ -4558,7 +4618,7 @@ export default function UserDashboard() {
       <main className={`w-full min-w-0 flex flex-col ${
         activeTab === "inbox"
           ? (isMobile ? "flex-1 h-full min-h-0 max-w-none px-3 overflow-hidden" : "flex-1 h-full min-h-0 max-w-none p-3 lg:p-6 overflow-hidden")
-          : "mx-auto max-w-7xl px-4 sm:px-5 lg:px-8 " + (!isMobile ? "pt-6 lg:pt-8 pb-12 " : "pt-20 pb-[calc(8rem+env(safe-area-inset-bottom))] ") + (isActiveMobileDm ? "h-full overflow-hidden !pb-0" : "")
+          : "mx-auto max-w-7xl px-4 sm:px-5 lg:px-8 " + (!isMobile ? "pt-6 lg:pt-8 pb-12 " : "pt-[calc(5rem+env(safe-area-inset-top,0px))] pb-[calc(8rem+env(safe-area-inset-bottom))] ") + (isActiveMobileDm ? "h-full overflow-hidden !pb-0" : "")
       }`}>
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
         {!isMobile && activeTab !== "inbox" && (
@@ -8820,7 +8880,7 @@ function HomeHeader({
   };
 
   return (
-    <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+    <div className="fixed floating-header-top left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
       <header className="w-full max-w-md px-1 py-2 pointer-events-auto transition-all duration-300">
         <div className="flex items-center justify-between w-full">
           <button type="button" onClick={handleProfileClick} aria-label={profileExpanded ? "Open settings" : "Show DNS name"} className={profileExpanded ? "profile-trigger profile-trigger-expanded flex h-12 max-w-[calc(100vw-7rem)] items-center gap-2 overflow-hidden rounded-2xl border border-black/15 bg-[#2775CA]/20 px-2 text-black transition-all duration-300" : "profile-trigger flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-0 bg-transparent p-0 text-black transition-all duration-300"}>
@@ -8883,7 +8943,7 @@ function ChatHeader({
   onUnblock?: () => void;
 }) {
   return (
-    <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+    <div className="fixed floating-header-top left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
       <header
         data-testid="mobile-chat-header"
         className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10"
@@ -9227,7 +9287,7 @@ function OpenedDmSkeleton({
 
       {/* Mobile Peer Chat Top Bar Skeleton (when mobile) */}
       {isMobile && onBack && (
-        <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+        <div className="fixed floating-header-top left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
           <header className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <button

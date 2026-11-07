@@ -39,6 +39,7 @@ import {
   X,
   Menu,
   LogOut,
+  Zap,
 } from "@/components/icons";
 import { getDashboardUrl } from "@/utils/navigation";
 import { adminFetch } from "@/lib/admin/clientFetch";
@@ -79,6 +80,7 @@ import { AdminRelayerBalancesCard } from "@/components/admin/AdminRelayerBalance
 import { AdminRevenueView } from "@/components/admin/AdminRevenueView";
 import { AdminRiskSignalsCard } from "@/components/admin/AdminRiskSignalsCard";
 import { AdminReferralsView } from "@/components/admin/AdminReferralsView";
+import { AdminCommitLatencyView } from "@/components/admin/AdminCommitLatencyView";
 
 type Merchant = {
   walletAddress: string;
@@ -296,6 +298,7 @@ type TabId =
   | "moderation"
   | "account-settings"
   | "system"
+  | "commit-latency"
   | "broadcast"
   | "receipts"
   | "audit-log"
@@ -319,6 +322,7 @@ const TABS: Array<{ id: TabId; label: string; rootOnly?: boolean }> = [
   { id: "moderation", label: "Moderation" },
   { id: "account-settings", label: "Account settings" },
   { id: "system", label: "System & Health" },
+  { id: "commit-latency", label: "Commit Latency" },
   { id: "broadcast", label: "Broadcast" },
   { id: "receipts", label: "Receipts" },
   { id: "audit-log", label: "Audit Log" },
@@ -1251,6 +1255,7 @@ export default function AdminDashboardPage() {
       icon: Sliders,
       items: [
         { id: "system", label: "System & Health", icon: Sliders },
+        { id: "commit-latency", label: "Commit Latency", icon: Zap },
         { id: "broadcast", label: "Broadcast", icon: Bell },
         { id: "receipts", label: "Receipts", icon: ReceiptText },
         { id: "account-settings", label: "Account settings", icon: UserCheck },
@@ -3028,6 +3033,10 @@ export default function AdminDashboardPage() {
               </>
             )}
           </div>
+        )}
+
+        {tab === "commit-latency" && (
+          <AdminCommitLatencyView key={`commit-latency-${refreshCounter}`} />
         )}
 
         {tab === "broadcast" && (

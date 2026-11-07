@@ -6,10 +6,15 @@ import { ethers } from "ethers";
 import { getWalletCustody, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
 import { ensureUsdcAllowance } from "@/lib/vault/onchain";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { readSubscriptionPaidThrough } from "./entitlement";
 
 const SUB_ABI = [
     "function createSubscription(address merchant, uint256 amount, uint256 period) returns (uint256)",
     "function createSubscriptionWithIntroductoryTerms(address merchant, uint256 amount, uint256 period, uint256 introductoryAmount, uint256 introductoryCycles) returns (uint256)",
+    "function createSubscriptionWithDeferredFirstPayment(address merchant, uint256 amount, uint256 period, uint256 firstPayment) returns (uint256)",
+    "function supportsDeferredSubscriptions() pure returns (bool)",
+    "function paidThrough(uint256) view returns (uint256)",
+    "function executionBitmaps(uint256,uint256) view returns (uint256)",
     "function cancelSubscription(uint256 subId)",
     "function modifySubscription(uint256 subId, uint256 newAmount, uint256 newPeriod)",
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
@@ -44,6 +49,7 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
     try {
         const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
         const s = await c.subscriptions(BigInt(subId));
+        if (String(s.subscriber ?? s[0]).toLowerCase() === ethers.ZeroAddress) return null;
         return {
             subscriber: String(s.subscriber ?? s[0]).toLowerCase(),
             merchant: String(s.merchant ?? s[1]).toLowerCase(),
@@ -54,6 +60,25 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
         };
     } catch {
         return null;
+    }
+}
+
+export async function getSubscriptionPaidThrough(
+    subId: string | bigint,
+    terms: OnChainSubscription,
+): Promise<bigint> {
+    const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+    return readSubscriptionPaidThrough(c as unknown as Parameters<typeof readSubscriptionPaidThrough>[0],
+        BigInt(subId), terms, BigInt(Math.floor(Date.now() / 1000)));
+}
+
+export async function supportsDeferredSubscriptions(): Promise<boolean> {
+    const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+    try {
+        return Boolean(await c.supportsDeferredSubscriptions());
+    } catch (error) {
+        if ((error as { code?: string })?.code === "CALL_EXCEPTION") return false;
+        throw error;
     }
 }
 
@@ -194,8 +219,12 @@ export async function subscribeFromEmbedded(
            sizing off it would scale cycles-per-year up and approve a far larger ceiling than the
            subscription will ever draw. Pass the plan's period instead. */
         allowancePeriodSeconds?: bigint;
+        firstPaymentSeconds?: bigint;
     },
 ) {
+    if (options?.firstPaymentSeconds && !await supportsDeferredSubscriptions()) {
+        throw new Error("The active subscription contract needs the deferred-renewal deployment before resume is available.");
+    }
     const custody = await getWalletCustody(walletAddress);
     /* Allowance is sized on the REGULAR amount: intro charges are strictly lower, and the
        keeper needs headroom for full-price renewals after the promotion ends. */
@@ -207,8 +236,11 @@ export async function subscribeFromEmbedded(
     const { txHash } = await custody.executeContract({
         contractAddress: STANDARD_CONTRACT_ADDRESS,
         abi: SUB_ABI,
-        functionName: introTerms ? "createSubscriptionWithIntroductoryTerms" : "createSubscription",
-        args: introTerms
+        functionName: options?.firstPaymentSeconds ? "createSubscriptionWithDeferredFirstPayment"
+            : introTerms ? "createSubscriptionWithIntroductoryTerms" : "createSubscription",
+        args: options?.firstPaymentSeconds
+            ? [merchant.toLowerCase(), amount, period, options.firstPaymentSeconds]
+            : introTerms
             ? [merchant.toLowerCase(), amount, period, introTerms.introAmountUsdc, BigInt(introTerms.introCycles)]
             : [merchant.toLowerCase(), amount, period],
         ...(idempotencyKey ? { idempotencyKey } : {}),
@@ -291,6 +323,26 @@ export async function verifyExternalSubscriptionTx(input: {
         }
     }
     throw new Error("This transaction does not match the selected plan (merchant, amount, or period differ).");
+}
+
+export async function verifyExternalDeferredSubscriptionTx(input: {
+    txHash: string; subscriber: string; merchant: string; amount: bigint; period: bigint;
+    firstPaymentSeconds: bigint;
+}): Promise<{ txHash: string; subId: string }> {
+    const verified = await verifyExternalSubscriptionTx(input);
+    const provider = readProvider();
+    const tx = await provider.getTransaction(input.txHash);
+    const iface = new ethers.Interface(SUB_ABI);
+    const parsed = tx ? iface.parseTransaction({ data: tx.data, value: tx.value }) : null;
+    if (parsed?.name !== "createSubscriptionWithDeferredFirstPayment"
+        || BigInt(parsed.args[3]) !== input.firstPaymentSeconds) {
+        throw new Error("The resume transaction does not match the authorized first-charge date.");
+    }
+    const created = await getSubscriptionOnChain(verified.subId);
+    if (!created?.isActive || created.nextPayment !== input.firstPaymentSeconds) {
+        throw new Error("The resumed authorization is inactive or its first-charge date does not match.");
+    }
+    return verified;
 }
 
 export async function cancelFromEmbedded(walletAddress: string, subId: string | bigint) {
