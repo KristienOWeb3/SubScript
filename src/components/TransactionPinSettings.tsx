@@ -190,7 +190,7 @@ export default function TransactionPinSettings({ embedded = false, onBack }: { e
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]"><KeyRound aria-hidden="true" className="h-5 w-5" /></div>
                     <h3 className="text-base font-semibold tracking-tight text-[#082824] dark:text-white">Protect your payments</h3>
-                    {status && <span className="rounded-full bg-[#2775CA]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#2775CA] dark:text-blue-300">{status.configured ? "PIN enabled" : "Setup needed"}</span>}
+                    {status ? <span className="rounded-full bg-[#2775CA]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#2775CA] dark:text-blue-300">{status.configured ? "PIN enabled" : "Setup needed"}</span> : <span aria-hidden="true" className="rounded-full bg-[#2775CA]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#2775CA] dark:text-blue-300 opacity-0 select-none pointer-events-none">Setup needed</span>}
                 </div>
                 <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#082824]/65 dark:text-white/65">Your six-digit PIN protects outgoing payments. Verify your email to {status?.configured ? "change or reset" : "set up"} your PIN.</p>
             </div>}
