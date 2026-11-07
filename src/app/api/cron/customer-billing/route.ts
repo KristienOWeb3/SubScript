@@ -282,56 +282,6 @@ export async function POST(request: Request) {
                 const amountOnChain: bigint = BigInt(onChain[2]);
                 const isActiveOnChain: boolean = onChain[5];
 
-                const { data: custodyWallet, error: custodyError } = await supabase
-                    .from("user_embedded_wallets")
-                    .select("wallet_address")
-                    .eq("wallet_address", subscriber.toLowerCase())
-                    .maybeSingle();
-
-                if (custodyError) {
-                    throw new Error(`Failed to query custody for subscriber ${subscriber}: ${custodyError.message}`);
-                }
-
-                if (!custodyWallet) {
-                    /* External wallet — server-side charge attempts are impossible because we lack custody.
-                       Transition to USER_ACTION_REQUIRED, notify the user, and skip. */
-                    await supabase
-                        .from("subscriptions")
-                        .update({
-                            status: "USER_ACTION_REQUIRED",
-                            updated_at: new Date().toISOString(),
-                        })
-                        .eq("contract_address", activeSubscriptionContract())
-                        .eq("subscription_id", subId);
-
-                    await createBillingDm({
-                        supabase,
-                        senderAddress: merchantAddress,
-                        receiverAddress: subscriber,
-                        messageType: "EXPIRY_WARNING",
-                        amountUsdc: amountOnChain,
-                        title: "Action required to renew subscription",
-                        description: [
-                            "Your subscription renewal requires manual action.",
-                            "Reason: external wallet signatures cannot be automated server-side.",
-                            "Please visit your dashboard and confirm the renewal payment.",
-                        ].join("\n"),
-                    }).catch((e: any) => console.error("[customer-billing] external wallet warning DM failed:", e));
-
-                    await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
-                        subscriptionId: subId,
-                        status: "user_action_required",
-                        amountUsdcMicros: amountOnChain,
-                        subscriber,
-                        merchantAddress,
-                        ...lifecycleBinding(sub),
-                        reason: "External wallet requires manual signature",
-                    }), `customer-external-wallet-action:${subId}`);
-
-                    results.push({ subId, subscriber, action: "USER_ACTION_REQUIRED_TRANSITIONED", success: true });
-                    continue;
-                }
-
                 /* Cancelled directly on-chain -> reflect it in the mirror and notify, then stop. */
                 if (!isActiveOnChain) {
                     await supabase
@@ -910,17 +860,38 @@ export async function POST(request: Request) {
                     const isActiveOnChain: boolean = onChain[5];
 
                     if (isActiveOnChain) {
-                        await ensureSponsoredGas({
-                            wallet: subscriber.toLowerCase(),
-                            action: "billing_renewal",
-                            requestKey: `cancel-period-end:${subId}`,
-                        }).catch(() => { /* best-effort */ });
-                        cancellationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId));
+                        const { data: custodyWallet, error: custodyError } = await supabase
+                            .from("user_embedded_wallets")
+                            .select("circle_wallet_id, provider")
+                            .eq("wallet_address", subscriber.toLowerCase())
+                            .maybeSingle();
+
+                        if (custodyError) {
+                            throw new Error(`Failed to read cancellation custody: ${custodyError.message}`);
+                        }
+
+                        const hasEmbeddedCustody = Boolean(
+                            custodyWallet?.circle_wallet_id && custodyWallet?.provider !== "external_wallet"
+                        );
+
+                        if (hasEmbeddedCustody) {
+                            await ensureSponsoredGas({
+                                wallet: subscriber.toLowerCase(),
+                                action: "billing_renewal",
+                                requestKey: `cancel-period-end:${subId}`,
+                            }).catch(() => { /* best-effort */ });
+                            cancellationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId));
+                        }
                     }
 
+                    const stillPendingOnChain = isActiveOnChain && !cancellationTxHash;
                     const { error: cancelStateError } = await supabase
                         .from("subscriptions")
-                        .update({
+                        .update(stillPendingOnChain ? {
+                            status: "CANCELED",
+                            revocation_pending: true,
+                            updated_at: new Date().toISOString(),
+                        } : {
                             status: "CANCELED",
                             revocation_pending: false,
                             ...(cancellationTxHash ? { revocation_tx_hash: cancellationTxHash.toLowerCase() } : {}),

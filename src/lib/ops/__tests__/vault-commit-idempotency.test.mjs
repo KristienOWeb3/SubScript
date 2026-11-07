@@ -9,6 +9,7 @@ function source(path) {
 const route = source("src/app/api/user/vault/commit/route.ts");
 const client = source("src/app/dashboard/user/page.tsx");
 const onchain = source("src/lib/vault/onchain.ts");
+const recovery = source("src/lib/vault/commitRecovery.ts");
 const migration = source("supabase/migrations/20260717040000_vault_commit_intents.sql");
 const schema = source("prisma/schema.prisma");
 
@@ -31,7 +32,7 @@ test("the intent is persisted BEFORE submission and binds the full identity", ()
     /* Create happens before requireSponsoredGas and before commitFromEmbedded. */
     const createAt = route.indexOf("prisma.vaultCommitIntent.create");
     const sponsorAt = route.indexOf("await requireSponsoredGas");
-    const commitAt = route.indexOf("await commitFromEmbedded");
+    const commitAt = route.indexOf("advanceAuthorizedVaultCommit(requestId)");
     assert.ok(createAt !== -1 && createAt < sponsorAt && sponsorAt < commitAt,
         "intent persists before sponsorship and custody submission");
 });
@@ -41,7 +42,7 @@ test("an over-balance commit stops before intent, sponsorship, or custody submis
     const rejectAt = route.indexOf('code: "INSUFFICIENT_WALLET_BALANCE"');
     const createAt = route.indexOf("prisma.vaultCommitIntent.create");
     const sponsorAt = route.indexOf("await requireSponsoredGas");
-    const commitAt = route.indexOf("await commitFromEmbedded");
+    const commitAt = route.indexOf("advanceAuthorizedVaultCommit(requestId)");
 
     assert.ok(balanceAt !== -1 && balanceAt < rejectAt && rejectAt < createAt);
     assert.ok(createAt < sponsorAt && sponsorAt < commitAt);
@@ -69,23 +70,23 @@ test("an ambiguous custody response never triggers a second submission", () => {
     /* The custody idempotency key is deterministic on the request id, so the retry submits
        the SAME key and Circle dedupes; the intent stays open with the error recorded. */
     assert.match(route, /code: "COMMIT_AMBIGUOUS"/);
-    assert.match(route, /Retry with the same request id — do not start a new commit/);
+    assert.match(route, /Resume with the same request id/);
     assert.match(route, /deterministicIdempotencyKey\(\s*`req:\$\{requestId\}:vault-commit:/);
     /* A terminal MIRRORED intent returns the original transaction idempotently. */
-    assert.match(route, /intent\.status === "MIRRORED" && intent\.txHash/);
+    assert.match(route, /intent\?\.status === "MIRRORED"/);
     assert.match(route, /resumed: true/);
 });
 
 test("the UI distinguishes submitted, mirrored and failed states durably", () => {
     assert.match(migration, /CHECK \(status IN \('PENDING', 'SUBMITTED', 'MIRRORED', 'FAILED'\)\)/);
-    assert.match(route, /status: "SUBMITTED", txHash: txHash\.toLowerCase\(\)/);
-    assert.match(route, /status: "MIRRORED"/);
+    assert.match(recovery, /status='SUBMITTED',tx_hash=\$2/);
+    assert.match(recovery, /status='MIRRORED'/);
     assert.match(migration, /OLD\.status IN \('MIRRORED', 'FAILED'\)[\s\S]{0,160}terminal state cannot be reopened/);
-    assert.match(route, /intent\.status === "FAILED"/);
+    assert.match(route, /intent\?\.status === "FAILED"/);
     assert.match(route, /code: "COMMIT_FAILED"/);
     /* Read-only resolver for reloads. */
     assert.match(route, /export async function GET/);
-    assert.match(route, /intent\.userAddress !== wallet\.toLowerCase\(\)/);
+    assert.match(recovery, /intent\.userAddress !== wallet\.toLowerCase\(\)/);
 });
 
 test("the browser persists the operation id in localStorage until terminal resolution", () => {

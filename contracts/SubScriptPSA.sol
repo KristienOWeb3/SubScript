@@ -78,6 +78,10 @@ contract SubScriptPSA is ReentrancyGuard {
     /* subId => introductory pricing authorized at creation (cycles == 0 => none) */
     mapping(uint256 => IntroductoryTerms) public introductoryTerms;
 
+    /* Entitlement is distinct from the immutable sequence epoch in nextPayment. Retained after
+       revocation and updated by every caller that settles a sequence, including third parties. */
+    mapping(uint256 => uint256) public paidThrough;
+
     /* ──────────────────────────── Events ─────────────────────────── */
 
     event SubscriptionCreated(
@@ -213,6 +217,26 @@ contract SubScriptPSA is ReentrancyGuard {
         );
     }
 
+    function supportsDeferredSubscriptions() external pure returns (bool) {
+        return true;
+    }
+
+    /* Re-authorize already-paid access without another signup debit. The subscriber chooses the
+       first charge date independently of the recurring interval; no keeper can accelerate it. */
+    function createSubscriptionWithDeferredFirstPayment(
+        address _merchant,
+        uint256 _amount,
+        uint256 _period,
+        uint256 _firstPayment
+    ) external nonReentrant returns (uint256 subId) {
+        if (_firstPayment <= block.timestamp || _firstPayment > block.timestamp + _period) revert InvalidPeriod();
+        subId = _createSubscription(
+            _merchant, _amount, _period, address(paymentToken), address(paymentToken), _amount, 0, 1
+        );
+        subscriptions[subId].nextPayment = _firstPayment;
+        paidThrough[subId] = _firstPayment;
+    }
+
     /*
      * @notice Overloaded function to create a new recurring subscription with token specifications.
      * @dev Cross-token (FX) subscriptions MUST use the overload that takes `_maxPaymentAmount`; this
@@ -290,6 +314,7 @@ contract SubScriptPSA is ReentrancyGuard {
             paymentToken: _paymentToken,
             maxPaymentAmount: _maxPaymentAmount
         });
+        paidThrough[subId] = block.timestamp + _period;
         _indexActiveSubscription(
             subId,
             msg.sender,
@@ -371,6 +396,7 @@ contract SubScriptPSA is ReentrancyGuard {
            price while the promotion lasts, the subscriber-authorized regular price after.
            Zero-amount cycles (free trial) advance the sequence without moving funds. */
         uint256 chargeAmount = chargeAmountFor(_subId, _sequenceId);
+        paidThrough[_subId] = Math.max(paidThrough[_subId], windowEnd);
         if (chargeAmount != 0) {
             _collectAndDistributePayment(
                 _subId,

@@ -12,6 +12,7 @@ import {
     MAX_ACTIVE_MERCHANT_PLANS,
     publishSitePlanFromCheckout,
     SitePlanPublicationError,
+    updateMerchantPlanCatalogEntry,
 } from "@/lib/subscriptions/sitePlans";
 import { formatPromotion, isPromotionLive, type PromotionRow } from "@/lib/subscriptions/promotions";
 
@@ -243,24 +244,13 @@ export async function PATCH(request: Request) {
         const planId = typeof body.planId === "string" ? body.planId : "";
         if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
 
-        const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
-        if (!plan || plan.merchantAddress.toLowerCase() !== wallet.toLowerCase()) {
-            return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+        /* A consumed or canceled targeted subscription offer cannot be reactivated.
+           Enforced under lockMerchantPlanCatalog by updateMerchantPlanCatalogEntry. */
+        if (body.active !== undefined && typeof body.active !== "boolean") {
+            return NextResponse.json({ error: "active must be a boolean" }, { status: 400 });
         }
-        if (body.active === true && plan.targetSubscriber) {
-            const sourceCheckout = plan.sourceCheckoutId
-                ? await prisma.paymentLink.findUnique({ where: { id: plan.sourceCheckoutId } })
-                : null;
-            if (!sourceCheckout?.active || sourceCheckout.status !== "PENDING") {
-                return NextResponse.json({
-                    error: "A consumed or canceled targeted subscription offer cannot be reactivated.",
-                }, { status: 409 });
-            }
-        }
-
-        const data: { active: boolean; description?: string | null; detailsUrl?: string | null } = {
-            active: body.active === undefined ? plan.active : !!body.active,
-        };
+        const data: { active?: boolean; description?: string | null; detailsUrl?: string | null } = {};
+        if (body.active !== undefined) data.active = body.active;
         if (body.description !== undefined) {
             const descriptionResult = normalizeDescription(body.description);
             if (!descriptionResult.ok) return NextResponse.json({ error: descriptionResult.error }, { status: 400 });
@@ -272,12 +262,13 @@ export async function PATCH(request: Request) {
             data.detailsUrl = detailsUrlResult.value;
         }
 
-        const updated = await prisma.merchantPlan.update({
-            where: { id: planId },
-            data,
-        });
+        if (Object.keys(data).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+        const updated = await updateMerchantPlanCatalogEntry(wallet, planId, data);
         return NextResponse.json({ success: true, plan: formatPlan(updated) }, { status: 200 });
     } catch (error: any) {
+        if (error instanceof SitePlanPublicationError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        }
         console.error("Update plan failed:", error);
         return NextResponse.json({ error: error.message || "Failed to update plan" }, { status: 500 });
     }

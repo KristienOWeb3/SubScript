@@ -257,6 +257,27 @@ export function getKeeperSigner(): ethers.Wallet {
 
 export const VAULT_ALLOWANCE_RUNWAY = BigInt(50_000_000); // 50 USDC runway for smooth repeat commits
 
+/** Acceptance-only writes for the durable commit workflow. Confirmation is reconciled separately. */
+export async function submitVaultApproval(wallet: string, amount: bigint, key: string, onSubmitted: (id: string) => Promise<void>) {
+    const custody = await getWalletCustody(wallet);
+    // Only renew exhausted headroom, rather than restoring the full runway on every commit.
+    if (await readUsdcAllowance(wallet, SUBSCRIPT_VAULT_ADDRESS) >= amount) return null;
+    return custody.executeContract({
+        contractAddress: USDC_NATIVE_GAS_ADDRESS, abi: USDC_ABI, functionName: "approve",
+        args: [SUBSCRIPT_VAULT_ADDRESS, amount > VAULT_ALLOWANCE_RUNWAY ? amount : VAULT_ALLOWANCE_RUNWAY],
+        idempotencyKey: deterministicIdempotencyKey(`${key}:approve`), waitForConfirmation: false, onSubmitted,
+    });
+}
+
+export async function submitVaultCommit(wallet: string, merchant: string, amount: bigint, key: string, onSubmitted: (id: string) => Promise<void>) {
+    const custody = await getWalletCustody(wallet);
+    return custody.executeContract({
+        contractAddress: SUBSCRIPT_VAULT_ADDRESS, abi: VAULT_ABI, functionName: "commit",
+        args: [merchant.toLowerCase(), amount], idempotencyKey: key,
+        waitForConfirmation: false, onSubmitted,
+    });
+}
+
 /** Approve USDC to the vault (if needed) then commit `amount` micros for (user → merchant).
     `commit` moves funds, so the caller passes an attempt-scoped idempotencyKey — a retried
     request reusing the same key dedupes at Circle instead of escrowing twice. Top-ups to the
@@ -265,7 +286,7 @@ export const VAULT_ALLOWANCE_RUNWAY = BigInt(50_000_000); // 50 USDC runway for 
 export async function commitFromEmbedded(walletAddress: string, merchant: string, amount: bigint, idempotencyKey?: string, onSubmitted?: (id: string) => Promise<void>) {
     const custody = await getWalletCustody(walletAddress);
     const targetAllowance = amount > VAULT_ALLOWANCE_RUNWAY ? amount : VAULT_ALLOWANCE_RUNWAY;
-    await ensureUsdcAllowance(
+    if (await readUsdcAllowance(walletAddress, SUBSCRIPT_VAULT_ADDRESS) < amount) await ensureUsdcAllowance(
         custody,
         SUBSCRIPT_VAULT_ADDRESS,
         targetAllowance,

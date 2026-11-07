@@ -3,6 +3,7 @@ export function subscriptionUpgradeSnapshot(resolved: {
     current: { subscriptionId: bigint; contractAddress: string; beneficiaryAddress: string | null; minCommitmentUntil: Date | null; planId: string | null; sourceCheckoutId: string | null };
     target: { id: string; merchantAddress: string; amountUsdc: bigint; periodSeconds: bigint };
     onChain: { subscriber: string; merchant: string; amount: bigint; period: bigint; nextPayment: bigint };
+    paidThroughAt?: Date;
     terms: { dueTodayMicros: bigint; unusedCreditMicros: bigint; useIntroductoryTerms: boolean };
 }, quotedAt: Date) {
     return {
@@ -17,6 +18,7 @@ export function subscriptionUpgradeSnapshot(resolved: {
         previous: { subscriber: resolved.onChain.subscriber, merchant: resolved.onChain.merchant, amount: resolved.onChain.amount.toString(), period: resolved.onChain.period.toString(), nextPayment: resolved.onChain.nextPayment.toString() },
         charge: resolved.terms.dueTodayMicros.toString(),
         credit: resolved.terms.unusedCreditMicros.toString(),
+        paidThroughAt: resolved.paidThroughAt?.toISOString() ?? null,
         introductory: resolved.terms.useIntroductoryTerms,
     };
 }

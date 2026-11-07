@@ -28,6 +28,7 @@ import { getAccountKycTier } from "@/lib/kyc/tier";
 import { enqueuePaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { haltGuard } from "@/lib/accountHalt";
+import { UserTransferPolicyError } from "@/lib/payments/userTransferPolicy";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -255,6 +256,10 @@ async function handlePOST(request: Request, { params }: RouteContext) {
                 ? await payPeerLinkFromEmbedded(payer, recipient, amountMicros, custodyIdempotencyKey)
                 : await payMerchantLinkFromEmbedded(payer, recipient, amountMicros, receiptToken, custodyIdempotencyKey);
         } catch (err: any) {
+            if (err instanceof UserTransferPolicyError) {
+                return NextResponse.json({ error: err.message, code: err.code, operationId: err.operationId,
+                    status: err.status === 202 ? "pending" : "failed" }, { status: err.status });
+            }
             const message = err?.message || "Payment could not be signed from your SubScript wallet.";
             /* getWalletCustody throws for wallets with no server-held key (external/browser wallets). */
             const isPreSubmission = /no server-held key|connect a browser wallet/i.test(message);

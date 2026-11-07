@@ -18,14 +18,14 @@ test("cancellation revokes the on-chain authorization immediately, not at the da
        end' stays chargeable until something revokes it on-chain. The revoke now happens inside
        the cancellation request itself. */
     const inPeriodBranch = cancelRoute.slice(
-        cancelRoute.indexOf("if (sub.nextPayment > nowSec)"),
+        cancelRoute.indexOf("if (paidThrough > nowSec)"),
         cancelRoute.indexOf("Period already lapsed"),
     );
     assert.match(inPeriodBranch, /revocationTxHash = await cancelFromEmbedded\(wallet, subscriptionId\);/);
     /* Entitlement is preserved off-chain: the mirror row stays cancel-at-period-end with the
        paid-through date; the on-chain authorization is what dies now. */
     assert.match(inPeriodBranch, /mirrorSubscriptionCancelAtPeriodEnd\(\{/);
-    assert.match(inPeriodBranch, /revocationPending: !revocationTxHash/);
+    assert.match(inPeriodBranch, /revocationPending: sub.isActive && !revocationTxHash/);
     /* Deterministic custody idempotency by subscription id (defined once in the custody lib). */
     const onchain = source("src/lib/subscriptions/onchain.ts");
     assert.match(onchain, /cancelSubscriptionIdempotencyKey\(STANDARD_CONTRACT_ADDRESS, subId\)/);

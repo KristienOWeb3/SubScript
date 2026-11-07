@@ -11,6 +11,7 @@ import { validateBridgeRequest, formatMicros } from "@/lib/cctp/feeEngine";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { notifyWithdrawalStarted } from "@/lib/cctp/notifications";
 import { checkCctpRouteAvailability } from "@/lib/cctp/routeAvailability";
+import { recordOutboundBurnProvider, recoverOutboundCctpBurns } from "@/lib/cctp/outboundRecovery";
 import {
   addressToBytes32,
   ANY_DESTINATION_CALLER,
@@ -152,15 +153,19 @@ async function handlePOST(req: Request) {
     const isSolana = Number(feeInfo.domain) === 5 || feeInfo.chainId === "solana" || isSolanaAddress(recipient);
     const storedRecipient = isSolana ? recipient : recipient.toLowerCase();
 
-    /* Row first: the id is also the idempotency seed, so two identical withdrawals get two distinct
-       Circle transactions. Seeding on wallet+chain+amount made the second one silently return the
-       first one's transaction hash. */
+    const operationId = req.headers.get("x-transaction-operation-id") || req.headers.get("x-request-id");
+    if (!operationId || operationId.length > 160) {
+      return NextResponse.json({error:"A stable operation ID is required.",code:"TRANSACTION_OPERATION_ID_REQUIRED"},{status:400});
+    }
+    const candidateId = deterministicIdempotencyKey(`cctp-withdraw:${userWallet}:${operationId}`);
+    // A new user operation gets a distinct row; retries retain the original row and provider keys.
     const inserted = await pgQuery<{ id: string }>(
       `INSERT INTO cctp_bridge_transfers
-         (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
+         (id, direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
           destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
           net_amount_micros, fee_bps, status)
-       VALUES ('outbound_withdrawal', $1, $2, 'arc', $3, $4, $5, $6, $7, $8, $9, 'pending_burn')
+       VALUES ($10, 'outbound_withdrawal', $1, $2, 'arc', $3, $4, $5, $6, $7, $8, $9, 'pending_burn')
+       ON CONFLICT (id) DO NOTHING
        RETURNING id`,
       [
         userWallet,
@@ -172,11 +177,16 @@ async function handlePOST(req: Request) {
         feeInfo.feeMicros.toString(),
         feeInfo.netMicros.toString(),
         feeInfo.feeBps,
+        candidateId,
       ],
     );
     transferId = inserted[0]?.id ?? null;
     if (!transferId) {
-      return NextResponse.json({ error: "We couldn't start that withdrawal. Try again." }, { status: 500 });
+      const prior = await pgQuery<{id:string;status:string}>(`select id,status from cctp_bridge_transfers where id=$1
+        and user_wallet=$2 and recipient_address=$3 and destination_domain=$4
+        and gross_amount_micros=$5`,[candidateId,userWallet,storedRecipient,feeInfo.domain,feeInfo.grossMicros.toString()]);
+      if (!prior[0]) return NextResponse.json({error:"Operation belongs to different withdrawal terms."},{status:409});
+      return NextResponse.json({success:true,transferId:prior[0].id,status:prior[0].status,resumed:true},{status:202});
     }
 
     /* Step 1: take the fee (if fee > 0). Small, cheap, and reverting here costs the user nothing. */
@@ -216,6 +226,9 @@ async function handlePOST(req: Request) {
       mintRecipientBytes32 = addressToBytes32(recipient);
     }
 
+    const burnRefId = `cctp-withdraw-burn:${transferId}`;
+    await pgQuery(`update cctp_bridge_transfers set burn_ref_id=$2,burn_started_at=now(),
+      burn_mint_recipient=$3,updated_at=now() where id=$1`,[transferId,burnRefId,mintRecipientBytes32]);
     const { txHash: burnTxHash } = await custody.executeContract({
       contractAddress: ARC_TOKEN_MESSENGER_ADDRESS,
       abi: TOKEN_MESSENGER_V2_ABI,
@@ -230,14 +243,13 @@ async function handlePOST(req: Request) {
         FINALITY_THRESHOLD_STANDARD,
       ],
       idempotencyKey: deterministicIdempotencyKey(`cctp-withdraw-burn:${transferId}`),
+      refId: burnRefId,
+      onSubmitted: id => recordOutboundBurnProvider(transferId!,id),
     });
 
-    await pgQuery(
-      `UPDATE cctp_bridge_transfers
-          SET status = 'pending_attestation', burn_tx_hash = $2, updated_at = now()
-        WHERE id = $1`,
-      [transferId, burnTxHash],
-    );
+    // Owner, Arc network, amount, recipient and destination domain must be proved
+    // before a row becomes eligible for attestation/minting.
+    await recoverOutboundCctpBurns();
 
     /* Send withdrawal initiated email & in-app notification */
     await notifyWithdrawalStarted({
@@ -282,6 +294,10 @@ async function handlePOST(req: Request) {
       ).catch(() => undefined);
     }
 
+    if (transferId) {
+      return NextResponse.json({success:true,status:"pending",code:"CCTP_WITHDRAWAL_PENDING",transferId,
+        message:"Your withdrawal is being reconciled. Do not start another withdrawal for this payment."},{status:202});
+    }
     return NextResponse.json({ error: reason }, { status: 400 });
   }
 }

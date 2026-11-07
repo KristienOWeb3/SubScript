@@ -179,6 +179,14 @@ export async function POST(request: Request) {
         const isSimulationOnly = isTestMode && merchantAddress.toLowerCase() === DEMO_MERCHANT_ADDRESS.toLowerCase();
         const settlementChainId = isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID;
 
+        if (!settlementChainId || typeof settlementChainId !== "number" || settlementChainId <= 0) {
+            console.error("CRITICAL: Failed to resolve valid settlement chain ID:", settlementChainId);
+            return NextResponse.json(
+                { error: "Internal configuration error: settlement chain ID is invalid or unavailable" },
+                { status: 500 }
+            );
+        }
+
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
         }

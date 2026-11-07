@@ -27,6 +27,7 @@ import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookD
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { activeSubscriptionContract } from "@/lib/subscriptions/contractBinding";
+import { preservesScheduledEntitlement } from "./entitlement";
 
 /* Every query below is scoped with `.eq("contract_address", activeSubscriptionContract())`.
  *
@@ -75,7 +76,7 @@ export async function healSubscriptionDrift(
 
     const { data: liveSubs, error: liveErr } = await supabase
         .from("subscriptions")
-        .select("subscription_id, merchant_address, status, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, last_settlement_timestamp, updated_at")
+        .select("subscription_id, merchant_address, status, cancel_at_period_end, next_billing_date, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, last_settlement_timestamp, updated_at")
         .eq("contract_address", activeSubscriptionContract())
         .in("status", ["ACTIVE", "PAST_DUE"])
         .order("updated_at", { ascending: true })
@@ -112,6 +113,13 @@ export async function healSubscriptionDrift(
             if (subscriber === ethers.ZeroAddress.toLowerCase()) continue;
 
             if ((sub.status === "ACTIVE" || sub.status === "PAST_DUE") && !isActiveOnChain) {
+                if (preservesScheduledEntitlement(sub)) {
+                    await supabase.from("subscriptions")
+                        .update({ updated_at: new Date().toISOString() })
+                        .eq("contract_address", activeSubscriptionContract())
+                        .eq("subscription_id", subId);
+                    continue;
+                }
                 /* Case 1: cancelled on-chain behind our back — mirror it. */
                 await supabase
                     .from("subscriptions")

@@ -7,6 +7,7 @@ import {
 } from "@/lib/dms/notifications";
 import { accountDisplayName } from "@/lib/identityDisplay";
 import { assertNotBlocked } from "@/lib/dms/blocks";
+import { ProtocolConfig } from "@/lib/payments/config";
 
 type CreateUserPaymentRequestInput = {
     requester: string;
@@ -65,8 +66,10 @@ export async function createUserPaymentRequest({
                     receipt_token,
                     link_kind,
                     sandbox_mode,
-                    state_snapshot
-                ) values ($1, $2, $3, $4, true, $5, $6, $7, $8, $9, $10, 'PEER_REQUEST', false, $11)
+                    state_snapshot,
+                    settlement_chain_id,
+                    simulation_only
+                ) values ($1, $2, $3, $4, true, $5, $6, $7, $8, $9, $10, 'PEER_REQUEST', false, $11, $12, false)
                 returning id`,
                 [
                     requester,
@@ -80,6 +83,7 @@ export async function createUserPaymentRequest({
                     `peer-request:${requester}:${Date.now()}`,
                     generateReceiptId(title),
                     null,
+                    ProtocolConfig.CHAIN_ID,
                 ]
             );
 

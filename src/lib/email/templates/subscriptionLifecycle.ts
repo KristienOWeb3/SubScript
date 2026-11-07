@@ -264,6 +264,7 @@ function cancelledSubject(planName: string | null | undefined, subscriptionId: s
 export function buildSubscriptionCancelScheduledEmail(input: {
     facts: SubscriptionFactSheet;
     revocationTxHash?: string | null;
+    authorizationRevoked?: boolean;
 }): SubscriptionEmailContent {
     const facts = { ...input.facts, txHash: input.revocationTxHash ?? null };
     const accessUntil = toDate(facts.accessUntil);
@@ -276,6 +277,8 @@ export function buildSubscriptionCancelScheduledEmail(input: {
             : "You've already paid for the current period, so your access runs to the end of it and then stops on its own.",
         input.revocationTxHash
             ? "The on-chain authorization to charge you was revoked. The transaction is below."
+            : input.authorizationRevoked
+            ? "The on-chain authorization to charge you is confirmed inactive."
             : "One thing to flag: the on-chain revocation hasn't confirmed yet. We keep retrying until the chain reports the authorization inactive. Our billing has already stopped, so we won't take another payment.",
     ];
 
@@ -305,7 +308,7 @@ export function buildSubscriptionCancelScheduledEmail(input: {
  */
 export function buildSubscriptionCanceledEmail(input: {
     facts: SubscriptionFactSheet;
-    cancellationTxHash: string;
+    cancellationTxHash: string | null;
 }): SubscriptionEmailContent {
     const facts = { ...input.facts, txHash: input.cancellationTxHash };
     const requestedAt = toDate(facts.requestedAt);
@@ -319,7 +322,7 @@ export function buildSubscriptionCanceledEmail(input: {
         paragraphs: [
             "You cancelled this subscription and it's cancelled on-chain. No further payments will be taken.",
             "The period you'd paid for had already ended, so access stops now. There's nothing else you need to do.",
-            "The transaction that cancelled it is below.",
+            input.cancellationTxHash ? "The transaction that cancelled it is below." : "The on-chain authorization is confirmed inactive.",
         ],
         facts: cancellationFacts(facts, {
             accessLabel: "Access",
@@ -327,8 +330,8 @@ export function buildSubscriptionCanceledEmail(input: {
             txLabel: "Cancellation transaction",
         }),
         footnote: KEEP_THIS_EMAIL,
-        cta: { label: "View the cancellation on Arc Explorer", url: explorerTxUrl(input.cancellationTxHash) },
-        idempotencyKey: `sub-canceled:${facts.subscriptionId || "na"}:${input.cancellationTxHash.toLowerCase()}`,
+        cta: input.cancellationTxHash ? { label: "View the cancellation on Arc Explorer", url: explorerTxUrl(input.cancellationTxHash) } : undefined,
+        idempotencyKey: `sub-canceled:${facts.subscriptionId || "na"}:${input.cancellationTxHash?.toLowerCase() || "confirmed-inactive"}`,
     };
 }
 
@@ -462,6 +465,7 @@ export async function sendSubscriptionCancelScheduledEmail(input: {
     subscriberAddress: string;
     facts: SubscriptionFactSheet;
     revocationTxHash?: string | null;
+    authorizationRevoked?: boolean;
 }): Promise<EmailSendOutcome> {
     return sendSubscriptionEmail({
         subscriberAddress: input.subscriberAddress,
@@ -473,7 +477,7 @@ export async function sendSubscriptionCancelScheduledEmail(input: {
 export async function sendSubscriptionCanceledEmail(input: {
     subscriberAddress: string;
     facts: SubscriptionFactSheet;
-    cancellationTxHash: string;
+    cancellationTxHash: string | null;
 }): Promise<EmailSendOutcome> {
     return sendSubscriptionEmail({
         subscriberAddress: input.subscriberAddress,

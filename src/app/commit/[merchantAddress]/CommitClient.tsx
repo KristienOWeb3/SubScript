@@ -1,6 +1,8 @@
 "use client";
 
 import { fetchWithTransactionPin } from "@/lib/client/transactionPin";
+import { commitRequestStorageKey, readCommitIntent, recoverCommitRequest } from "@/lib/vault/commitIntentClient";
+import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -50,6 +52,7 @@ export default function CommitClient({
     const [isRefreshing, setIsRefreshing] = useState(false);
 
     const [isCommitting, setIsCommitting] = useState(false);
+    const [isRecovering, setIsRecovering] = useState(true);
     const [commitError, setCommitError] = useState<string | null>(null);
     const [commitPendingNote, setCommitPendingNote] = useState<string | null>(null);
     const [committedTxHash, setCommittedTxHash] = useState<string | null>(null);
@@ -60,11 +63,12 @@ export default function CommitClient({
     const commitRequestKey = useRef<string | null>(null);
     const commitInFlight = useRef(false);
 
-    const commitStorageKey = `subscript:vault-commit:${merchantAddress.toLowerCase()}`;
+    const commitStorageKey = session?.wallet ? commitRequestStorageKey(session.wallet, merchantAddress, SUBSCRIPT_VAULT_CHAIN_ID) : null;
+    const legacyCommitStorageKey = `subscript:vault-commit:${merchantAddress.toLowerCase()}`;
 
     const readStoredRequestId = () => {
         try {
-            return window.localStorage.getItem(commitStorageKey);
+            return commitStorageKey ? window.localStorage.getItem(commitStorageKey) : null;
         } catch {
             return null;
         }
@@ -72,6 +76,7 @@ export default function CommitClient({
 
     const writeStoredRequestId = (id: string | null) => {
         try {
+            if (!commitStorageKey) return;
             if (id) window.localStorage.setItem(commitStorageKey, id);
             else window.localStorage.removeItem(commitStorageKey);
         } catch {
@@ -103,26 +108,16 @@ export default function CommitClient({
         return () => { cancelled = true; };
     }, []);
 
-    const resolveCommitIntent = async (requestId: string) => {
-        try {
-            const res = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(requestId)}`, { cache: "no-store" });
-            if (!res.ok) return null;
-            return await res.json().catch(() => null);
-        } catch {
-            return null;
-        }
-    };
-
     const pollCommitIntent = async (requestId: string) => {
         /* Resolve the durable commit id quickly after a dropped/ambiguous response. Short, even
            polls make the platform reflect vault confirmation in ~0.5s steps instead of waiting
            through the old 1.5s/3s/5s backoff. */
-        const delaysMs = [0, 500, 500, 750, 1000, 1500, 2000];
+        const delaysMs = [0, 500, 1000, 1500, 2000, 3000, 3000, 3000, 3000];
         let latest: any = null;
         for (const delay of delaysMs) {
             if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-            latest = await resolveCommitIntent(requestId);
-            if (latest?.exists && (latest.status === "MIRRORED" || (latest.status === "SUBMITTED" && latest.txHash) || latest.status === "FAILED")) return latest;
+            latest = await readCommitIntent(requestId);
+            if (latest?.exists && (latest.status === "MIRRORED" || (latest.status === "SUBMITTED" && latest.txHash) || latest.status === "FAILED" || latest.resumeRequired)) return latest;
         }
         return latest;
     };
@@ -147,23 +142,33 @@ export default function CommitClient({
     };
 
     useEffect(() => {
-        const stored = readStoredRequestId();
-        if (!stored) return;
-        commitRequestKey.current = stored;
+        if (!sessionLoaded) return;
+        commitRequestKey.current = null;
+        if (!commitStorageKey) { setIsRecovering(false); return; }
         let cancelled = false;
+        setIsRecovering(true);
         (async () => {
-            const outcome = await pollCommitIntent(stored);
-            if (cancelled) return;
-            if (applyCommitOutcome(outcome)) return;
-            if (outcome?.exists) {
-                setCommitPendingNote("You have a commit to this merchant still being confirmed. Trying again resumes it rather than escrowing twice.");
-            } else {
-                commitRequestKey.current = null;
-                writeStoredRequestId(null);
-            }
+            try {
+                const recovered = await recoverCommitRequest(window.localStorage, commitStorageKey, legacyCommitStorageKey);
+                if (cancelled) return;
+                commitRequestKey.current = recovered.requestId;
+                const outcome = recovered.outcome?.exists && recovered.outcome.status === "PENDING"
+                    ? await pollCommitIntent(recovered.requestId!) : recovered.outcome;
+                if (cancelled || applyCommitOutcome(outcome)) return;
+                if (recovered.requestId) {
+                    setCommitPendingNote(outcome?.resumeRequired
+                        ? "Allowance confirmed. Continue this same commit to authorize the escrow."
+                        : "Your previous commit is still being checked. Continue to resume the same operation.");
+                }
+            } catch {
+                // Storage access failing is also unknown. Disable new submissions until
+                // reload can recover the payment identity, rather than silently forgetting it.
+                if (!cancelled) setCommitError("Unable to recover your previous commit. Reload before submitting.");
+                return;
+            } finally { if (!cancelled) setIsRecovering(false); }
         })();
         return () => { cancelled = true; };
-    }, []);
+    }, [sessionLoaded, commitStorageKey]);
 
     const handleSignIn = () => {
         const next = `/commit/${commitSlug}?amount=${encodeURIComponent(amountUsdc)}`;
@@ -175,7 +180,7 @@ export default function CommitClient({
             setCommitError("Please check the box to acknowledge this merchant is unverified before committing funds.");
             return;
         }
-        if (isCommitting || commitInFlight.current) return;
+        if (isCommitting || isRecovering || !session?.wallet || commitInFlight.current) return;
         commitInFlight.current = true;
         setIsCommitting(true);
         setCommitError(null);
@@ -183,6 +188,8 @@ export default function CommitClient({
 
         commitRequestKey.current ||= crypto.randomUUID();
         const requestId = commitRequestKey.current;
+        // Custody identity survives retries; each continuation receives fresh PIN authorization.
+        const pinOperationId = crypto.randomUUID();
         writeStoredRequestId(requestId);
 
         try {
@@ -193,6 +200,7 @@ export default function CommitClient({
                     headers: {
                         "Content-Type": "application/json",
                         "x-request-id": requestId,
+                        "x-transaction-operation-id": pinOperationId,
                     },
                     body: JSON.stringify({
                         merchantAddress,
@@ -208,6 +216,7 @@ export default function CommitClient({
                         headers: {
                             "Content-Type": "application/json",
                             "x-request-id": requestId,
+                        "x-transaction-operation-id": pinOperationId,
                         },
                         body: JSON.stringify({
                             merchantAddress,
@@ -231,10 +240,10 @@ export default function CommitClient({
                     setAcknowledgedUnverified(true);
                     throw new Error(data.error || "Please review and confirm committing to an unverified merchant.");
                 }
-                if (data.code === "COMMIT_AMBIGUOUS") {
+                if (data.code === "COMMIT_AMBIGUOUS" || data.code === "COMMIT_PENDING" || res.status === 202) {
                     const outcome = await pollCommitIntent(requestId);
                     if (!applyCommitOutcome(outcome)) {
-                        setCommitPendingNote("This commit is still being confirmed on the network. Try again in a moment to resume.");
+                        setCommitPendingNote(outcome?.resumeRequired ? "Allowance confirmed. Continue this same commit to authorize the escrow." : "This commit is still being confirmed. Continue to resume the same operation.");
                     }
                     return;
                 }
@@ -417,10 +426,10 @@ export default function CommitClient({
                                 <button
                                     type="button"
                                     onClick={handleCommit}
-                                    disabled={isCommitting}
+                                    disabled={isCommitting || isRecovering || !!commitError?.includes("Unable to recover")}
                                     className="w-full py-3.5 bg-[#082824] hover:bg-[#0c3933] disabled:opacity-50 text-white font-bold rounded-full text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md"
                                 >
-                                    {isCommitting ? (
+                                    {isCommitting || isRecovering ? (
                                         <><Loader2 className="w-4 h-4 animate-spin text-white" /> Committing to vault…</>
                                     ) : (
                                         <>Authorize {amountUsdc} USDC Commit <ArrowRight className="w-4 h-4" /></>

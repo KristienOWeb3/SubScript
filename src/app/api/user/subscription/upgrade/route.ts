@@ -40,6 +40,7 @@ import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import {
     cancelFromEmbedded,
     getSubscriptionOnChain,
+    getSubscriptionPaidThrough,
     subscribeFromEmbedded,
 } from "@/lib/subscriptions/onchain";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
@@ -84,6 +85,7 @@ type ResolvedUpgrade = {
     onChain: NonNullable<Awaited<ReturnType<typeof getSubscriptionOnChain>>>;
     newAmountMicros: bigint;
     newPeriodSeconds: bigint;
+    paidThroughAt: Date;
     terms: UpgradeCheckoutTerms;
 };
 
@@ -255,13 +257,14 @@ async function resolveUpgrade(
 
     const newAmountMicros = target.amountUsdc;
     const newPeriodSeconds = target.periodSeconds;
+    const paidThroughAt = new Date(Number(await getSubscriptionPaidThrough(fromSubscriptionId, onChain)) * 1000);
     const terms = upgradeCheckoutTerms({
         /* Old terms come from the CHAIN: after a resume the mirror deliberately holds the plan cadence
            while the chain holds the shorter bridge period, and the credit owed is a function of what
            was actually paid for. */
         oldAmountMicros: onChain.amount,
         oldPeriodSeconds: onChain.period,
-        paidThroughAt: new Date(Number(onChain.nextPayment) * 1000),
+        paidThroughAt,
         newAmountMicros,
         newPeriodSeconds,
         now: quotedAt,
@@ -308,6 +311,7 @@ async function resolveUpgrade(
             onChain,
             newAmountMicros,
             newPeriodSeconds,
+            paidThroughAt,
             terms,
         },
     };
@@ -352,7 +356,7 @@ export async function GET(request: Request) {
             return NextResponse.json({ success: true, upgrade: false, ...resolved.body }, { status: 200 });
         }
 
-        const { terms, current, onChain, target } = resolved.value;
+        const { terms, current, paidThroughAt, target } = resolved.value;
         return NextResponse.json({
             success: true,
             upgrade: true,
@@ -363,7 +367,7 @@ export async function GET(request: Request) {
             creditAppliedUsdc: formatUsdcFromMicros(terms.unusedCreditMicros),
             chargedNowUsdc: formatUsdcFromMicros(terms.dueTodayMicros),
             nextChargeAt: terms.firstRegularChargeAt.toISOString(),
-            paidThroughAt: new Date(Number(onChain.nextPayment) * 1000).toISOString(),
+            paidThroughAt: paidThroughAt.toISOString(),
         }, { status: 200 });
     } catch (error: any) {
         console.error("Upgrade preview failed:", error);
@@ -408,7 +412,7 @@ async function handlePOST(request: Request) {
         assertAuthorizedSubscriptionUpgrade(subscriptionUpgradeSnapshot(resolved.value, quotedAt));
 
         const {
-            merchant, target, current, fromSubscriptionId, onChain, newAmountMicros, newPeriodSeconds, terms,
+            merchant, target, current, fromSubscriptionId, onChain, newAmountMicros, newPeriodSeconds, paidThroughAt, terms,
         } = resolved.value;
 
         /* Serialize against the subscribe/resume paths on the SAME key, so a fast double-submit or a
@@ -504,7 +508,7 @@ async function handlePOST(request: Request) {
                 subscriber,
                 amountUsdc: onChain.amount,
                 periodSeconds: onChain.period,
-                nextPaymentSeconds: onChain.nextPayment,
+                nextPaymentSeconds: BigInt(Math.floor(paidThroughAt.getTime() / 1000)),
                 revocationTxHash,
                 revocationPending: false,
             }).catch((mirrorError) =>
@@ -517,7 +521,7 @@ async function handlePOST(request: Request) {
                 context: { fromSubscriptionId, planId: target.id, merchant, subscriber },
                 error: createError,
             }).catch(() => {});
-            const accessUntil = new Date(Number(onChain.nextPayment) * 1000);
+            const accessUntil = paidThroughAt;
             return NextResponse.json({
                 error: `The upgrade didn't complete and you were not charged. Your ${formatUsdcFromMicros(onChain.amount)} USDC plan is still active until ${accessUntil.toISOString().slice(0, 10)} — resume it from your dashboard, then try again.`,
                 code: "UPGRADE_CREATE_FAILED",

@@ -815,8 +815,8 @@ body {
   border-color: transparent !important;
 }
 
-.user-dashboard-content .text-white:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
-.user-dashboard-content [class*="text-white/"]:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
+.user-dashboard-content .text-white:not(.transaction-pin-settings *):not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
+.user-dashboard-content [class*="text-white/"]:not(.transaction-pin-settings *):not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]):not(.spend-timeframe-active):not([data-spend-pill="active"]),
 .user-dashboard-redesign [role="dialog"] .text-white,
 .user-dashboard-redesign [role="dialog"] [class*="text-white/"] {
   color: #000000 !important;

@@ -17,6 +17,7 @@ import { notifyDepositArrived, notifyTransferStalled, notifyWithdrawalArrived } 
 import { formatMicros } from "./feeEngine";
 import { relayCctpMintToSolana } from "./solanaRelayer";
 import { assertArcCctpAvailable } from "./availability";
+import { recoverOutboundCctpBurns } from "./outboundRecovery";
 
 /* A burn is irreversible, so the worker keeps trying for a long time before it gives up. At the
    five-minute keeper cadence this is roughly two days of retries, which comfortably covers Ethereum
@@ -120,6 +121,7 @@ async function markFailed(item: PendingTransferRow, reason: string): Promise<voi
  */
 export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
   assertArcCctpAvailable();
+  await recoverOutboundCctpBurns();
   const result: CctpWorkerResult = { processed: 0, completed: 0, waiting: 0, failed: 0 };
 
   let pending: PendingTransferRow[];

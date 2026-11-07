@@ -15,10 +15,11 @@ async function fixture(realEmails = false){
  const db=new PGlite();await db.exec("create role anon;create role authenticated;create role service_role;create table user_embedded_wallets(wallet_address text,circle_wallet_id text);");
  await db.exec(readFileSync(new URL('../../../../supabase/migrations/20261009160713_settlement_receipt_recovery.sql',import.meta.url),'utf8'));
  await db.query("insert into user_embedded_wallets values($1,'owned-circle-wallet')",[funding]);
- const mails=[], state={receipt:{status:1,logs:[transfer()]},owner:'owned-circle-wallet',providerReads:0};
+ const mails=[], state={receipt:{status:1,logs:[transfer()]},owner:'owned-circle-wallet',providerReads:0,reconciled:[]};
  const modules={"node:crypto":crypto,ethers:{ethers},"@/lib/serverPg":{pgMaybeOne:async(sql,args)=>(await db.query(sql,args)).rows[0]??null,pgQuery:(sql,args)=>db.query(sql,args)},
  "@/lib/circle/devWallets":{getDevWalletsClient:()=>({getTransaction:async()=>{state.providerReads++;return {data:{transaction:{walletId:state.owner,txHash}}};}})},
  "@/lib/vault/onchain":{readProvider:()=>({getNetwork:async()=>state.networkHang ? new Promise(()=>{}) : ({chainId:5042n}),getTransactionReceipt:async()=>state.receiptHang ? new Promise(()=>{}) : state.receipt})},
+ "@/lib/spendingLimits":{reconcileSubmittedSpendingLimitOperation:async(...args)=>state.reconciled.push(args)},
  "@/lib/contracts/constants":{USDC_NATIVE_GAS_ADDRESS:usdc},"@/lib/email/settlementReceipts":{sendSettlementReceipts:async input=>{mails.push(input);if(realEmails)await sendSettlementReceipts(input);}},
  "@/lib/email/core":{resolveRecipient:async()=>null,renderEmailLayout:()=>'',htmlEscape:x=>x},"@/lib/email/outbox":{enqueueEmail:async()=>{},processEmailOutbox:async()=>{state.drains=(state.drains??0)+1;}}};
  const compiled=ts.transpileModule(readFileSync(new URL('../settlementReceiptRecovery.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;

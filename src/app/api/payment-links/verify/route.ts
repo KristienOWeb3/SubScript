@@ -233,7 +233,7 @@ export async function POST(request: Request) {
                         .select("receipt_id")
                         .eq("receipt_id", finalReceiptId)
                         .maybeSingle();
-                    if (existingReceipt) return;
+                    if (!existingReceipt) {
 
                     const { data: paymentRow } = await supabase
                         .from("payment_link_payments")
@@ -271,6 +271,7 @@ export async function POST(request: Request) {
                         console.error("[verify] Missing-receipt repair failed:", repairError.message);
                     } else {
                         console.warn(`[verify] Repaired missing receipt ${finalReceiptId} for settled tx ${normalizedTx}`);
+                    }
                     }
                 } catch (repairError) {
                     console.error("[verify] Missing-receipt repair errored:", repairError);

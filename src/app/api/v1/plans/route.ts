@@ -14,7 +14,7 @@ import { authenticateMerchant, requireEnterpriseAndTier1 } from "@/lib/v1/mercha
 import { sanitizeInput } from "@/utils/security";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { buildSubscribeUrl } from "@/lib/checkoutUrl";
-import { lockMerchantPlanCatalog, MAX_ACTIVE_MERCHANT_PLANS } from "@/lib/subscriptions/sitePlans";
+import { lockMerchantPlanCatalog, MAX_ACTIVE_MERCHANT_PLANS, SitePlanPublicationError, updateMerchantPlanCatalogEntry } from "@/lib/subscriptions/sitePlans";
 import { formatPromotion, isPromotionLive, type PromotionRow } from "@/lib/subscriptions/promotions";
 import { DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
 
@@ -182,7 +182,7 @@ export async function POST(request: Request) {
         const result = await prisma.$transaction(async (tx) => {
             await lockMerchantPlanCatalog(tx, merchantAddress);
             const activeCount = await tx.merchantPlan.count({
-                where: { merchantAddress, active: true },
+                where: { merchantAddress, active: true, targetSubscriber: null },
             });
             if (activeCount >= MAX_ACTIVE_MERCHANT_PLANS) {
                 return { limitReached: true as const };
@@ -236,13 +236,11 @@ export async function PATCH(request: Request) {
         const planId = typeof body.planId === "string" ? body.planId : "";
         if (!planId) return NextResponse.json({ error: "Bad Request: planId is required" }, { status: 400 });
 
-        const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
-        if (!plan || plan.merchantAddress.toLowerCase() !== merchantAddress) {
-            return NextResponse.json({ error: "Plan not found for this merchant" }, { status: 404 });
+        if (body.active !== undefined && typeof body.active !== "boolean") {
+            return NextResponse.json({ error: "active must be a boolean" }, { status: 400 });
         }
-
         const data: { active?: boolean; description?: string | null; detailsUrl?: string | null } = {};
-        if (body.active !== undefined) data.active = !!body.active;
+        if (body.active !== undefined) data.active = body.active;
         if (body.description !== undefined) {
             const descriptionResult = normalizeDescription(body.description);
             if (!descriptionResult.ok) return NextResponse.json({ error: `Bad Request: ${descriptionResult.error}` }, { status: 400 });
@@ -257,10 +255,13 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ error: "Bad Request: nothing to update (active, description, detailsUrl)" }, { status: 400 });
         }
 
-        const updated = await prisma.merchantPlan.update({ where: { id: planId }, data });
+        const updated = await updateMerchantPlanCatalogEntry(merchantAddress, planId, data);
         const promoByPlan = await attachPromotions([updated]);
         return NextResponse.json({ success: true, plan: formatPlan(updated, promoByPlan.get(updated.id) ?? null) }, { status: 200 });
     } catch (error) {
+        if (error instanceof SitePlanPublicationError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        }
         console.error("Plans PATCH error:", error);
         return apiError({ status: 500, code: "internal_error", message: "Internal Server Error. Quote the request_id when reporting this." });
     }
