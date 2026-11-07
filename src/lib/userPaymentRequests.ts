@@ -42,6 +42,13 @@ export async function createUserPaymentRequest({
                 [requester]
             );
 
+            await client.query(
+                `insert into merchants (wallet_address)
+                 values ($1)
+                 on conflict (wallet_address) do nothing`,
+                [requester]
+            );
+
             const aliasResult = await client.query(
                 `select alias
                  from address_aliases

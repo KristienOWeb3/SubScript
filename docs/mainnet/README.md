@@ -461,8 +461,10 @@ node scripts/verify-mainnet-readiness.mjs --json
 
 ### 9.2 Live Progress Log
 
-Settlement Chain ID NOT NULL constraint fix (2026-11-07):
-Resolved `payment_links.settlement_chain_id` NOT NULL violation on user payment link creation (`/dashboard/user` and `/api/user/requests`). `mainnet-sql-cutover.sql` intentionally dropped the testnet default (`5042002`) on `settlement_chain_id` for production readiness. Updated `createUserPaymentRequest()` in `src/lib/userPaymentRequests.ts` to explicitly provide `settlement_chain_id` via `ProtocolConfig.CHAIN_ID` and `simulation_only=false` in the SQL `INSERT`. Added invariant guard in `src/app/api/payment-links/route.ts` validating that `settlementChainId` is a non-null positive integer before database insertion. Verified with automated regression test `userPaymentRequestsSettlement.test.mjs`.
+Settlement Chain ID NOT NULL & Merchant Address Foreign Key constraint fixes (2026-11-07):
+Resolved `payment_links.settlement_chain_id` NOT NULL violation and `payment_links_merchant_address_fkey` foreign key violation on user payment link creation (`/dashboard/user` and `/api/user/requests`):
+1. `mainnet-sql-cutover.sql` intentionally dropped the testnet default (`5042002`) on `settlement_chain_id` for production readiness. Updated `createUserPaymentRequest()` in `src/lib/userPaymentRequests.ts` to explicitly provide `settlement_chain_id` via `ProtocolConfig.CHAIN_ID` and `simulation_only=false` in the SQL `INSERT`. Added invariant guard in `src/app/api/payment-links/route.ts` validating that `settlementChainId` is a non-null positive integer before database insertion.
+2. `payment_links.merchant_address` foreign key strictly references `merchants(wallet_address)`. Added idempotent `insert into merchants (wallet_address) values ($1) on conflict (wallet_address) do nothing` in `createUserPaymentRequest()` alongside the existing `customers` insert so standard user wallets can act as peer link payees without violating the foreign key. Verified with automated regression test `userPaymentRequestsSettlement.test.mjs`.
 
 Merchant/Payment/Commit Audit Remediation & Hardening Complete (2026-10-16):
 All 12 findings from the lead audit report (`MERCHANT_PAYMENTS_COMMIT_AUDIT_2026-10-16.md`, 6 HIGH and 6 MEDIUM) have been analyzed, remediated in code, and verified with dedicated test suites:

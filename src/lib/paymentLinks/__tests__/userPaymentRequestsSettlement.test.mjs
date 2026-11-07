@@ -19,4 +19,9 @@ test("createUserPaymentRequest includes settlement_chain_id and simulation_only 
         content.includes("ProtocolConfig.CHAIN_ID"),
         "userPaymentRequests.ts must pass ProtocolConfig.CHAIN_ID as settlement chain parameter"
     );
+    assert.ok(
+        content.includes("insert into merchants (wallet_address)"),
+        "userPaymentRequests.ts must insert into merchants to satisfy payment_links_merchant_address_fkey"
+    );
 });
+
