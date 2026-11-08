@@ -10,6 +10,7 @@ import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { sweepAndBridge } from "@/lib/cctp/autoBridge";
 import { ARC_CCTP_ENABLED } from "@/lib/contracts/constants";
 import { CCTP_UNAVAILABLE_MESSAGE } from "@/lib/cctp/availability";
+import { withPgClient } from "@/lib/serverPg";
 
 export const maxDuration = 300;
 
@@ -42,22 +43,39 @@ async function handle(request: Request) {
     return NextResponse.json({ error: CCTP_UNAVAILABLE_MESSAGE }, { status: 503 });
   }
 
+  return await withPgClient(async (client) => {
+    const lock = await client.query(
+      "select pg_try_advisory_lock(hashtextextended($1, 0)) as acquired",
+      ["subscript-cctp-keeper"],
+    );
+    if (!lock.rows[0]?.acquired) {
+      return NextResponse.json(
+        { success: true, skipped: "CCTP keeper already running" },
+        { status: 200 },
+      );
+    }
 
-  try {
-    /* Phase 1: relay any pending attestations (existing mints waiting on Circle). */
-    const attestation = await processPendingCctpTransfers();
+    try {
+      /* Phase 1: relay any pending attestations (existing mints waiting on Circle). */
+      const attestation = await processPendingCctpTransfers();
 
-    /* Phase 2: sweep derived deposit addresses and initiate new bridges. */
-    const sweep = await sweepAndBridge().catch((err: any) => {
-      console.error("[api/keeper/cctp] sweep error:", err?.message);
-      return { scanned: 0, bridged: 0, skipped: 0, errors: 1 };
-    });
+      /* Phase 2: sweep derived deposit addresses and initiate new bridges. */
+      const sweep = await sweepAndBridge().catch((err: any) => {
+        console.error("[api/keeper/cctp] sweep error:", err?.message);
+        return { scanned: 0, bridged: 0, skipped: 0, errors: 1 };
+      });
 
-    return NextResponse.json({ success: true, attestation, sweep });
-  } catch (error: any) {
-    console.error("[api/keeper/cctp] error:", error?.message);
-    return NextResponse.json({ error: "Failed to process CCTP transfers" }, { status: 500 });
-  }
+      return NextResponse.json({ success: true, attestation, sweep });
+    } catch (error: any) {
+      console.error("[api/keeper/cctp] error:", error?.message);
+      return NextResponse.json({ error: "Failed to process CCTP transfers" }, { status: 500 });
+    } finally {
+      await client.query(
+        "select pg_advisory_unlock(hashtextextended($1, 0))",
+        ["subscript-cctp-keeper"],
+      );
+    }
+  });
 }
 
 export const GET = handle;

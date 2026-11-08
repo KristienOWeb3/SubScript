@@ -16,7 +16,8 @@ import {
 } from "./circleBridge";
 import { deriveDepositSigner } from "./depositAddresses";
 import { getChainRelayer, resolveRpcUrl } from "./relayer";
-import { calculateBridgeFee, formatMicros, getMinBridgeAmount } from "./feeEngine";
+import { calculateBridgeFee, formatMicros, getMinBridgeAmount, MIN_BRIDGE_AMOUNT_L1_MICROS } from "./feeEngine";
+export { MIN_BRIDGE_AMOUNT_L1_MICROS };
 import { notifyDepositStarted, notifyDepositArrived, notifyAdminsLowGas } from "./notifications";
 import { processPendingCctpTransfers } from "./attestationWorker";
 import { assertArcCctpAvailable } from "./availability";
@@ -412,6 +413,34 @@ async function processIntent(intent: ActiveIntent): Promise<boolean> {
   }
   const burnTxHash = burnReceipt?.hash || burnTx.hash;
   console.log(`[AutoBridge] burn tx: ${burnTxHash} (${formatMicros(feeInfo.netMicros)} USDC net)`);
+
+  /* Step 3b: Return remaining native gas back to the relayer. */
+  try {
+    const relayer = getChainRelayer(origin_chain_id);
+    const remainingGasBal = await provider.getBalance(derived_deposit_address);
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? 20_000_000_000n;
+    const sweepGasLimit = 21_000n;
+    const sweepGasCost = gasPrice * sweepGasLimit;
+
+    if (remainingGasBal > sweepGasCost * 2n) {
+      const sweepAmount = remainingGasBal - (sweepGasCost * 3n / 2n);
+      if (sweepAmount > 0n) {
+        const sweepTx = await signer.sendTransaction({
+          to: relayer.address,
+          value: sweepAmount,
+          gasLimit: sweepGasLimit,
+          maxFeePerGas: feeData.maxFeePerGas ?? undefined,
+          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? undefined,
+          gasPrice: !feeData.maxFeePerGas && feeData.gasPrice ? feeData.gasPrice : undefined,
+        });
+        await sweepTx.wait();
+        console.log(`[AutoBridge] swept ${ethers.formatEther(sweepAmount)} native gas back to relayer (${relayer.address}): ${sweepTx.hash}`);
+      }
+    }
+  } catch (sweepErr: any) {
+    console.warn(`[AutoBridge] gas return sweep skipped or failed on chain ${origin_chain_id}:`, sweepErr?.message);
+  }
 
   /* Find who deposited funds to the derived router address on the origin chain (e.g. 0x123). */
   let originDepositor = user_wallet;

@@ -46,7 +46,7 @@ export default function CommitClient({
     const router = useRouter();
 
     const [merchant] = useState<MerchantInfo | null>(initialMerchant);
-    const amountUsdc = "2.00"; // Fixed Platform Standard Commit
+    const [amountUsdc, setAmountUsdc] = useState<string>(initialAmount || "2.00");
     const [session, setSession] = useState<SessionInfo | null>(null);
     const [sessionLoaded, setSessionLoaded] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);

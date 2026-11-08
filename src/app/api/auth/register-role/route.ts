@@ -117,7 +117,7 @@ export async function POST(request: Request) {
                            legacy soft gate it always was. */
                         const requiredMerchantCode = process.env.MERCHANT_SIGNUP_CODE;
                         const providedMerchantCode = typeof merchantSignupCode === "string" ? merchantSignupCode.trim() : "";
-                        if (requiredMerchantCode && providedMerchantCode && providedMerchantCode !== requiredMerchantCode) {
+                        if (requiredMerchantCode && providedMerchantCode !== requiredMerchantCode) {
                             await client.query("rollback");
                             return {
                                 role: "ENTERPRISE",

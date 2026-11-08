@@ -31,11 +31,13 @@ export async function POST(request: Request) {
 
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-        /* Hard delete merchant accounts marked PENDING_DELETION created or updated before 30 days ago */
+        /* Hard delete merchant accounts marked PENDING_DELETION created or updated before 30 days ago with zero remaining balances */
         const hardDeleted = await prisma.merchant.deleteMany({
             where: {
                 closureStatus: "PENDING_DELETION",
                 updatedAt: { lt: thirtyDaysAgo },
+                availableBalanceUsdc: 0n,
+                reservedBalanceUsdc: 0n,
             },
         });
 

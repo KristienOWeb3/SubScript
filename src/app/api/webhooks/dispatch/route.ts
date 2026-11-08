@@ -13,7 +13,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Internal Server Error: Keeper secret key configuration missing" }, { status: 500 });
         }
         
-        if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
+        const expectedAuth = `Bearer ${expectedSecret}`;
+        const authDigest = crypto.createHash("sha256").update(authHeader || "").digest();
+        const expectedDigest = crypto.createHash("sha256").update(expectedAuth).digest();
+
+        if (!authHeader || !crypto.timingSafeEqual(authDigest, expectedDigest)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

@@ -18,10 +18,10 @@ const EVM_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
 
 describe("CCTP bridge fee engine", () => {
   it("charges 1.0% on the Ethereum L1 tier", () => {
-    const fee = calculateBridgeFee(100_000_000n, 11155111, "inbound_deposit");
-    assert.equal(fee.grossMicros, 100_000_000n);
-    assert.equal(fee.feeMicros, 1_000_000n);
-    assert.equal(fee.netMicros, 99_000_000n);
+    const fee = calculateBridgeFee(300_000_000n, 11155111, "inbound_deposit");
+    assert.equal(fee.grossMicros, 300_000_000n);
+    assert.equal(fee.feeMicros, 3_000_000n);
+    assert.equal(fee.netMicros, 297_000_000n);
     assert.equal(fee.feeBps, 100);
     assert.equal(fee.feePercentage, "1.0%");
     assert.equal(fee.domain, 0);
@@ -41,7 +41,11 @@ describe("CCTP bridge fee engine", () => {
      identity with a CHECK constraint. */
   it("always splits gross into exactly fee plus net", () => {
     for (const chainId of Object.keys(CCTP_CONFIG).map(Number)) {
-      for (const amount of [10_000_000n, 10_000_001n, 33_333_333n, 999_999_999n]) {
+      const isL1 = CCTP_CONFIG[chainId]?.isL1;
+      const amounts = isL1
+        ? [250_000_000n, 250_000_001n, 333_333_333n, 999_999_999n]
+        : [10_000_000n, 10_000_001n, 33_333_333n, 999_999_999n];
+      for (const amount of amounts) {
         const fee = calculateBridgeFee(amount, chainId, "outbound_withdrawal");
         assert.equal(fee.feeMicros + fee.netMicros, fee.grossMicros, `chain ${chainId} amount ${amount}`);
         assert.ok(fee.netMicros > 0n);
@@ -62,9 +66,9 @@ describe("CCTP bridge fee engine", () => {
     assert.throws(() => calculateBridgeFee(0n, 84532, "inbound_deposit"), /smallest amount/i);
     /* L2 minimum is 1 USDC */
     assert.equal(calculateBridgeFee(MIN_BRIDGE_AMOUNT_MICROS, 84532, "inbound_deposit").feeMicros, 5_000n);
-    /* Ethereum L1 minimum is 10 USDC */
-    assert.throws(() => calculateBridgeFee(9_999_999n, 11155111, "inbound_deposit"), /smallest amount/i);
-    assert.equal(calculateBridgeFee(10_000_000n, 11155111, "inbound_deposit").feeMicros, 100_000n);
+    /* Ethereum L1 minimum is 250 USDC */
+    assert.throws(() => calculateBridgeFee(249_999_999n, 11155111, "inbound_deposit"), /smallest amount/i);
+    assert.equal(calculateBridgeFee(250_000_000n, 11155111, "inbound_deposit").feeMicros, 2_500_000n);
   });
 
   it("rejects amounts over the CCTP per-burn cap", () => {

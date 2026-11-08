@@ -4,10 +4,10 @@ import { MIN_BRIDGE_AMOUNT_MICROS, MIN_BRIDGE_AMOUNT_L1_MICROS, MIN_BRIDGE_AMOUN
 import { ARC_CCTP_DOMAIN_ID, CCTP_CONFIG } from "../../contracts/constants.ts";
 
 describe("CCTP Auto-Bridge Configurations", () => {
-  it("enforces a minimum bridge amount of 10 USDC on Ethereum L1 and 1 USDC on L2s", () => {
-    assert.equal(MIN_BRIDGE_AMOUNT_L1_MICROS, 10_000_000n);
+  it("enforces a minimum bridge amount of 250 USDC on Ethereum L1 and 1 USDC on L2s", () => {
+    assert.equal(MIN_BRIDGE_AMOUNT_L1_MICROS, 250_000_000n);
     assert.equal(MIN_BRIDGE_AMOUNT_L2_MICROS, 1_000_000n);
-    assert.equal(getMinBridgeAmount(11155111), 10_000_000n);
+    assert.equal(getMinBridgeAmount(11155111), 250_000_000n);
     assert.equal(getMinBridgeAmount(84532), 1_000_000n);
     assert.equal(getMinBridgeAmount(421614), 1_000_000n);
   });

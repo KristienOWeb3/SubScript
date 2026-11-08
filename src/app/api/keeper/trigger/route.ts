@@ -3,22 +3,73 @@ import { getSessionWallet } from "@/lib/auth";
 import { ethers } from "ethers";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { getAccountKycTier } from "@/lib/kyc/tier";
+import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
+import crypto from "crypto";
 
 export const maxDuration = 300;
 
+function isAuthorizedKeeper(request: Request): boolean {
+    const authHeader = request.headers.get("Authorization") || "";
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const presented = match?.[1] || "";
+    const configured = [process.env.KEEPER_SECRET, process.env.CRON_SECRET]
+        .filter((value): value is string => Boolean(value));
+
+    if (presented.length === 0 || configured.length === 0) return false;
+
+    const digest = (val: string) => crypto.createHash("sha256").update(val, "utf8").digest();
+    const providedDigest = digest(presented);
+
+    return configured.some((value) => {
+        try {
+            return crypto.timingSafeEqual(providedDigest, digest(value));
+        } catch {
+            return false;
+        }
+    });
+}
+
 export async function POST(request: Request) {
     try {
-        const walletAddress = await getSessionWallet(request.headers);
-        if (!walletAddress) {
-            return NextResponse.json({ error: "Unauthorized: Connect your wallet first." }, { status: 401 });
+        const isKeeper = isAuthorizedKeeper(request);
+        let walletAddress: string | null = null;
+
+        if (isKeeper) {
+            try {
+                const body = await request.clone().json().catch(() => null);
+                if (body && typeof body.walletAddress === "string") {
+                    walletAddress = body.walletAddress;
+                }
+            } catch {
+                // Optional body parsing for keeper
+            }
+        } else {
+            walletAddress = await getSessionWallet(request.headers);
+            if (!walletAddress) {
+                return NextResponse.json({ error: "Unauthorized: Missing valid session or bearer secret." }, { status: 401 });
+            }
+
+            /* Verify KYC before creating a provider or signer so Tier 0 requests cannot reach RPC side effects. */
+            const tierInfo = await getAccountKycTier(walletAddress);
+            if (!tierInfo.isTier1) {
+                return NextResponse.json({
+                    error: "Forbidden: Manual keeper execution requires Tier 1 verification (link a verified email)."
+                }, { status: 403 });
+            }
         }
 
-        /* Verify KYC before creating a provider or signer so Tier 0 requests cannot reach RPC side effects. */
-        const tierInfo = await getAccountKycTier(walletAddress);
-        if (!tierInfo.isTier1) {
-            return NextResponse.json({
-                error: "Forbidden: Manual keeper execution requires Tier 1 verification (link a verified email)."
-            }, { status: 403 });
+        const rateLimitKey = isKeeper ? "keeper-cron" : (walletAddress ? walletAddress.toLowerCase() : "anonymous");
+        const rateLimit = await consumeDistributedRateLimit({
+            scope: "keeper-trigger",
+            key: rateLimitKey,
+            limit: isKeeper ? 30 : 5,
+            windowSeconds: 60,
+        });
+        if (!rateLimit.ok) {
+            return NextResponse.json(
+                { error: "Too many keeper requests. Please try again later." },
+                { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+            );
         }
 
         const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
@@ -39,10 +90,12 @@ export async function POST(request: Request) {
         ];
         const standardContract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, standardABI, adminWallet);
 
-        /* Resolve IDs from the merchant-indexed event so work scales with this merchant, not the protocol. */
-        const merchantLower = walletAddress.toLowerCase();
-        const createdFilter = standardContract.filters.SubscriptionCreated(null, null, walletAddress);
-        const createdLogs = await standardContract.queryFilter(createdFilter);
+        /* Resolve IDs from the merchant-indexed event bounded by recent block range so work scales efficiently */
+        const currentBlock = await provider.getBlockNumber();
+        const fromBlock = Math.max(0, currentBlock - 10000);
+        const merchantLower = walletAddress ? walletAddress.toLowerCase() : null;
+        const createdFilter = standardContract.filters.SubscriptionCreated(null, null, walletAddress || null);
+        const createdLogs = await standardContract.queryFilter(createdFilter, fromBlock, currentBlock);
         const subIds = Array.from(new Set(
             createdLogs
                 .map((log) => (log as ethers.EventLog).args?.subId)
@@ -55,13 +108,19 @@ export async function POST(request: Request) {
         for (const i of subIds) {
             try {
                 const sub = await standardContract.subscriptions(i);
-                if (sub.merchant.toLowerCase() === merchantLower && sub.isActive) {
-                    let sequenceId = 1;
-                    while (await standardContract.isSequenceExecuted(i, sequenceId)) sequenceId++;
-                    if (await standardContract.isPaymentDue(i, sequenceId)) {
-                        const tx = await standardContract.executePayment(i, sequenceId);
-                        await tx.wait();
-                        executedSubs.push({ subId: `sub_${i}`, txHash: tx.hash });
+                const period = Number(sub.period);
+                const nextPayment = Number(sub.nextPayment);
+                const isTargetMerchant = !merchantLower || sub.merchant.toLowerCase() === merchantLower;
+
+                if (isTargetMerchant && sub.isActive && period > 0) {
+                    const now = Math.floor(Date.now() / 1000);
+                    if (now >= nextPayment) {
+                        const seq = Math.floor((now - nextPayment) / period) + 1;
+                        if (!await standardContract.isSequenceExecuted(i, seq) && await standardContract.isPaymentDue(i, seq)) {
+                            const tx = await standardContract.executePayment(i, seq);
+                            await tx.wait();
+                            executedSubs.push({ subId: `sub_${i}`, sequenceId: seq, txHash: tx.hash });
+                        }
                     }
                 }
             } catch (err: unknown) {

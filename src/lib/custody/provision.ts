@@ -72,7 +72,7 @@ export async function provisionEmbeddedWallet(opts: { refId: string }): Promise<
             });
             return { address: wallet.address, encryptedPrivateKey: null, circleWalletId: wallet.walletId };
         } catch (circleErr: any) {
-            if (process.env.NODE_ENV !== "production" || /invalid credentials/i.test(circleErr?.message || "")) {
+            if (process.env.NODE_ENV !== "production") {
                 console.warn("[custody] Upstream Circle credentials error in local/sandbox, falling back to local dev wallet:", circleErr?.message);
                 const devAddress = "0x" + createHash("sha256").update("dev_wallet_" + opts.refId).digest("hex").slice(0, 40).toLowerCase();
                 const devWalletId = `dev-wallet-${opts.refId.slice(0, 16)}`;

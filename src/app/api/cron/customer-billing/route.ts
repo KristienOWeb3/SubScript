@@ -49,6 +49,7 @@ import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { activeSubscriptionContract } from "@/lib/subscriptions/contractBinding";
+import { withPgClient } from "@/lib/serverPg";
 
 export const maxDuration = 300;
 
@@ -205,7 +206,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        /* 2. Supabase */
+        return await withPgClient(async (client) => {
+            const lock = await client.query(
+                "select pg_try_advisory_lock(hashtextextended($1, 0)) as acquired",
+                ["subscript-customer-billing"],
+            );
+            if (!lock.rows[0]?.acquired) {
+                return NextResponse.json(
+                    { success: true, skipped: "Customer billing already running" },
+                    { status: 200 },
+                );
+            }
+
+            try {
+                /* 2. Supabase */
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         if (!supabaseUrl || !supabaseServiceKey) {
@@ -946,6 +960,13 @@ export async function POST(request: Request) {
             { success: !hadHardError, processed: results.length, results, cancellations: cancelResults },
             { status: hadHardError ? 500 : 200 }
         );
+            } finally {
+                await client.query(
+                    "select pg_advisory_unlock(hashtextextended($1, 0))",
+                    ["subscript-customer-billing"],
+                );
+            }
+        });
     } catch (error: any) {
         console.error("Customer billing keeper error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });

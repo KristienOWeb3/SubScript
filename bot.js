@@ -30,6 +30,11 @@ const CONTRACT_ABI = [
   "event MerchantPayoutRerouted(address indexed merchant, address indexed oldDestination, address indexed newDestination)"
 ];
 
+const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)"
+];
+
 // Helper to trigger webhook dispatch endpoint
 async function triggerWebhook(merchant, eventName, data) {
   try {
@@ -201,6 +206,27 @@ async function startKeeper() {
         try {
           const isDue = isActive && await protocol.isPaymentDue(i, sequenceId);
           if (isDue) {
+            const subscriber = sub[0];
+            const amount = BigInt(sub[2]);
+            const settlementToken = sub[6];
+            const paymentToken = sub[7];
+            const tokenAddress = (paymentToken && paymentToken !== ethers.ZeroAddress)
+              ? paymentToken
+              : (settlementToken && settlementToken !== ethers.ZeroAddress ? settlementToken : (process.env.USDC_ADDRESS || "0x3600000000000000000000000000000000000000"));
+
+            const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+            const [balance, allowance] = await Promise.all([
+              tokenContract.balanceOf(subscriber),
+              tokenContract.allowance(subscriber, CONTRACT_ADDRESS),
+            ]);
+
+            if (BigInt(balance) < amount || BigInt(allowance) < amount) {
+              console.warn(
+                `⚠️ [Keeper Backoff] Sub #${i} subscriber ${subscriber} insufficient balance (${ethers.formatUnits(balance, 6)}) or allowance (${ethers.formatUnits(allowance, 6)}) for due amount ${ethers.formatUnits(amount, 6)}. Skipping on-chain execution.`
+              );
+              continue;
+            }
+
             console.log(`⚡ Sub #${i} sequence ${sequenceId} is DUE! Executing payment...`);
             const tx = await protocol.executePayment(i, sequenceId);
             console.log(`   Tx Sent: ${tx.hash}`);

@@ -392,7 +392,7 @@ describe("SubScript", function () {
 
   /* MODIFY SUBSCRIPTION */
   describe("modifySubscription", function () {
-    it("should allow subscriber to modify amount and period", async function () {
+    it("should allow subscriber to modify amount", async function () {
       const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
 
@@ -401,17 +401,30 @@ describe("SubScript", function () {
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
       const newAmount = ethers.parseUnits("25", 6);
-      const newPeriod = 7 * 24 * 60 * 60; /* 7 days */
 
       await expect(
-        subScript.connect(subscriber).modifySubscription(1, newAmount, newPeriod)
+        subScript.connect(subscriber).modifySubscription(1, newAmount, PERIOD)
       )
         .to.emit(subScript, "SubscriptionModified")
-        .withArgs(1, newAmount, newPeriod);
+        .withArgs(1, newAmount, PERIOD);
 
       const sub = await subScript.subscriptions(1);
       expect(sub.amount).to.equal(newAmount);
-      expect(sub.period).to.equal(newPeriod);
+      expect(sub.period).to.equal(PERIOD);
+    });
+
+    it("should revert if period is modified", async function () {
+      const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+
+      await subScript
+        .connect(subscriber)
+        .createSubscription(merchant.address, AMOUNT, PERIOD);
+
+      const newPeriod = 7 * 24 * 60 * 60; /* 7 days */
+      await expect(
+        subScript.connect(subscriber).modifySubscription(1, AMOUNT, newPeriod)
+      ).to.be.revertedWith("Period modification disabled");
     });
 
     it("should revert if caller is not the subscriber", async function () {
@@ -471,12 +484,10 @@ describe("SubScript", function () {
 
       await expect(
         subScript.connect(subscriber).modifySubscription(1, AMOUNT, PERIOD * 2)
-      )
-        .to.be.revertedWithCustomError(subScript, "PlanReductionNotAllowed")
-        .withArgs(1);
+      ).to.be.revertedWith("Period modification disabled");
     });
 
-    it("should allow a different billing interval at the same recurring rate", async function () {
+    it("should reject changing billing interval", async function () {
       const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
 
@@ -486,9 +497,7 @@ describe("SubScript", function () {
 
       await expect(
         subScript.connect(subscriber).modifySubscription(1, AMOUNT * 2n, PERIOD * 2)
-      )
-        .to.emit(subScript, "SubscriptionModified")
-        .withArgs(1, AMOUNT * 2n, PERIOD * 2);
+      ).to.be.revertedWith("Period modification disabled");
     });
   });
 

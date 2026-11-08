@@ -97,6 +97,11 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     mapping(address => mapping(address => uint256)) public cycleNonce;
     mapping(address => mapping(address => uint256)) public lastDisputedCycle;
 
+    /*
+     * V5 (append-only): user pull-payment refund ledger for excess commit refunds.
+     */
+    mapping(address => uint256) public userRefundable;
+
     uint256 public constant PROTOCOL_FEE_BPS = 100; // 1%
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
@@ -134,6 +139,8 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     );
     event DisputeRaised(address indexed user, address indexed merchant);
     event DisputeResolved(address indexed user, address indexed merchant, bool settlementReopened);
+    event RefundCredited(address indexed user, uint256 amount);
+    event RefundClaimed(address indexed user, uint256 amount);
 
     /* ──────────────────────────── Init ───────────────────────────── */
 
@@ -324,11 +331,25 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         merchantClaimable[merchant] += drawn;
 
         if (refunded > 0) {
-            paymentToken.safeTransfer(user, refunded);
+            userRefundable[user] += refunded;
+            emit RefundCredited(user, refunded);
         }
 
         emit UsageDrawn(user, merchant, amount, drawn, 0, false);
         emit CycleSettled(user, merchant, amount, drawn, refunded);
+    }
+
+    /* ──────────────────────────── User refund ────────────────────── */
+
+    /**
+     * @notice User claims accrued excess commit refunds.
+     */
+    function claimRefund() external nonReentrant {
+        uint256 amount = userRefundable[msg.sender];
+        require(amount > 0, "nothing to claim");
+        userRefundable[msg.sender] = 0;
+        paymentToken.safeTransfer(msg.sender, amount);
+        emit RefundClaimed(msg.sender, amount);
     }
 
     /* ──────────────────────────── Merchant settlement ────────────── */
@@ -390,4 +411,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
 
     function pause() external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
+
+    /* Reserved storage gap for upgradeability */
+    uint256[44] private __gap;
 }

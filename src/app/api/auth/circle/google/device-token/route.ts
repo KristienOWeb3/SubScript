@@ -19,7 +19,7 @@ export async function POST(request: Request) {
             const tokens = await createSocialLoginDeviceToken(deviceId);
             return NextResponse.json(tokens, { status: 200 });
         } catch (circleErr: any) {
-            if (process.env.NODE_ENV !== "production" || /invalid credentials/i.test(circleErr?.message || "")) {
+            if (process.env.NODE_ENV !== "production") {
                 console.warn("[device-token] Upstream Circle credentials failed, using fallback device tokens for local dev:", circleErr?.message);
                 return NextResponse.json({
                     deviceToken: `dev-dt-${deviceId}`,

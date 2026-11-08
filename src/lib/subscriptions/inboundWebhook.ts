@@ -1,5 +1,8 @@
 import { withPgClient } from "@/lib/serverPg";
-import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS as RETIRED_PLAN_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import {
+    STANDARD_CONTRACT_ADDRESS,
+    PREMIUM_PAYMENT_RECIPIENT_ADDRESS as RETIRED_PLAN_RECIPIENT_ADDRESS,
+} from "@/lib/contracts/constants";
 import { ALL_EVENT_TYPES, type EventType } from "@/lib/events/types";
 
 type WebhookData = Record<string, unknown>;
@@ -172,14 +175,16 @@ export async function processInboundSubscriptionWebhook(input: {
 
             let exitSurveySubId: number | null = null;
             if (cleanSubId !== null) {
+                const contractAddress = STANDARD_CONTRACT_ADDRESS.toLowerCase();
                 const existingResult = await client.query(
                     `select merchant_address, subscriber, current_nonce, last_settlement_timestamp,
                             next_billing_date, billing_interval_seconds, amount_cap_usdc,
                             payment_tx_hash, status, kind, tier
                        from public.subscriptions
                       where subscription_id = $1
+                        and contract_address = $2
                       for update`,
-                    [cleanSubId],
+                    [cleanSubId, contractAddress],
                 );
                 const existing = (existingResult.rows[0] as ExistingSubscription | undefined) ?? null;
                 const incomingSubscriber = nullableString(input.data.subscriber)?.toLowerCase() ?? null;
@@ -236,6 +241,7 @@ export async function processInboundSubscriptionWebhook(input: {
 
                 await client.query(
                     `insert into public.subscriptions (
+                        contract_address,
                         subscription_id,
                         merchant_address,
                         subscriber,
@@ -249,8 +255,8 @@ export async function processInboundSubscriptionWebhook(input: {
                         kind,
                         tier,
                         updated_at
-                    ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
-                    on conflict (subscription_id) do update set
+                    ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
+                    on conflict (contract_address, subscription_id) do update set
                         merchant_address = excluded.merchant_address,
                         subscriber = excluded.subscriber,
                         current_nonce = excluded.current_nonce,
@@ -264,6 +270,7 @@ export async function processInboundSubscriptionWebhook(input: {
                         tier = excluded.tier,
                         updated_at = now()`,
                     [
+                        contractAddress,
                         cleanSubId,
                         canonicalOwner,
                         subscriber,

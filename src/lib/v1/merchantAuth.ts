@@ -65,9 +65,12 @@ export async function requireEnterpriseAndTier1(
     mode?: "test" | "live" | "session"
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
     const role = await resolveAccountRoleWithBackfill(merchantAddress);
+    if (role !== "ENTERPRISE") {
+        return { ok: false, status: 403, error: "Forbidden: This action requires an approved ENTERPRISE merchant account." };
+    }
     await prisma.merchant.upsert({
         where: { walletAddress: merchantAddress.toLowerCase() },
-        create: { walletAddress: merchantAddress.toLowerCase(), tier: role === "ENTERPRISE" ? "ENTERPRISE" : "FREE" },
+        create: { walletAddress: merchantAddress.toLowerCase(), tier: "ENTERPRISE" },
         update: {},
     }).catch(() => null);
     const isTier1 = await checkMerchantTier1(merchantAddress);

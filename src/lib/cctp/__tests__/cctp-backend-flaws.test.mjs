@@ -34,10 +34,10 @@ describe("CCTP Deposit Backend Edge Cases & Flaw Fixes", () => {
 
   it("verifies L1 and L2 fee and minimum amount tiers", () => {
     // Ethereum Sepolia (L1)
-    const l1Fee = calculateBridgeFee(10_000_000n, 11155111, "inbound_deposit");
+    const l1Fee = calculateBridgeFee(250_000_000n, 11155111, "inbound_deposit");
     assert.equal(l1Fee.feeBps, 100);
-    assert.equal(l1Fee.feeMicros, 100_000n);
-    assert.equal(l1Fee.netMicros, 9_900_000n);
+    assert.equal(l1Fee.feeMicros, 2_500_000n);
+    assert.equal(l1Fee.netMicros, 247_500_000n);
     assert.equal(l1Fee.grossMicros, l1Fee.feeMicros + l1Fee.netMicros);
     assert.equal(getMinBridgeAmount(11155111), MIN_BRIDGE_AMOUNT_L1_MICROS);
 

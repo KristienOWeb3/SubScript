@@ -11,19 +11,23 @@ async function runKeeper() {
   
   // 1. Check if subscription is due
   const sub = await protocol.subscriptions(1);
-  let sequenceId = 1;
-  while (await protocol.isSequenceExecuted(1, sequenceId)) {
-    sequenceId++;
-  }
+  const period = Number(sub.period ?? sub[3]);
+  const nextPayment = Number(sub.nextPayment ?? sub[4]);
+  const now = Math.floor(Date.now() / 1000);
 
-  if (sub.isActive && await protocol.isPaymentDue(1, sequenceId)) {
-     console.log(`Payment due for sequence ${sequenceId}. Triggering transaction...`);
-     // 2. The Bot pays the gas to move the tokens
-     const tx = await protocol.executePayment(1, sequenceId);
-     await tx.wait();
-     console.log("Success! Money moved.");
+  if (period > 0 && now >= nextPayment) {
+    const seq = Math.floor((now - nextPayment) / period) + 1;
+    if (sub.isActive && !await protocol.isSequenceExecuted(1, seq) && await protocol.isPaymentDue(1, seq)) {
+      console.log(`Payment due for sequence ${seq}. Triggering transaction...`);
+      // 2. The Bot pays the gas to move the tokens
+      const tx = await protocol.executePayment(1, seq);
+      await tx.wait();
+      console.log("Success! Money moved.");
+    } else {
+      console.log("Not due yet. Sleeping...");
+    }
   } else {
-     console.log("Not due yet. Sleeping...");
+    console.log("Not due yet. Sleeping...");
   }
 }
 

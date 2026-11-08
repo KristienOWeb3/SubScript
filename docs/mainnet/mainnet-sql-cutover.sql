@@ -213,7 +213,11 @@ DECLARE
         'subscription_billing_claims',
         'circle_wallet_provisioning',
         'kyc_verifications',
-        'kyc_verification_events'
+        'kyc_verification_events',
+        'cctp_bridge_transfers',
+        'cctp_deposit_intents',
+        'support_tickets',
+        'support_ticket_messages'
     ];
 BEGIN
     FOREACH tbl IN ARRAY critical_tables
