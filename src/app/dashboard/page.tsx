@@ -537,6 +537,12 @@ export default function DashboardPage() {
                 const confData = await confidentialityRes.json();
                 setShieldedEnabled(!!confData.shielded_payouts_enabled);
                 setIsViewKeyRegistered(!!confData.view_key_hash);
+                if (typeof window !== "undefined" && address) {
+                    const cachedKey = sessionStorage.getItem(`subscript_viewkey_${address.toLowerCase()}`);
+                    if (cachedKey) {
+                        setViewKey(cachedKey);
+                    }
+                }
             } catch (error) {
                 console.error("Error loading confidentiality settings:", error);
             }
@@ -4456,36 +4462,66 @@ Please complete the following implementation tasks:
                                     <div>
                                         <div className="flex flex-wrap items-center gap-2 mb-1">
                                             <h4 className="text-xs font-semibold text-black">Governed View Key</h4>
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                                                Preview Only
-                                            </span>
+                                            {isViewKeyRegistered ? (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                    Active &amp; Registered
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300">
+                                                    Ready to Register
+                                                </span>
+                                            )}
                                         </div>
                                         <p className="text-[10px] text-black/60 leading-normal font-sans">
-                                            Governed View Key registration will become active once Arc&apos;s Privacy Sector (APS) goes live. Key generation is disabled during preview mode.
+                                            {isViewKeyRegistered
+                                                ? "Your Governed View Key is registered on-chain via commit-reveal. Your batch payout history is indexed under this key."
+                                                : "Generate and register a 32-byte Governed View Key. Commit-reveal prevents front-running and indexes your payout history on-chain."}
                                         </p>
                                     </div>
 
                                     <div className="flex flex-col @[640px]/merchant:flex-row gap-3">
                                         <div className="relative min-w-0 flex-1">
                                             <input
-                                                type="text"
-                                                value=""
-                                                readOnly
-                                                disabled
-                                                placeholder="View Key generation activates with Arc Privacy Sector"
-                                                className="w-full bg-white/50 border border-black/15 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-black/50 focus:outline-none placeholder:text-black/30 cursor-not-allowed"
+                                                type={showViewKey ? "text" : "password"}
+                                                value={viewKey}
+                                                onChange={(e) => {
+                                                    setViewKey(e.target.value.trim());
+                                                    setIsViewKeyRegistered(false);
+                                                }}
+                                                placeholder="Click 'Generate Key' or paste a 32-byte hex key (0x...)"
+                                                className="w-full bg-white/70 border border-black/15 rounded-xl pl-4 pr-20 py-3 text-xs font-mono text-black focus:outline-none placeholder:text-black/40"
                                             />
+                                            {viewKey && (
+                                                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowViewKey(!showViewKey)}
+                                                        className="p-1.5 text-black/40 hover:text-black/80 transition"
+                                                        title={showViewKey ? "Hide Key" : "Show Key"}
+                                                    >
+                                                        {showViewKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleCopyViewKey}
+                                                        className="p-1.5 text-black/40 hover:text-black/80 transition"
+                                                        title="Copy Key"
+                                                    >
+                                                        {copiedViewKey ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="flex items-center gap-2">
                                             <button
                                                 type="button"
-                                                disabled
-                                                aria-disabled="true"
-                                                className="px-5 py-3 border text-xs font-semibold rounded-full transition-all flex items-center gap-2 bg-black/10 text-black/40 border-transparent cursor-not-allowed opacity-60"
+                                                onClick={handleGenerateViewKey}
+                                                disabled={isSavingConfidentiality}
+                                                className="px-5 py-3 border text-xs font-semibold rounded-full transition-all flex items-center gap-2 bg-white border-black/15 text-[#082824] hover:bg-black/5"
                                             >
                                                 <Key className="w-3.5 h-3.5" />
-                                                Generate (Unavailable)
+                                                Generate Key
                                             </button>
                                         </div>
                                     </div>
@@ -4501,7 +4537,7 @@ Please complete the following implementation tasks:
                                                 className="px-5 py-2.5 font-semibold rounded-full text-xs transition-all flex items-center gap-2 bg-[#8AB4DB] text-[#082824] hover:bg-[#7aa7d0]"
                                             >
                                                 {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                                Register Key
+                                                Register Key On-Chain
                                             </button>
                                         </div>
                                     )}

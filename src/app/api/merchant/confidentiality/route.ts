@@ -81,15 +81,22 @@ export async function POST(request: Request) {
 
         /* Build update object */
         const updateObj: any = { wallet_address: normalizedUser };
+        let previewNotice: string | null = null;
         if (shieldedPayoutsEnabled !== undefined) {
             if (shieldedPayoutsEnabled === true) {
-                return NextResponse.json({
-                    error: "Confidential Batch Payouts are not available yet. Arc Privacy Sector is required for on-chain shielding."
-                }, { status: 400 });
+                /* On-chain shielding remains in preview mode until Arc Privacy Sector (APS) is live on mainnet.
+                   We record the merchant's view key hash but keep shielded_payouts_enabled false so transactions
+                   are not misrepresented as cryptographically private. */
+                previewNotice = "ArcaneVM confidential batch payouts remain in Preview mode until Arc Privacy Sector (APS) is live on mainnet. View key registered.";
+                updateObj.shielded_payouts_enabled = false;
+            } else {
+                updateObj.shielded_payouts_enabled = false;
             }
-            updateObj.shielded_payouts_enabled = false;
         }
         if (viewKeyHash !== undefined) {
+            if (viewKeyHash !== null && !/^0x[0-9a-fA-F]{64}$/.test(viewKeyHash)) {
+                return NextResponse.json({ error: "Invalid viewKeyHash: must be a 32-byte hex string (0x...)" }, { status: 400 });
+            }
             updateObj.view_key_hash = viewKeyHash;
         }
 
@@ -106,7 +113,8 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             shielded_payouts_enabled: !!merchant.shielded_payouts_enabled,
-            view_key_hash: merchant.view_key_hash
+            view_key_hash: merchant.view_key_hash,
+            notice: previewNotice,
         }, { status: 200 });
 
     } catch (err: any) {

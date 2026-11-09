@@ -372,11 +372,18 @@ export async function POST(request: Request) {
                         await approveTx.wait();
                     }
 
+                    /* Pass registered merchant view key hash so batch history is saved under their key,
+                       or ZeroHash if no view key is registered. */
+                    const merchantViewKeyHash = (
+                        merchant?.viewKeyHash &&
+                        /^0x[0-9a-fA-F]{64}$/.test(merchant.viewKeyHash)
+                    ) ? (merchant.viewKeyHash as `0x${string}`) : ethers.ZeroHash;
+
                     batchTx = await confidentialContract.executeBatchPayout(
                         recipientAddresses,
                         recipientAmounts,
                         campaign.isShielded,
-                        ethers.ZeroHash
+                        merchantViewKeyHash
                     );
 
                     await prisma.$executeRaw`

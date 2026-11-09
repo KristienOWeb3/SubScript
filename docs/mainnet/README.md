@@ -461,7 +461,13 @@ node scripts/verify-mainnet-readiness.mjs --json
 
 ### 9.2 Live Progress Log
 
-<<<<<<< HEAD
+ArcaneVM Confidentiality & Governed View Key Readiness Hardening (2026-11-09):
+1. Viewing Key Utility Suite (`src/lib/arc/viewKey.ts` & `src/lib/arc/__tests__/viewKey.test.mjs`): Created standalone cryptographically secure 32-byte viewing key generator (`generateViewingKey`), `computeViewKeyHash` (keccak256), `generateCommitmentSalt`, and `computeCommitment` for Phase 1 blinded commitments. Added `fetchDecryptedBatchHistory` for paginated batch history reads. Verified 5/5 unit tests passing.
+2. Payroll View Key Binding (`src/app/api/internal/payroll/route.ts`): Replaced hardcoded `ethers.ZeroHash` in `confidentialContract.executeBatchPayout` with merchant's registered `merchant?.viewKeyHash` (validated 32-byte hex), ensuring on-chain batch payout records are properly saved in `batchHistory[merchant]` under the merchant's view key rather than dropped under the zero address.
+3. Confidentiality API Endpoint Hardening (`src/app/api/merchant/confidentiality/route.ts`): Decoupled `view_key_hash` registration from the `shielded_payouts_enabled` gate. When a merchant submits a view key, the endpoint persists the hash while cleanly enforcing preview status for `shielded_payouts_enabled` with a structured notice rather than blocking key registration with HTTP 400.
+4. Contract ABI Synchronization (`src/lib/contracts/abis.ts`): Added `getDecryptedBatchHistoryPaginated` function definition to `CONFIDENTIAL_CONTRACT_ABI`, aligning TypeScript interfaces with `SubScriptConfidential.sol` deployed bytecode on Arc Mainnet.
+5. Merchant Dashboard View Key UI Activation (`src/app/dashboard/page.tsx`): Enabled the Governed View Key generator, secure masked input with reveal/copy actions, and on-chain commit-reveal registration workflow. Added automatic restoration of active session viewing keys from `sessionStorage`.
+6. Contract Test Verification: All 19/19 unit and governance tests in `test/SubScriptConfidential.test.js` pass with 0 errors.
 Smart Contract Security Hardening & Vulnerability Remediation (2026-11-08):
 1. SEC-HIGH-01 (`contracts/SubScriptPSA.sol`): Fixed slippage cap check in `_createSubscription` for multi-currency subscriptions. Query `stableFXRouter.getAmountIn(_paymentToken, _settlementToken, _amount)` and revert `ExcessiveSwapInput(quotedAmountIn, _maxPaymentAmount)` if `_maxPaymentAmount < quotedAmountIn`, closing front-running and excessive token pull vectors.
 2. SEC-HIGH-02 (`contracts/SubScriptPSA.sol`): Prohibited changing `period` on active subscriptions via `require(_newPeriod == sub.period, "Period modification disabled");` in `modifySubscription`. Preserves sequence interval calculation `sub.nextPayment + ((_sequenceId - 1) * sub.period)` and historical billing bitmaps; plan period changes are safely handled via cancel and recreation.
