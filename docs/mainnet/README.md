@@ -461,6 +461,7 @@ node scripts/verify-mainnet-readiness.mjs --json
 
 ### 9.2 Live Progress Log
 
+<<<<<<< HEAD
 Smart Contract Security Hardening & Vulnerability Remediation (2026-11-08):
 1. SEC-HIGH-01 (`contracts/SubScriptPSA.sol`): Fixed slippage cap check in `_createSubscription` for multi-currency subscriptions. Query `stableFXRouter.getAmountIn(_paymentToken, _settlementToken, _amount)` and revert `ExcessiveSwapInput(quotedAmountIn, _maxPaymentAmount)` if `_maxPaymentAmount < quotedAmountIn`, closing front-running and excessive token pull vectors.
 2. SEC-HIGH-02 (`contracts/SubScriptPSA.sol`): Prohibited changing `period` on active subscriptions via `require(_newPeriod == sub.period, "Period modification disabled");` in `modifySubscription`. Preserves sequence interval calculation `sub.nextPayment + ((_sequenceId - 1) * sub.period)` and historical billing bitmaps; plan period changes are safely handled via cancel and recreation.
@@ -496,6 +497,8 @@ Auth, Custody, Payment API & Account Lifecycle Hardening (2026-11-08):
 7. SEC-LOW-03: In `src/app/api/cron/gdpr-hard-delete/route.ts`, hardened hard deletion query to filter for `availableBalanceUsdc: 0n` and `reservedBalanceUsdc: 0n`, ensuring accounts with unwithdrawn funds or active balance states are not purged.
 8. Verification: Clean TypeScript compilation (`tsc --noEmit`), 66/66 admin tests pass, 19/19 KYC tests pass, 100% clean.
 
+=======
+>>>>>>> origin/main
 iOS Performance, Dynamic Island Safe Area & CI Runner Hardening (2026-11-07):
 1. iOS PWA Dynamic Island Clipping: Standalone PWA mode with `viewportFit: "cover"` positioned headers at (0,0) beneath the physical Dynamic Island cutout. Created `--header-floating-top: max(1.25rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))` and `.floating-header-top` across `HomeHeader`, `ChatHeader`, `Navbar`, `DashboardHeader`, `UserDashboardHeader`, and loading skeleton headers, with `<main>` container top padding dynamically adjusted to `pt-[calc(5rem+env(safe-area-inset-top,0px))]`.
 2. iOS Safari Landing Page & 120fps Fluidity: Replaced heavy `blur-[120px]` atmospheric glow divs with native CSS radial gradients; isolated floating coins on GPU compositor layers (`translateZ(0)`); replaced marquee CSS `mask-image` with GPU-accelerated gradient fades; removed dynamic `filter: blur(...)` transitions from CSS keyframes to stop WebKit raster cache invalidation; added `-webkit-overflow-scrolling: touch`; throttled landing and dashboard scroll/resize handlers.
