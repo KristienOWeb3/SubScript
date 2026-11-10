@@ -7,7 +7,7 @@ export async function adminFetch(input: RequestInfo | URL, init?: RequestInit): 
     timer = setTimeout(() => {
       controller.abort();
       reject(new Error("Admin data took too long to load. Check your connection and use Refresh to retry."));
-    }, 20_000);
+    }, 45_000);
   });
   try {
     return await Promise.race([

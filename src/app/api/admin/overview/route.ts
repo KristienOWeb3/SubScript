@@ -29,6 +29,9 @@ function toBigInt(value: unknown): bigint {
   }
 }
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   try {
     const auth = await requireScope(request, "read");
@@ -39,21 +42,8 @@ export async function GET(request: Request) {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    const [
-      sponsor,
-      merchantsRaw,
-      bannedAccounts,
-      bannedIps,
-      totalUsers,
-      confirmedReceipts,
-      receipts30d,
-      activeSubsCount,
-      kycPendingCount,
-      stuckReceiptsCount,
-      recentReceipts14d,
-      recentUsers14d,
-    ] = await runAdminQueriesSequentially([
-      () => getAdminSponsorStatus(),
+    const sponsorPromise = getAdminSponsorStatus();
+    const dbPromise = runAdminQueriesSequentially([
       () => prisma.merchant.findMany({
         orderBy: { createdAt: "desc" },
         take: 100,
@@ -93,6 +83,23 @@ export async function GET(request: Request) {
         orderBy: { createdAt: "asc" },
       }),
     ]);
+
+    const [
+      sponsor,
+      [
+        merchantsRaw,
+        bannedAccounts,
+        bannedIps,
+        totalUsers,
+        confirmedReceipts,
+        receipts30d,
+        activeSubsCount,
+        kycPendingCount,
+        stuckReceiptsCount,
+        recentReceipts14d,
+        recentUsers14d,
+      ],
+    ] = await Promise.all([sponsorPromise, dbPromise]);
 
     const merchants = merchantsRaw.map((m) => ({
       walletAddress: m.walletAddress,

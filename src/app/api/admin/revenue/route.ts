@@ -52,6 +52,9 @@ function toBigInt(value: unknown): bigint {
 
 type Window = "total" | "d30" | "d7" | "h24";
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
     const auth = await requireRootAdmin(request);
     if (!auth.ok) return auth.response;

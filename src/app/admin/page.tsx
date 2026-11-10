@@ -1564,7 +1564,9 @@ export default function AdminDashboardPage() {
         )}
 
         {tab === "overview" && (
-          loading ? <AdminOverviewSkeleton /> : overviewData ? (
+          loading ? (
+            <AdminOverviewSkeleton />
+          ) : overviewData ? (
             <AdminOverviewDashboard
               overviewData={overviewData}
               analyticsData={analytics}
@@ -1575,7 +1577,27 @@ export default function AdminDashboardPage() {
               onToggleVerification={toggleVerification}
               verifyBusy={verifyBusy}
             />
-          ) : null
+          ) : (
+            <div className="rounded-2xl border border-red-200 bg-red-50/70 p-6 sm:p-8 text-center max-w-lg mx-auto my-8 shadow-sm">
+              <div className="h-10 w-10 mx-auto mb-3 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <h3 className="text-sm font-bold text-red-950 mb-1">
+                Unable to load overview data
+              </h3>
+              <p className="text-xs text-red-800 mb-4 leading-relaxed">
+                {error || "The server took too long to respond. Check your database connection and try again."}
+              </p>
+              <button
+                type="button"
+                onClick={() => loadData()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Retry Loading</span>
+              </button>
+            </div>
+          )
         )}
 
         {/* No viewerIsRoot guard on the render: the component asks the API, and the API answers 403

@@ -17,6 +17,9 @@ function formatUsdc(micro: bigint | null | undefined): string {
 type Timeframe = "all" | "30d" | "7d" | "24h";
 type SortBy = "total" | "active" | "kyc" | "volume" | "recent";
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
     const auth = await requireScope(request, "read");
     if (!auth.ok) return auth.response;
