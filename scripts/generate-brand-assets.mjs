@@ -7,6 +7,28 @@ const COLORED_SRC = path.join(ROOT, "Subscript Logo colored background.png");
 const TRANS_SRC = path.join(ROOT, "Subscript Logo transparent background.png");
 const PUBLIC_DIR = path.join(ROOT, "public");
 
+function createGradientSquare(size) {
+  const bg = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    const t = y / (size - 1);
+    const baseR = 32 + (58 - 32) * t;
+    const baseG = 47 + (71 - 47) * t;
+    const baseB = 64 + (84 - 64) * t;
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4;
+      const dx = (x - size / 2) / (size / 2);
+      const dy = (y - size / 2) / (size / 2);
+      const dist = Math.min(1, Math.sqrt(dx * dx + dy * dy));
+      const glow = (1 - dist) * 8;
+      bg[idx] = Math.round(Math.min(255, baseR + glow));
+      bg[idx + 1] = Math.round(Math.min(255, baseG + glow));
+      bg[idx + 2] = Math.round(Math.min(255, baseB + glow));
+      bg[idx + 3] = 255;
+    }
+  }
+  return bg;
+}
+
 async function generateBrandAssets() {
   console.log("Generating brand assets from source logos...");
 
@@ -25,12 +47,14 @@ async function generateBrandAssets() {
   console.log("Created public/logo-transparent.png");
 
   // 2. Square centered logo (public/logo.png) - 256x256 transparent square
-  // Calculate scaled size keeping aspect ratio:
-  const scale = 220 / trimmedMeta.height;
+  const scale = 200 / trimmedMeta.height;
   const targetW = Math.round(trimmedMeta.width * scale);
-  const targetH = 220;
+  const targetH = 200;
   const resizedMark = await sharp(trimmedTransBuf)
-    .resize(targetW, targetH, { fit: "contain" })
+    .resize(targetW, targetH, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .toBuffer();
 
   await sharp({
@@ -52,23 +76,49 @@ async function generateBrandAssets() {
     .toFile(path.join(PUBLIC_DIR, "logo.png"));
   console.log("Created public/logo.png (256x256 square transparent)");
 
-  // 3. public/logo-colored.png
-  await sharp(COLORED_SRC)
+  // 3. public/logo-colored.png - 256x256 square brand tile
+  const colBg256 = createGradientSquare(256);
+  const colMarkH = 180;
+  const colMarkW = Math.round(trimmedMeta.width * (colMarkH / trimmedMeta.height));
+  const colResizedMark = await sharp(trimmedTransBuf)
+    .resize(colMarkW, colMarkH, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .toBuffer();
+
+  await sharp(colBg256, { raw: { width: 256, height: 256, channels: 4 } })
+    .composite([
+      {
+        input: colResizedMark,
+        top: Math.round((256 - colMarkH) / 2),
+        left: Math.round((256 - colMarkW) / 2),
+      },
+    ])
     .png({ quality: 100, compressionLevel: 9 })
     .toFile(path.join(PUBLIC_DIR, "logo-colored.png"));
-  console.log("Created public/logo-colored.png");
+  console.log("Created public/logo-colored.png (256x256 square brand tile)");
 
-  // 4. Square colored backgrounds for PWA and App icons
-  // Sample corner color from colored background logo: #202f40
-  const bgColor = { r: 32, g: 47, b: 64, alpha: 1 };
-
-  // Square colored base (512x512)
-  const icon512Buf = await sharp(COLORED_SRC)
-    .resize(512, 512, {
+  // 4. Square colored backgrounds for PWA and App icons (512x512)
+  const bg512 = createGradientSquare(512);
+  const mark512H = 360;
+  const mark512W = Math.round(trimmedMeta.width * (mark512H / trimmedMeta.height));
+  const mark512Resized = await sharp(trimmedTransBuf)
+    .resize(mark512W, mark512H, {
       fit: "contain",
-      background: bgColor,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
     })
-    .png()
+    .toBuffer();
+
+  const icon512Buf = await sharp(bg512, { raw: { width: 512, height: 512, channels: 4 } })
+    .composite([
+      {
+        input: mark512Resized,
+        top: Math.round((512 - mark512H) / 2),
+        left: Math.round((512 - mark512W) / 2),
+      },
+    ])
+    .png({ quality: 100 })
     .toBuffer();
 
   await fs.promises.writeFile(path.join(PUBLIC_DIR, "icon-512.png"), icon512Buf);
@@ -79,17 +129,13 @@ async function generateBrandAssets() {
   const maskW = Math.round(trimmedMeta.width * maskableScale);
   const maskH = Math.round(512 * 0.6);
   const maskMark = await sharp(trimmedTransBuf)
-    .resize(maskW, maskH, { fit: "contain" })
+    .resize(maskW, maskH, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .toBuffer();
 
-  await sharp({
-    create: {
-      width: 512,
-      height: 512,
-      channels: 4,
-      background: bgColor,
-    },
-  })
+  await sharp(bg512, { raw: { width: 512, height: 512, channels: 4 } })
     .composite([
       {
         input: maskMark,
