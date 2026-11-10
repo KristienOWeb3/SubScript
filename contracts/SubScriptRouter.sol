@@ -294,4 +294,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
         emit BatchPayoutExecuted(msg.sender, totalAmount, recipients.length);
     }
+
+    /* Reserved storage gap for upgradeability */
+    uint256[44] private __gap;
 }

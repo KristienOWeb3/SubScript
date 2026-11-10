@@ -3,10 +3,10 @@ import { BridgeDirection, BridgeFeeCalculation, BridgeRouteOption } from "./type
 import { isSolanaAddress } from "./circleBridge";
 
 /* Minimum bridge amounts:
-   - Ethereum L1: 10 USDC ($10.00) to keep L1 gas efficiency reasonable.
+   - Ethereum L1: 250 USDC ($250.00) to keep L1 gas efficiency reasonable and prevent gas subsidy drainage.
    - L2s (Base, Arbitrum, OP, Polygon, Avalanche): 1 USDC ($1.00).
    Smaller deposits remain safely on-chain at the user's derived address until total balance >= minimum. */
-export const MIN_BRIDGE_AMOUNT_L1_MICROS = 10_000_000n;
+export const MIN_BRIDGE_AMOUNT_L1_MICROS = 250_000_000n;
 export const MIN_BRIDGE_AMOUNT_L2_MICROS = 1_000_000n;
 export const MIN_BRIDGE_AMOUNT_MICROS = MIN_BRIDGE_AMOUNT_L2_MICROS;
 

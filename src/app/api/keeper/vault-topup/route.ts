@@ -253,6 +253,12 @@ async function topUpVault(vault: VaultRow, merchantName: string): Promise<{ id: 
         /* PENDING/SUBMITTED: fall through and resubmit under the SAME key — Circle dedupes. */
     }
 
+    /* Re-fetch the vault right before commit to ensure mandate has not been disabled or cancelled */
+    const fresh = await prisma.meteredVault.findUnique({ where: { id: vault.id } });
+    if (!fresh || !fresh.autoTopUpEnabled || fresh.cancelRequestedAt !== null) {
+        return { id: vault.id, status: "skipped", code: "MANDATE_CHANGED" };
+    }
+
     let txHash: string;
     try {
         txHash = await commitFromEmbedded(

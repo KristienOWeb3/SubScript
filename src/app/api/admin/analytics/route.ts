@@ -40,6 +40,9 @@ function toBigInt(value: unknown): bigint {
     }
 }
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
     const auth = await requireScope(request, "read");
     if (!auth.ok) return auth.response;

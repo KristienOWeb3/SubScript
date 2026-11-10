@@ -100,6 +100,8 @@ describe("SubScriptVault", function () {
       await vault.connect(keeper).drawUsageFor(merchant.address, user.address, 10_000_000n);
 
       expect(await vault.merchantClaimable(merchant.address)).to.equal(STANDARD_COMMIT);
+      expect(await vault.userRefundable(user.address)).to.equal(8_000_000n);
+      await vault.connect(user).claimRefund();
       expect(await usdc.balanceOf(user.address)).to.equal(before + 8_000_000n);
     });
   });
@@ -142,6 +144,8 @@ describe("SubScriptVault", function () {
       expect(balance).to.equal(0n);
       expect(cycleStart).to.equal(0n);
       expect(active).to.equal(false);
+      expect(await vault.userRefundable(user.address)).to.equal(1_200_000n);
+      await vault.connect(user).claimRefund();
       expect(await usdc.balanceOf(user.address)).to.equal(before + 1_200_000n);
       expect(await vault.merchantClaimable(merchant.address)).to.equal(800_000n);
     });

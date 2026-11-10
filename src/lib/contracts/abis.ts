@@ -404,4 +404,27 @@ export const CONFIDENTIAL_CONTRACT_ABI = [
         inputs: [],
         outputs: [{ name: "", type: "uint256" }],
     },
+    {
+        type: "function",
+        name: "getDecryptedBatchHistoryPaginated",
+        stateMutability: "view",
+        inputs: [
+            { name: "viewKeyHash", type: "bytes32" },
+            { name: "offset", type: "uint256" },
+            { name: "limit", type: "uint256" },
+        ],
+        outputs: [
+            {
+                name: "records",
+                type: "tuple[]",
+                components: [
+                    { name: "recipients", type: "address[]" },
+                    { name: "amounts", type: "uint256[]" },
+                    { name: "isShielded", type: "bool" },
+                    { name: "timestamp", type: "uint256" },
+                ],
+            },
+            { name: "totalCount", type: "uint256" },
+        ],
+    },
 ] as const;

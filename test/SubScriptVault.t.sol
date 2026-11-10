@@ -104,6 +104,9 @@ contract SubScriptVaultTest is Test {
         assertEq(cycleStart, 0);
         assertFalse(active);
         assertEq(lockedUntil, 0);
+        assertEq(vault.userRefundable(user), 1.2e6);
+        vm.prank(user);
+        vault.claimRefund();
         assertEq(usdc.balanceOf(user), userBefore + 1.2e6);
         assertEq(vault.merchantClaimable(merchant), 0.8e6);
     }
@@ -121,6 +124,9 @@ contract SubScriptVaultTest is Test {
         assertEq(balance, 0);
         assertFalse(active);
         assertEq(vault.merchantClaimable(merchant), 2e6, "draw capped at the 2 USDC exposure");
+        assertEq(vault.userRefundable(user), 8e6);
+        vm.prank(user);
+        vault.claimRefund();
         assertEq(usdc.balanceOf(user), userBefore + 8e6, "surplus returns to the user");
     }
 
@@ -195,6 +201,9 @@ contract SubScriptVaultTest is Test {
         (uint256 balance,,, bool active,,) = vault.getVault(user, merchant);
         assertEq(balance, 0);
         assertFalse(active);
+        assertEq(vault.userRefundable(user), COMMIT);
+        vm.prank(user);
+        vault.claimRefund();
         assertEq(usdc.balanceOf(user), userBefore + COMMIT);
         assertEq(vault.merchantClaimable(merchant), 0);
     }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
 import { apiError, getSecretKeyMode } from "@/lib/apiErrors";
-import { buildCheckoutUrl } from "@/lib/checkoutUrl";
+import { getCheckoutOrigin } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
             });
         }
 
-        const checkoutUrl = `${buildCheckoutUrl(`/commit/${merchant.commitSlug}`)}${
+        const checkoutUrl = `${getCheckoutOrigin()}/commit/${merchant.commitSlug}${
             amountUsdc ? `?amount=${encodeURIComponent(amountUsdc)}` : ""
         }`;
 

@@ -123,6 +123,11 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 regularAmount
     );
 
+    event SubscriptionFirstPaymentDeferred(
+        uint256 indexed subId,
+        uint256 firstPayment
+    );
+
     /* ──────────────────────────── Errors ─────────────────────────── */
 
     error InvalidAddress();
@@ -235,6 +240,7 @@ contract SubScriptPSA is ReentrancyGuard {
         );
         subscriptions[subId].nextPayment = _firstPayment;
         paidThrough[subId] = _firstPayment;
+        emit SubscriptionFirstPaymentDeferred(subId, _firstPayment);
     }
 
     /*
@@ -290,13 +296,18 @@ contract SubScriptPSA is ReentrancyGuard {
         if (_introductoryCycles != 0 && _settlementToken != _paymentToken) revert InvalidIntroductoryTerms();
 
         /* Bound the payment-token pull. Same-token: no swap, so the cap is exactly the amount.
-           Cross-token: the subscriber MUST approve an explicit ceiling (>= the settlement amount);
+           Cross-token: the subscriber MUST approve an explicit ceiling (>= quoted amountIn);
            without it the FX router could pull an unbounded amount of their payment token. */
         if (_settlementToken == _paymentToken) {
             _maxPaymentAmount = _amount;
         } else {
             if (_maxPaymentAmount == 0) revert MaxPaymentAmountRequired();
-            if (_maxPaymentAmount < _amount) revert InvalidAmount();
+            uint256 quotedAmountIn = stableFXRouter.getAmountIn(
+                _paymentToken,
+                _settlementToken,
+                _amount
+            );
+            if (_maxPaymentAmount < quotedAmountIn) revert ExcessiveSwapInput(quotedAmountIn, _maxPaymentAmount);
         }
 
         _assertNoActiveDuplicate(msg.sender, _merchant, _amount, _period, _settlementToken, _paymentToken, 0);
@@ -452,6 +463,7 @@ contract SubScriptPSA is ReentrancyGuard {
         if (msg.sender != sub.subscriber) revert NotAuthorized(_subId);
         if (_newAmount == 0) revert InvalidAmount();
         if (_newPeriod < 3600) revert InvalidPeriod(); // Minimum period of 1 hour
+        require(_newPeriod == sub.period, "Period modification disabled");
         /* Compare recurring rates with integer cross-multiplication. A longer billing interval
            must not let a subscriber disguise a lower tier as a nominal amount increase. */
         if (_newAmount * sub.period < sub.amount * _newPeriod) {

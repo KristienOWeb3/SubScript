@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSessionWallet } from "@/lib/auth";
+import { isAdminWallet } from "@/lib/admin/identity";
 
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const sessionWallet = await getSessionWallet(request.headers);
+        if (!sessionWallet) {
+            return new NextResponse("Unauthorized", { status: 401 });
+        }
+
         const { id } = await params;
         const payment = await prisma.paymentLinkPayment.findFirst({
             where: {
@@ -18,6 +25,17 @@ export async function GET(
 
         if (!payment) {
             return new NextResponse("Invoice not found", { status: 404 });
+        }
+
+        const normalizedSessionWallet = sessionWallet.toLowerCase();
+        const isAdmin = await isAdminWallet(normalizedSessionWallet).catch(() => false);
+        const isAuthorized =
+            isAdmin ||
+            normalizedSessionWallet === payment.payerAddress.toLowerCase() ||
+            normalizedSessionWallet === payment.merchantAddress.toLowerCase();
+
+        if (!isAuthorized) {
+            return new NextResponse("Forbidden", { status: 403 });
         }
 
         const invoiceId = `INV-${payment.id.slice(0, 8).toUpperCase()}`;
@@ -81,7 +99,7 @@ export async function GET(
             <tbody>
                 <tr>
                     <td>SubScript Subscription / Payment Service</td>
-                    <td><span style="color: #00d2b4; font-weight: bold;">PAID</span></td>
+                    <td>${payment.credited ? `<span style="color: #00d2b4; font-weight: bold;">PAID</span>` : `<span style="color: #eab308; font-weight: bold;">PENDING</span>`}</td>
                     <td style="text-align: right;" class="mono">${amountUsdc} USDC</td>
                 </tr>
             </tbody>
