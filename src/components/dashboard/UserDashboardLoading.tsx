@@ -196,7 +196,7 @@ export default function UserDashboardLoading({
 
       {/* Mobile Bottom Bar Skeleton */}
       {!pinSettings && <div className="md:hidden fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2">
-        <div className="flex h-[60.6375px] flex-1 items-center justify-around rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-3 backdrop-blur-2xl">
+        <div className="flex h-[70px] flex-1 items-center justify-around rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-3 backdrop-blur-2xl">
           {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
@@ -204,7 +204,7 @@ export default function UserDashboardLoading({
             />
           ))}
         </div>
-        <div className="h-[60.6375px] w-[60.6375px] shrink-0 rounded-full subscript-skeleton" />
+        <div className="h-[70px] w-[70px] shrink-0 rounded-full subscript-skeleton" />
       </div>}
     </div>
   );

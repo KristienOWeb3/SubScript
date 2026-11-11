@@ -47,16 +47,18 @@ test("mobile admin navigation uses high-contrast labels", () => {
     assert.doesNotMatch(drawer, /text-white\/(?:40|50|60|70)(?:\s|\")/);
 });
 
-test("the user mobile bottom nav and its skeleton keep the five-percent height increase", () => {
+test("the user and merchant mobile bottom bars, and the user skeleton, are 70px tall", () => {
     const nav = source("src/components/dashboard/MobileFloatingNav.tsx");
     const dashboard = source("src/app/dashboard/user/page.tsx");
     const skeleton = source("src/components/dashboard/UserDashboardLoading.tsx");
+    const merchantNav = source("src/components/dashboard/MerchantDashboardNav.tsx");
 
-    assert.match(nav, /const CAPSULE_HEIGHT = (?:55\.125|60\.6375)/);
-    assert.match(nav, /const CAPSULE_RETRACTED_SIZE = (?:55\.125|60\.6375)/);
+    assert.match(nav, /const CAPSULE_HEIGHT = 70;/);
+    assert.match(nav, /const CAPSULE_RETRACTED_SIZE = 70;/);
     assert.match(dashboard, /<UserDashboardLoading\s+items=\{userDesktopTabs\}/);
-    assert.match(skeleton, /h-\[(?:55\.125|60\.6375)px\]/);
-    assert.match(skeleton, /w-\[(?:55\.125|60\.6375)px\]/);
+    assert.match(skeleton, /h-\[70px\]/);
+    assert.match(skeleton, /w-\[70px\]/);
+    assert.match(merchantNav, /merchant-bottom-nav[^"]*\sh-\[70px\]/);
 });
 
 test("the mobile dashboard skeleton mirrors profile, tier, and notification controls", () => {

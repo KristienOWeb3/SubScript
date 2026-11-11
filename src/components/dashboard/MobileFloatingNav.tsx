@@ -30,9 +30,9 @@ const SCROLL_DOWN_DELTA_THRESHOLD = 14; // Requires 14px of intentional down-scr
 const SCROLL_UP_DELTA_THRESHOLD = 8;   // Requires 8px of intentional up-scroll to expand
 const TOP_DEADZONE_PX = 16;            // Keep locked expanded at the very top of page
 
-// 10% taller than the previous 55.125px bar for a larger mobile touch target.
-const CAPSULE_HEIGHT = 60.6375;
-const CAPSULE_RETRACTED_SIZE = 60.6375;
+// Fixed 70px bar (matches the merchant bottom nav) for a larger mobile touch target.
+const CAPSULE_HEIGHT = 70;
+const CAPSULE_RETRACTED_SIZE = 70;
 
 export default function MobileFloatingNav<T extends string = string>({
   tabs,

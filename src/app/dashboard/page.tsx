@@ -5826,6 +5826,15 @@ Please complete the following implementation tasks:
                     setShowNameOnboarding(false);
                 }}
             />
+            <MerchantPreviewModal
+                open={showCheckoutPreview}
+                onClose={() => setShowCheckoutPreview(false)}
+                displayName={userSettings?.displayName || ""}
+                commitSlug={userSettings?.commitSlug || undefined}
+                merchantId={userSettings?.merchantId || undefined}
+                verified={Boolean(userSettings?.verified)}
+                profilePic={userSettings?.profilePic || null}
+            />
             <SupportChatModal
                 open={supportChatOpen}
                 onClose={() => setSupportChatOpen(false)}
