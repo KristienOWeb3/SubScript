@@ -340,3 +340,57 @@ test("only root admins can flip invite-only enforcement", () => {
     assert.match(block, /!auth\.admin\.isRoot/);
     assert.match(block, /status:\s*403/);
 });
+
+/* Regression: sign-in routes used to call resolveAccountRoleWithBackfill, which wrote USER for every
+   brand-new wallet the moment its email was verified. The signup role picker never showed, so an
+   invited merchant never reached register-role and the invite grant was never checked. */
+test("sign-in and session routes never mint a USER role for a brand-new wallet", () => {
+    const authRoutes = [
+        "src/app/api/auth/otp/verify/route.ts",
+        "src/app/api/auth/circle/wallet/complete/route.ts",
+        "src/app/api/auth/session/route.ts",
+        "src/app/api/auth/verify-signature/route.ts",
+        "src/app/api/auth/check-account/route.ts",
+    ];
+    for (const path of authRoutes) {
+        const route = source(path);
+        assert.doesNotMatch(route, /resolveAccountRoleWithBackfill/, `${path} must not backfill USER`);
+        assert.match(route, /resolveAccountRoleForSession/, `${path} should use the session resolver`);
+    }
+
+    const roles = source("src/lib/accounts/roles.ts");
+    const sessionResolver = roles.slice(
+        roles.indexOf("export async function resolveAccountRoleForSession"),
+        roles.indexOf("async function backfillUserRole"),
+    );
+    /* Only wallets with pre-reset history are healed; everyone else gets null and sees the picker. */
+    const legacyGuard = sessionResolver.indexOf("if (!legacy?.legacy) return null;");
+    assert.ok(legacyGuard > 0, "session resolver must return null for non-legacy wallets");
+    assert.ok(
+        sessionResolver.indexOf("backfillUserRole(") > legacyGuard,
+        "backfill must sit behind the legacy guard",
+    );
+    assert.match(sessionResolver, /created_at < \$2::timestamptz/);
+});
+
+test("a role-less sign-in goes to the role picker, not a guessed USER dashboard", () => {
+    const signin = source("src/app/signin/page.tsx");
+    assert.doesNotMatch(signin, /data\.role \|\| "USER"/);
+    assert.match(signin, /\/signup\?completeRole=1/);
+
+    const router = source("src/app/dashboard-router/page.tsx");
+    assert.doesNotMatch(router, /data\.role \|\| "USER"/);
+    assert.match(router, /\/signup\?completeRole=1/);
+
+    /* Signup's "new account" branch is the one that opens the picker; it must key off a null role. */
+    const signup = source("src/app/signup/page.tsx");
+    const handler = signup.slice(signup.indexOf("const handleLoginSuccess"));
+    assert.ok(handler.indexOf("if (data.role)") < handler.indexOf('setSignupStep("select-role")'));
+});
+
+test("an email whose wallet never picked an account type can still be granted", () => {
+    const route = source("src/app/api/admin/merchant-access/route.ts");
+    const grantFn = route.slice(route.indexOf("async function grant("), route.indexOf("async function decline("));
+    /* Only a real role (USER or ENTERPRISE) blocks a grant; a role-less wallet is not an account yet. */
+    assert.match(grantFn, /if \(conflict && conflict\.role\)/);
+});

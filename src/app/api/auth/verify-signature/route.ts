@@ -3,7 +3,7 @@ import { verifyMessage } from "viem";
 import { sanitizeInput } from "@/utils/security";
 import { createSessionToken, getCookieValue } from "@/lib/auth";
 import { pgMaybeOne } from "@/lib/serverPg";
-import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
+import { resolveAccountRoleForSession } from "@/lib/accounts/roles";
 import { verifyCaptchaToken } from "@/lib/captcha";
 import { clearSiweNonceCookie, setSessionCookie } from "@/lib/authCookies";
 import { buildWalletAuthMessage, walletAuthRequestContext } from "@/lib/walletAuthMessage";
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
         }
 
         const normalizedAddress = address.toLowerCase();
-        const role = await resolveAccountRoleWithBackfill(normalizedAddress);
+        const role = await resolveAccountRoleForSession(normalizedAddress);
 
         if (!role && captchaToken) {
             const isValid = await verifyCaptchaToken(captchaToken, requesterIp);

@@ -31,7 +31,13 @@ export default function DashboardRouterPage() {
                     throw new Error("Invalid session response");
                 }
 
-                const targetRole = (data.role || "USER") as "USER" | "ENTERPRISE";
+                if (!data.role) {
+                    // New account with no role yet: finish signup instead of defaulting to USER.
+                    setMessage("Finishing your signup...");
+                    window.location.href = "/signup?completeRole=1";
+                    return;
+                }
+                const targetRole = data.role as "USER" | "ENTERPRISE";
                 setMessage("Opening your dashboard...");
                 window.location.href = getDashboardUrl(targetRole, "/dashboard");
                 return;

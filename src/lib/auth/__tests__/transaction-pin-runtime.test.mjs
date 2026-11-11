@@ -189,7 +189,7 @@ test('OTP send durably binds exact action and session; verify cannot swap recipi
   '@/lib/auth/accountEmail':{findAccountEmailBinding:async()=>({walletAddress:wallet}),isWalletOnlyEmailBinding:()=>false},
   '@/lib/serverPg':f.pg,
   '@/lib/auth':{...f.auth,getSessionWallet:async()=>wallet},
-  '@/lib/accounts/roles':{requireAccountRole:async()=>({ok:true}),resolveAccountRoleWithBackfill:async()=>({role:'USER'})},
+  '@/lib/accounts/roles':{requireAccountRole:async()=>({ok:true}),resolveAccountRoleWithBackfill:async()=>({role:'USER'}),resolveAccountRoleForSession:async()=>'USER'},
   '@/lib/auth/stepUp':f.step,
   '@/lib/auth/transactionPinCrypto':f.crypt,
   '@/lib/captcha':{verifyCaptchaToken:async()=>true},

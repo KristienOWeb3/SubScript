@@ -141,7 +141,9 @@ async function grant(request: Request, actor: string, body: any) {
        would mint a grant nobody can ever redeem, and the business would bounce off an error no
        support agent could explain. Catch it here, while it is still one sentence. */
     const conflict = await withPgClient((client) => findConflictingAccountForEmail(client, email));
-    if (conflict) {
+    /* A wallet with no role yet signed in but never picked user vs merchant, so there's nothing to
+       upgrade. Granting it is exactly what lets it pick Merchant on its next sign-in. */
+    if (conflict && conflict.role) {
         const isMerchant = conflict.role === "ENTERPRISE";
         return NextResponse.json(
             {

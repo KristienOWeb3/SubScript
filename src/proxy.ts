@@ -217,6 +217,33 @@ function createContentSecurityPolicy(nonce: string) {
     ].join("; ");
 }
 
+/* Request headers every rendered page needs: the per-request nonce (the root layout stamps it
+   on its inline scripts and Next stamps it on its own) plus the matching policy. */
+function createPageRequestHeaders(request: NextRequest) {
+    const requestHeaders = new Headers(request.headers);
+    const nonce = createNonce();
+    const contentSecurityPolicy = createContentSecurityPolicy(nonce);
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
+    const country = (request as any).geo?.country || request.headers.get("x-vercel-ip-country") || request.headers.get("cf-ipcountry") || "US";
+    requestHeaders.set("x-user-country", country);
+    return { requestHeaders, contentSecurityPolicy };
+}
+
+/* Host rewrites (admin/docs/pay subdomain roots, dashboard aliases) return before the final
+   NextResponse.next() below, so they must carry the nonce themselves. A bare
+   NextResponse.rewrite() sent no x-nonce and no policy, so the page fell back to next.config's
+   baseline CSP: `default-src 'self'` with no script-src, which blocks every inline script,
+   including Next's inline RSC payload. The chunks still loaded but React never hydrated.
+   admin.subscriptonarc.com/ sat on its server-rendered skeleton forever, while .../admin
+   (no rewrite) worked. The mobile dashboard links to the bare admin root, so phones hit it. */
+function rewriteWithNonce(request: NextRequest, url: URL) {
+    const { requestHeaders, contentSecurityPolicy } = createPageRequestHeaders(request);
+    const response = NextResponse.rewrite(url, { request: { headers: requestHeaders } });
+    response.headers.set("Content-Security-Policy", contentSecurityPolicy);
+    return response;
+}
+
 function checkBurstLimit(ip: string): boolean {
     const now = Date.now();
     const windowMs = 10 * 1000; // 10 seconds
@@ -358,7 +385,7 @@ export default async function proxy(request: NextRequest) {
         if (pathname !== "/docs" && !pathname.startsWith("/docs/")) {
             const docsUrl = request.nextUrl.clone();
             docsUrl.pathname = pathname === "/" ? "/docs" : `/docs${pathname}`;
-            return NextResponse.rewrite(docsUrl);
+            return rewriteWithNonce(request, docsUrl);
         }
     }
 
@@ -437,7 +464,7 @@ export default async function proxy(request: NextRequest) {
         if (isAdminHost && !isAdminPath) {
             const adminUrl = request.nextUrl.clone();
             adminUrl.pathname = pathname === "/" ? "/admin" : `/admin${pathname}`;
-            return NextResponse.rewrite(adminUrl);
+            return rewriteWithNonce(request, adminUrl);
         }
     }
 
@@ -484,7 +511,7 @@ export default async function proxy(request: NextRequest) {
         if (!isPublicCheckoutPath) {
             const checkoutUrl = request.nextUrl.clone();
             checkoutUrl.pathname = `/pay${pathname}`;
-            return NextResponse.rewrite(checkoutUrl);
+            return rewriteWithNonce(request, checkoutUrl);
         }
     }
 
@@ -550,7 +577,7 @@ export default async function proxy(request: NextRequest) {
             if (pathname === "/" || pathname === "/dashboard") {
                 const routerUrl = request.nextUrl.clone();
                 routerUrl.pathname = "/dashboard-router";
-                return NextResponse.rewrite(routerUrl);
+                return rewriteWithNonce(request, routerUrl);
             }
 
             if (pathname === "/signin" || pathname === "/login" || pathname === "/signup") {
@@ -561,32 +588,25 @@ export default async function proxy(request: NextRequest) {
             if (pathname.startsWith("/dashboard/user")) {
                 const rewriteUrl = request.nextUrl.clone();
                 rewriteUrl.pathname = pathname.replace(/^\/dashboard\/user/, "/user");
-                return NextResponse.rewrite(rewriteUrl);
+                return rewriteWithNonce(request, rewriteUrl);
             }
 
             if (pathname.startsWith("/dashboard/merchant")) {
                 const rewriteUrl = request.nextUrl.clone();
                 rewriteUrl.pathname = pathname.replace(/^\/dashboard\/merchant/, "/merchant");
-                return NextResponse.rewrite(rewriteUrl);
+                return rewriteWithNonce(request, rewriteUrl);
             }
 
             // PIN settings is a shared page, not a merchant dashboard child.
             if (pathname.startsWith("/dashboard/") && pathname !== "/dashboard/transaction-pin") {
                 const rewriteUrl = request.nextUrl.clone();
                 rewriteUrl.pathname = pathname.replace(/^\/dashboard/, "/merchant");
-                return NextResponse.rewrite(rewriteUrl);
+                return rewriteWithNonce(request, rewriteUrl);
             }
         }
     }
 
-    const requestHeaders = new Headers(request.headers);
-    const nonce = createNonce();
-    const contentSecurityPolicy = createContentSecurityPolicy(nonce);
-    requestHeaders.set("x-nonce", nonce);
-    requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
-
-    const country = (request as any).geo?.country || request.headers.get("x-vercel-ip-country") || request.headers.get("cf-ipcountry") || "US";
-    requestHeaders.set("x-user-country", country);
+    const { requestHeaders, contentSecurityPolicy } = createPageRequestHeaders(request);
 
     /* Step 3: Payload Size Limitations */
     if (request.method === "POST" || request.method === "PUT") {

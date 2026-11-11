@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/custody/provision";
-import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
+import { resolveAccountRoleForSession } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
@@ -322,7 +322,7 @@ export async function POST(request: Request) {
             await ensureDefaultAliasFromEmail(walletAddress, emailVal);
         }
 
-        const role = await resolveAccountRoleWithBackfill(walletAddress);
+        const role = await resolveAccountRoleForSession(walletAddress);
 
         const response = NextResponse.json({
             success: true,

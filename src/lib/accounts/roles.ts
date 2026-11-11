@@ -45,6 +45,59 @@ export async function resolveAccountRoleWithBackfill(address: string | null | un
     ).catch(() => null);
     if (merchantRecord) return "ENTERPRISE";
 
+    return backfillUserRole(normalizedAddress);
+}
+
+/* Accounts created before this instant lost their account_roles row in the 2026-06-19
+   clean-signup reset. Anything created after it went through role-first signup, so a missing
+   role there means "hasn't picked yet", not "legacy". */
+const ROLE_RESET_CUTOFF = "2026-06-20T00:00:00Z";
+
+/**
+ * Role resolution for sign-in and session routes (OTP verify, Google complete, session,
+ * signature verify, check-account).
+ *
+ * Unlike resolveAccountRoleWithBackfill, this never labels a brand-new wallet USER. Those routes
+ * run the moment someone verifies their email, before the signup role picker — so backfilling
+ * there turned every new signup into a personal account and an invited merchant never reached
+ * /api/auth/register-role, where the invite grant is checked. A wallet with no role and no
+ * pre-reset history gets null, which sends the client to the role picker.
+ *
+ * Legacy wallets (embedded wallet created before the reset, or an existing customers row) are
+ * still healed to USER here, so the 2026-06-19 fix keeps working for them.
+ */
+export async function resolveAccountRoleForSession(address: string | null | undefined): Promise<AccountRoleName | null> {
+    if (!address) return null;
+    const normalizedAddress = address.toLowerCase();
+
+    const explicitRole = await getAccountRole(normalizedAddress);
+    if (explicitRole) return explicitRole;
+
+    const merchantRecord = await pgMaybeOne<{ wallet_address: string }>(
+        "select wallet_address from merchants where wallet_address = $1 limit 1",
+        [normalizedAddress]
+    ).catch(() => null);
+    if (merchantRecord) return "ENTERPRISE";
+
+    const legacy = await pgMaybeOne<{ legacy: boolean }>(
+        `select (
+            exists (select 1 from customers where wallet_address = $1)
+            or exists (
+                select 1 from user_embedded_wallets
+                 where wallet_address = $1 and created_at < $2::timestamptz
+            )
+         ) as legacy`,
+        [normalizedAddress, ROLE_RESET_CUTOFF]
+    ).catch((error) => {
+        console.warn("Could not check legacy account status:", error);
+        return null;
+    });
+    if (!legacy?.legacy) return null;
+
+    return backfillUserRole(normalizedAddress);
+}
+
+async function backfillUserRole(normalizedAddress: string): Promise<AccountRoleName | null> {
     try {
         await pgQuery(
             "insert into account_roles (address, role) values ($1, 'USER') on conflict (address) do nothing",

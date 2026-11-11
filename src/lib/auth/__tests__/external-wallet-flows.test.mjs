@@ -36,18 +36,18 @@ test("verify-signature enforces IP rate limiting and heals legacy account roles"
     assert.match(route, /siwe-verify-ip/);
     assert.match(route, /status:\s*429/);
 
-    /* Role resolution must use backfill so returning merchants and customers are identified */
-    assert.match(route, /resolveAccountRoleWithBackfill/);
+    /* Role resolution identifies returning merchants and legacy customers, but must not mint USER for a brand-new wallet */
+    assert.match(route, /resolveAccountRoleForSession/);
     assert.doesNotMatch(code("src/app/api/auth/verify-signature/route.ts"), /\bgetAccountRole\(/);
 
     /* Captcha validation is conditional on captchaToken presence for wallet signers */
     assert.match(route, /if\s*\(!role\s*&&\s*captchaToken\)/);
 });
 
-test("check-account uses address validation and role backfill", () => {
+test("check-account uses address validation and the session role resolver", () => {
     const route = source("src/app/api/auth/check-account/route.ts");
 
-    assert.match(route, /resolveAccountRoleWithBackfill/);
+    assert.match(route, /resolveAccountRoleForSession/);
     assert.match(route, /\/\^0x\[a-fA-F0-9\]\{40\}\$\//);
 });
 
