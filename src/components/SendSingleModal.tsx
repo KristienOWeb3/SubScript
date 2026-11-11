@@ -20,6 +20,7 @@ import {
     OutgoingTransactionIcon,
 } from "@/components/icons";
 import { ChainLogo } from "@/components/ChainLogo";
+import { explorerTxUrl } from "@/lib/network/registry";
 import { listBridgeRoutes } from "@/lib/cctp/feeEngine";
 import type { BridgeRouteOption } from "@/lib/cctp/types";
 import { recentRecipients, type RecentRecipient, type RecipientTransaction } from "@/lib/payments/recentRecipients";
@@ -837,7 +838,7 @@ function DesktopSendModal({
                                 </p>
                             )}
                             {desktopResult && (desktopResult.explorerUrl || desktopResult.txHash) && (
-                                <a href={desktopResult.explorerUrl || `${process.env.NEXT_PUBLIC_ARC_NETWORK === "mainnet" ? "https://explorer.arc.io" : "https://testnet.arcscan.app"}/tx/${desktopResult.txHash}`} target="_blank" rel="noopener noreferrer" className="block text-center text-xs font-bold text-[#2775CA]">View transaction ↗</a>
+                                <a href={desktopResult.explorerUrl || explorerTxUrl(desktopResult.txHash ?? "")} target="_blank" rel="noopener noreferrer" className="block text-center text-xs font-bold text-[#2775CA]">View transaction ↗</a>
                             )}
                             {status && (
                                 <p className="text-center text-xs font-semibold text-black/70">{status}</p>
@@ -1080,8 +1081,7 @@ function MobileSendSheet({
 
     const getExplorerTxUrl = (txHash?: string | null) => {
         if (!txHash) return "";
-        const base = process.env.NEXT_PUBLIC_ARC_NETWORK === "mainnet" ? "https://explorer.arc.io" : "https://testnet.arcscan.app";
-        return `${base}/tx/${txHash}`;
+        return explorerTxUrl(txHash);
     };
     const displayQuote = sentResult || reviewQuote || quote;
     const senderAvatarUrl = senderInfo?.profilePic || null;

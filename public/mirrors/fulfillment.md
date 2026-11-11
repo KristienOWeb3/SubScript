@@ -27,7 +27,7 @@ Vault services activate upon escrow deposit in `SubScriptVault`. Settlement draw
 
 ## 6. Mainnet Availability & Force Majeure
 
-SubScript targets 99.9% uptime on Arc Mainnet (`5042001`). SubScript is not liable for fulfillment delays arising from network-wide consensus pauses, major RPC provider outages, or Circle CCTP attestation service maintenance.
+SubScript targets 99.9% uptime on Arc Mainnet (Chain ID `5042`). SubScript is not liable for fulfillment delays arising from network-wide consensus pauses, major RPC provider outages, or Circle CCTP attestation service maintenance.
 
 ## 7. Contact & Non-Delivery Reports
 

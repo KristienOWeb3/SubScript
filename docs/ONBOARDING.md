@@ -16,7 +16,7 @@ SubScript supports three discrete authentication and wallet provisioning channel
   3. A 6-digit numeric OTP is sent to the user's email address using the Resend email service.
   4. Upon entering the correct OTP, the system checks if a wallet record already exists in `user_embedded_wallets`.
   5. If no wallet exists, the backend provisions a wallet based on the active provider configuration (`WALLET_PROVIDER`):
-     - **Circle Developer-Controlled MPC Wallet** (when `WALLET_PROVIDER=circle`): The backend provisions a new wallet on the Arc testnet using the Circle developer-controlled wallets client under the configured wallet set. This path utilizes a durable provisioning ledger (`circle_wallet_provisioning`) to guarantee idempotency and prevent orphaned wallets during registration retries.
+     - **Circle Developer-Controlled MPC Wallet** (when `WALLET_PROVIDER=circle`): The backend provisions a new wallet on the active Arc network (Arc Mainnet in production, Arc Testnet in local/preview builds) using the Circle developer-controlled wallets client under the configured wallet set. This path utilizes a durable provisioning ledger (`circle_wallet_provisioning`) to guarantee idempotency and prevent orphaned wallets during registration retries.
      - **Legacy Local EOA Wallet**: The backend securely derives a new, random Ethereum EOA wallet via `ethers.Wallet.createRandom()`, encrypts the private key using `WALLET_ENCRYPTION_KEY`, and stores it in the database.
   6. The session cookie is established, and the user is redirected to the role selector.
 

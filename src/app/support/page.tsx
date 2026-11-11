@@ -46,7 +46,7 @@ const faqs = [
   },
   {
     q: "I was charged incorrectly (wrong amount, duplicate, or after cancelling).",
-    a: "Email compliance@subscriptonarc.com with your wallet address or account email, the receipt ID or transaction hash, and what you expected. During the testnet beta these are treated as launch-blocking bugs and your account state is corrected; on mainnet, billing errors by SubScript are refunded in USDC to the paying wallet.",
+    a: "Email compliance@subscriptonarc.com with your wallet address or account email, the receipt ID or transaction hash, and what you expected. Billing errors by SubScript are refunded in USDC to the paying wallet.",
   },
   {
     q: "I paid a merchant but didn't receive what I bought.",

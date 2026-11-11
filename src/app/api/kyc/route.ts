@@ -70,14 +70,14 @@ function buildProviderRedirect(portalUrl: string | undefined, verificationId: st
 }
 
 /* When the provider isn't configured (or its tables/config are missing), identity
-   verification simply hasn't launched yet — degrade to a friendly "coming with mainnet"
+   verification simply hasn't launched yet — degrade to a friendly "not open yet"
    response instead of a 500 the dashboard renders as "internal server error". */
 const KYC_UNAVAILABLE_RESPONSE = {
     success: true,
     available: false,
     verification: null,
     supportedCountries: [] as string[],
-    message: "Identity verification (KYC) will be available on mainnet.",
+    message: "Identity verification (KYC) isn't open yet.",
 };
 
 export async function GET(request: Request) {
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
             configuration = getKycConfiguration();
         } catch {
             return NextResponse.json(
-                { error: "Identity verification (KYC) will be available on mainnet." },
+                { error: "Identity verification (KYC) isn't open yet." },
                 { status: 503 }
             );
         }
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
             && (provider.toLowerCase() === "manual" || !portalUrl)
         ) {
             return NextResponse.json(
-                { error: "Identity verification (KYC) will be available on mainnet." },
+                { error: "Identity verification (KYC) isn't open yet." },
                 { status: 503 }
             );
         }

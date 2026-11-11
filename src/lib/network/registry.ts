@@ -25,6 +25,10 @@ export const ACTIVE_NETWORK: NetworkEnvironment = isProd ? "mainnet" : "testnet"
 export const ACTIVE_ARC_CHAIN = isProd ? ARC_MAINNET : ARC_TESTNET;
 export const ACTIVE_ARC_CHAIN_ID: number = ACTIVE_ARC_CHAIN.id;
 
+/** User-facing name of the ACTIVE chain ("Arc Mainnet" / "Arc Testnet"). UI copy that names the
+    network should read this instead of hardcoding one, so it can't drift from the deployment. */
+export const ACTIVE_NETWORK_NAME: string = ACTIVE_ARC_CHAIN.name;
+
 /** Explorer base for the ACTIVE chain. */
 export const ACTIVE_EXPLORER_URL: string = ACTIVE_ARC_CHAIN.blockExplorers.default.url;
 

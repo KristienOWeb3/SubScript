@@ -124,7 +124,7 @@ export default function KycVerificationPanel({
             }
             if (data.available === false) {
                 setAvailable(false);
-                setUnavailableMessage(data.message || "Identity verification (KYC) will be available on mainnet.");
+                setUnavailableMessage(data.message || "Identity verification (KYC) isn't open yet.");
                 setVerification(null);
                 setRedirectUrl(null);
                 return;
@@ -237,11 +237,11 @@ export default function KycVerificationPanel({
                         <KycVerificationPendingIcon className={`mt-0.5 h-4 w-4 shrink-0 ${accentText}`} />
                         <div>
                             <p className="text-xs font-bold text-white">
-                                {unavailableMessage || "Identity verification (KYC) will be available on mainnet."}
+                                {unavailableMessage || "Identity verification (KYC) isn't open yet."}
                             </p>
                             <p className="mt-1 text-[10px] leading-relaxed text-white/45">
-                                Nothing is required from you during the testnet beta. When mainnet launches you can
-                                verify here to unlock the tiers below.
+                                Nothing is required from you right now. Once verification opens, you can verify
+                                here to unlock the tiers below.
                             </p>
                         </div>
                     </div>

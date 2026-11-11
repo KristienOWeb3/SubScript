@@ -4,6 +4,10 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Menu, X as CloseIcon } from "@/components/icons";
 import { motion, AnimatePresence } from "framer-motion";
+import { ACTIVE_ARC_CHAIN, ACTIVE_EXPLORER_URL, ACTIVE_NETWORK_NAME } from "@/lib/network/registry";
+
+/* The wallet network this deployment expects, from the one network config (NEXT_PUBLIC_ENVIRONMENT). */
+const TARGET_CHAIN_ID_HEX = "0x" + ACTIVE_ARC_CHAIN.id.toString(16);
 
 
 const overlayVariants = {
@@ -76,8 +80,7 @@ export default function Navbar() {
                 setWalletConnected(true);
                 const current = (accounts[0] as string).toLowerCase();
                 const chainIdHex = await ethereum.request({ method: "eth_chainId" });
-                const targetChainIdHex = "0x" + (5042002).toString(16); // "0x4ceef2"
-                setWrongNetwork(chainIdHex !== targetChainIdHex);
+                setWrongNetwork(chainIdHex !== TARGET_CHAIN_ID_HEX);
             } else {
                 setWalletConnected(false);
                 setWrongNetwork(false);
@@ -87,7 +90,7 @@ export default function Navbar() {
         }
     };
 
-    const switchToArcTestnet = async () => {
+    const switchToArcNetwork = async () => {
         if (typeof window === "undefined") return;
         const ethereum = (window as any).ethereum;
         if (!ethereum) {
@@ -95,7 +98,7 @@ export default function Navbar() {
             return;
         }
 
-        const chainIdHex = "0x" + (5042002).toString(16); // "0x4ceef2"
+        const chainIdHex = TARGET_CHAIN_ID_HEX;
         try {
             await ethereum.request({
                 method: "wallet_switchEthereumChain",
@@ -115,14 +118,10 @@ export default function Navbar() {
                         params: [
                             {
                                 chainId: chainIdHex,
-                                chainName: "Arc Testnet",
-                                rpcUrls: ["https://5042002.rpc.thirdweb.com"],
-                                nativeCurrency: {
-                                    name: "USDC",
-                                    symbol: "USDC",
-                                    decimals: 6,
-                                },
-                                blockExplorerUrls: ["https://testnet.arcscan.app"],
+                                chainName: ACTIVE_NETWORK_NAME,
+                                rpcUrls: [...ACTIVE_ARC_CHAIN.rpcUrls.default.http],
+                                nativeCurrency: ACTIVE_ARC_CHAIN.nativeCurrency,
+                                blockExplorerUrls: [ACTIVE_EXPLORER_URL],
                             },
                         ],
                     });
@@ -132,10 +131,10 @@ export default function Navbar() {
                         console.warn("Network switch cancelled");
                         return;
                     }
-                    console.error("Failed to add Arc Testnet:", addError);
+                    console.error(`Failed to add ${ACTIVE_NETWORK_NAME}:`, addError);
                 }
             } else {
-                console.error("Failed to switch to Arc Testnet:", switchError);
+                console.error(`Failed to switch to ${ACTIVE_NETWORK_NAME}:`, switchError);
             }
         }
     };
@@ -214,10 +213,10 @@ export default function Navbar() {
                         {wrongNetwork && walletConnected && (
                             <button
                                 type="button"
-                                onClick={switchToArcTestnet}
+                                onClick={switchToArcNetwork}
                                 className="bg-red-500/10 border border-red-500/25 text-red-600 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-wider px-3.5 py-2 rounded-full transition-all duration-200"
                             >
-                                Switch to Arc Testnet
+                                Switch to {ACTIVE_NETWORK_NAME}
                             </button>
                         )}
                         <Link
@@ -239,7 +238,7 @@ export default function Navbar() {
                         {wrongNetwork && walletConnected && (
                             <button
                                 type="button"
-                                onClick={switchToArcTestnet}
+                                onClick={switchToArcNetwork}
                                 className="bg-red-500/10 border border-red-500/25 text-red-600 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full transition-all duration-200 pointer-events-auto"
                             >
                                 Switch Chain

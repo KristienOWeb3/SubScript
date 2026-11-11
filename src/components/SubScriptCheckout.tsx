@@ -32,7 +32,7 @@ import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI } from "@/
 import { Loader2, CheckCircle, AlertCircle, ShoppingBag } from "@/components/icons";
 import { sepolia } from "viem/chains";
 
-/* Initialize standard viem public client targeting Arc Testnet */
+/* Public client for the active Arc chain (mainnet or testnet, from NEXT_PUBLIC_ENVIRONMENT) */
 const publicClient = createPublicClient({
   chain: activeArcChain,
   transport: arcHttp(),

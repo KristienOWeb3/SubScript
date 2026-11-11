@@ -191,7 +191,7 @@ const spec = {
                     merchantAddress: { type: "string" },
                     receiptToken: { type: ["string", "null"] },
                     checkoutUrl: { type: "string", format: "uri" },
-                    chainId: { type: "integer", description: "Arc chain id (5042002 testnet)." },
+                    chainId: { type: "integer", description: "Arc chain id the intent settles on: 5042 (Arc Mainnet) for live keys, 5042002 (Arc Testnet) for sk_test_ / sandbox intents." },
                     usdcAddress: { type: "string", description: "USDC contract used for settlement." },
                     returnUrls: {
                         type: "object",

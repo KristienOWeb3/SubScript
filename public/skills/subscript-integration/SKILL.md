@@ -7,8 +7,8 @@ description: Integrate SubScript — USDC checkout, recurring subscriptions, usa
 
 SubScript is a programmable USDC commerce layer on Circle's Arc network: one-time checkout,
 recurring subscriptions, usage-based billing, invoice-style collection, and signed webhooks,
-with a flat 1% merchant fee. Currently in public beta on Arc **testnet** — test payments settle
-in valueless testnet USDC, and integrations carry over to mainnet with a configuration change.
+with a flat 1% merchant fee. Live on Arc **Mainnet** (chain id 5042): `sk_live_` payments settle
+native USDC with real value. `sk_test_` keys stay in sandbox mode with valueless test USDC.
 
 ## Ground rules
 

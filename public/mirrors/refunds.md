@@ -8,9 +8,11 @@ Full text: https://www.subscriptonarc.com/refunds — companion policies: [Terms
 
 For purchases made through SubScript-hosted checkout, THE MERCHANT IS THE SOLE SELLER AND EXCLUSIVE MERCHANT OF RECORD (MoR). Their terms govern refunds and product returns. SubScript provides non-custodial transaction routing, cryptographic receipt indexing, and dispute mediation evidence. For SubScript's direct offerings (SubScript Premium), SubScript is the seller of record and handles refunds directly.
 
-## 2. Public Beta & Testnet Program
+## 2. Mainnet Settlement & Test-Mode Separation
 
-SubScript operates in public beta on Arc testnet (Chain ID `5042002`). Beta transactions settle in Arc testnet USDC, which has zero monetary value and cannot be redeemed for cash. Accounting errors during the beta are treated as launch-blocking bugs and corrected in account state upon reporting to compliance@subscriptonarc.com.
+SubScript settles production transactions on Arc Mainnet (Chain ID `5042`) using native USDC. Mainnet transactions transfer assets with real economic value and are final once confirmed.
+
+Test API keys and sandbox records are isolated from mainnet settlement. Arc testnet USDC and testnet contract addresses are never accepted as proof of a production payment. Report any settlement discrepancy to compliance@subscriptonarc.com.
 
 ## 3. Instant Cancellation (FTC Click-to-Cancel Guaranteed)
 

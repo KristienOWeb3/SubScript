@@ -12,9 +12,11 @@ By accessing or using the SubScript protocol, web portals, dashboards, hosted ch
 
 SubScript is a decentralized software application and smart contract routing system deployed on Circle's Arc Network. SubScript is not a bank, depository institution, money services business (MSB), money transmitter, fiat payment processor, digital asset broker-dealer, or investment advisor under U.S. FinCEN / Bank Secrecy Act regulations, EU Markets in Crypto-Assets (MiCA), or UK FSMA. SubScript does not accept, hold, custody, or transmit fiat currency.
 
-## 3. Public Beta and Testnet Program
+## 3. Mainnet Network and Asset Risk Disclosure
 
-SubScript currently operates in public beta on the Arc testnet (Chain ID `5042002`). All beta payments, balances, subscriptions, vault commitments, and receipts settle in Arc testnet USDC — a test asset with zero economic value. Contracts may be redeployed, accounts reset, and data wiped as part of the migration to mainnet (`5042001`).
+SubScript operates on Arc Mainnet (Chain ID `5042`). Transactions, account balances, metered escrow commitments, recurring subscription deductions, and receipts can settle in USDC with real economic value. You are responsible for verifying the network, recipient, amount, and transaction details before approving a transaction.
+
+Transactions submitted to a blockchain may be irreversible. Protocol administrators may pause, upgrade, or migrate smart contracts only as permitted by the applicable contract controls and published policies; testnet balances, receipts, and authorizations remain non-production records and must not be relied upon as proof of financial standing or real payment.
 
 ## 4. Wallet Architecture: Self-Custody vs. Embedded MPC Operating Accounts
 
