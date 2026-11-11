@@ -124,8 +124,14 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
         run: npx playwright test --workers=1 --timeout=120000
 
-      - uses: actions/upload-artifact@v4
+      # Diagnostics only. On 2026-11-11 every Playwright test passed but this upload hung for 10
+      # minutes and failed, which failed the required e2e check by itself. A test failure still
+      # fails the job in the step above; the report upload just can't.
+      - name: Upload Playwright diagnostics
+        uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
+        timeout-minutes: 5
         with:
           name: playwright-diagnostics
           path: |
