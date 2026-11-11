@@ -11,12 +11,20 @@
  *   PRIVATE_KEY=<current owner key> NEW_OWNER=0x... CONFIRM_ROTATE=yes \
  *     node --env-file=.env.local scripts/rotate-proxy-owner.mjs
  *
- * Optional env: PROXY_ADDRESS, RPC_URL (default Arc testnet).
+ * Optional env: PROXY_ADDRESS, RPC_URL (defaults to Arc testnet unless NEXT_PUBLIC_ENVIRONMENT=mainnet,
+ * where an RPC is required).
  */
 import { ethers } from "ethers";
 
 const PROXY_ADDRESS = process.env.PROXY_ADDRESS || "0x6946B7746c2968B195BD15319D25F67E587CAe3C";
-const RPC_URL = process.env.RPC_URL || "https://rpc.testnet.arc.network";
+/* Mainnet mode needs an explicit RPC: falling back to the public testnet endpoint would run an
+   ownership change against the wrong chain without saying so. */
+const IS_MAINNET = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
+const RPC_URL = process.env.RPC_URL || process.env.ARC_RPC_PRIMARY || (IS_MAINNET ? null : "https://rpc.testnet.arc.network");
+if (!RPC_URL) {
+    console.error("FATAL: Mainnet mode requires RPC_URL or ARC_RPC_PRIMARY. Refusing to fall back to the testnet RPC.");
+    process.exit(2);
+}
 
 const ABI = [
     "function owner() view returns (address)",

@@ -164,8 +164,10 @@ export default function PublicPayClient({
         && Number(initialLinkData?.use_count || 0) > 0
     );
     const isTestMode = linkData?.sandbox_mode === true;
+    /* A link with no recorded settlement chain belongs to the active deployment's network, never
+       to testnet by default — otherwise a live mainnet link would wear the "Arc Testnet" banner. */
     const isTestnetLink = isTestMode
-        || Number(linkData?.settlement_chain_id ?? ARC_TESTNET_CHAIN_ID) === ARC_TESTNET_CHAIN_ID;
+        || Number(linkData?.settlement_chain_id ?? (isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID)) === ARC_TESTNET_CHAIN_ID;
     const isSimulationOnly = linkData?.simulation_only === true;
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
     const isLinkExpired = Boolean(linkData?.expires_at && new Date(linkData.expires_at) <= new Date());

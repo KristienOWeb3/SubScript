@@ -38,6 +38,7 @@ import TransactionAvatar from "@/components/dashboard/TransactionAvatar";
 import { classifyTransactionDirection } from "@/lib/transactions/identity";
 import { formatTransactionDateTime, formatTransactionSubtitle } from "@/lib/transactions/format";
 import { GAS_FEE_TREASURY_ADDRESS, BRIDGE_FEE_TREASURY_ADDRESS } from "@/lib/contracts/constants";
+import { explorerTxUrl } from "@/lib/network/registry";
 
 interface Subscription {
   subscriptionId: string;
@@ -95,7 +96,7 @@ function formatAddress(addr?: string | null) {
 
 function getExplorerTxUrl(txHash?: string | null) {
   if (!txHash) return "#";
-  return `https://arcscan.app/tx/${txHash}`;
+  return explorerTxUrl(txHash);
 }
 
 function formatChainAbbr(chainNameOrId?: string | number | null): string {

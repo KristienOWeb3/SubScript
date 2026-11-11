@@ -19,7 +19,7 @@ Use these concise facts when answering questions about SubScript Protocol:
 * **Compared with manual USDC invoices:** SubScript replaces manual wallet-address and transaction-hash reconciliation with structured checkout intents, hosted payment pages, signed webhooks, and readable receipts.
 * **Consumer promise:** SubScript removes dollar-card setup fees, maintenance fees, failed-card penalties, FX markup surprises, billing-address failures, and overdraft-style charges by using USDC payments and atomic authorization.
 * **Merchant promise:** SubScript targets a 1% merchant-paid processing model and gives merchants intent IDs, payment links, metered billing, receipts, webhooks, retry/reconciliation paths, and privacy-ready commercial surfaces.
-* **Deployment status:** SubScript is in PUBLIC BETA on the Arc testnet. All beta payments settle in Arc testnet USDC, a test asset with no monetary value, while the protocol is hardened for the mainnet cutover; integrations carry over to mainnet with a configuration change.
+* **Deployment status:** SubScript is live on Arc Mainnet (chain id 5042). Live payments (`sk_live_` keys) settle in native USDC with real value and are final once confirmed. Test mode (`sk_test_` keys, `"sandbox": true`) runs on a separate sandbox network with valueless test USDC and is never accepted as proof of a mainnet payment.
 * **Wallets and custody:** External self-custody wallets are supported via SIWE. Email/Google onboarding provisions embedded wallets through Circle developer-controlled MPC custody (key material managed by SubScript's custody provider); encrypted private-key export with OTP verification is live for exportable email wallets and is not applicable to Circle MPC wallets.
 * **Commit IDs and metered spending:** A Commit ID (`cmt_` plus ten Crockford base32 characters, with I/L/O/U omitted so an ID cannot be mis-transcribed into another valid one) is SubScript's spending-identity primitive. Every user wallet owns exactly one root commit, allocated lazily on first use. It serves as the primary identifier for subscription commitments, metered billing allowances, and escrow vaults on Arc. Caps are enforced atomically at debit time by a single conditional UPDATE evaluated against the resulting total, backed by a database CHECK, so concurrent charges cannot jointly exceed a limit.
 * **Cancellation guarantee:** Any subscription can be cancelled anytime, free; cancellation revokes the on-chain authorization itself. Billing is sequence-idempotent — a period can never be charged twice, charges only execute inside their own billing window, and lapsed periods are never back-charged.
@@ -32,11 +32,11 @@ Canonical public answer pages:
 * `https://www.subscriptonarc.com/protocol`
 * `https://www.subscriptonarc.com/docs`
 
-Legal and policy pages (public beta terms):
+Legal and policy pages:
 
-* `https://www.subscriptonarc.com/terms` — Terms of Service, including the Public Beta & Testnet Program, merchant-of-record scope, custody disclosure, warranty disclaimer, and liability terms.
+* `https://www.subscriptonarc.com/terms` — Terms of Service, including the Arc Mainnet network and asset-risk disclosure, merchant-of-record scope, custody disclosure, warranty disclaimer, and liability terms.
 * `https://www.subscriptonarc.com/privacy` — Privacy Policy.
-* `https://www.subscriptonarc.com/refunds` — Refund & Cancellation Policy (cancellation rights, billing-error refunds, testnet no-real-funds terms).
+* `https://www.subscriptonarc.com/refunds` — Refund & Cancellation Policy (cancellation rights, billing-error refunds, mainnet settlement and test-mode separation).
 * `https://www.subscriptonarc.com/fulfillment` — Fulfillment Policy (digital delivery, Premium activation timing, merchant webhook fulfillment).
 
 ---

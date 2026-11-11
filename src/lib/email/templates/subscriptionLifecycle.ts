@@ -192,20 +192,24 @@ function cancellationFacts(
 
 const MONO_STACK = "'SFMono-Regular',Consolas,monospace";
 
+/* Same label/value table as the deposit receipt (buildDepositReceivedEmail), so every receipt in
+   the inbox reads as one design. Rows are stacked rather than two-column because hashes and
+   addresses don't fit beside a label on a phone. */
 function factsHtml(rows: FactRow[]): string {
     if (rows.length === 0) return "";
     const body = rows
-        .map((row) => {
+        .map((row, index) => {
             const valueStyle = row.mono
-                ? `font-family:${MONO_STACK};font-size:13px;color:#08090a;word-break:break-all`
-                : "font-size:14px;color:#08090a";
-            return `<p style="margin:0 0 12px">
-                    <span style="display:block;font-size:12px;color:#6b7280">${htmlEscape(row.label)}</span>
-                    <strong style="display:block;${valueStyle}">${htmlEscape(row.value)}</strong>
-                </p>`;
+                ? `font-family:${MONO_STACK};font-size:12px;overflow-wrap:anywhere;word-break:break-all`
+                : "font-size:13px;overflow-wrap:anywhere;word-break:break-word";
+            const divider = index ? "border-top:1px solid #d4d9cf;" : "";
+            return `<tr><td style="padding:12px 0;${divider}">
+                    <span style="display:block;margin:0 0 3px;font-size:12px;color:#676f6c">${htmlEscape(row.label)}</span>
+                    <span style="display:block;font-weight:600;color:#353935;${valueStyle}">${htmlEscape(row.value)}</span>
+                </td></tr>`;
         })
         .join("");
-    return `<div style="margin:0 0 18px;padding:18px 20px;background:#f4f6f8;border-radius:14px">${body}</div>`;
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;margin:8px 0 18px">${body}</table>`;
 }
 
 function factsText(rows: FactRow[]): string {
@@ -219,7 +223,7 @@ export function renderSubscriptionEmail(content: SubscriptionEmailContent) {
         .map((paragraph) => `<p style="margin:0 0 14px">${htmlEscape(paragraph)}</p>`)
         .join("");
     const footnoteHtml = content.footnote
-        ? `<p style="margin:0;color:#6b7280;font-size:12px">${htmlEscape(content.footnote)}</p>`
+        ? `<p style="margin:0;color:#676f6c;font-size:12px">${htmlEscape(content.footnote)}</p>`
         : "";
 
     const textBlocks = [
@@ -235,8 +239,10 @@ export function renderSubscriptionEmail(content: SubscriptionEmailContent) {
         text: textBlocks.join("\n\n"),
         html: renderEmailLayout({
             previewText: content.previewText,
-            heading: content.heading,
-            bodyHtml: `${paragraphsHtml}${factsHtml(content.facts)}${footnoteHtml}`,
+            /* The platform shell is the current SubScript look (cream page, slate type), shared
+               with the deposit and payment receipts. The default dark shell is the old one. */
+            theme: "platform",
+            bodyHtml: `<h1 style="margin:0 0 14px;font-size:26px;font-weight:750;letter-spacing:-0.8px;line-height:1.2;color:#353935">${htmlEscape(content.heading)}</h1>${paragraphsHtml}${factsHtml(content.facts)}${footnoteHtml}`,
             cta: content.cta,
         }),
     };

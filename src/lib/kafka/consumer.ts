@@ -1,4 +1,5 @@
 import { ethers } from "ethers";
+import { resolveArcRpcUrl, resolveArcWsUrl } from "@/lib/network/registry";
 import { createClient } from "@supabase/supabase-js";
 import { KafkaEvent, Topics } from "./events";
 import { addressToBuffer } from "../payments/address";
@@ -23,12 +24,17 @@ export class EventSourcedEngine {
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         this.supabase = createClient(supabaseUrl, supabaseServiceKey);
-        this.rpcProvider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://rpc.testnet.arc.network", undefined, { staticNetwork: true });
+        this.rpcProvider = new ethers.JsonRpcProvider(resolveArcRpcUrl(), undefined, { staticNetwork: true });
         this.initWebSocket();
     }
 
     private initWebSocket() {
-        const wsUrl = process.env.WS_RPC_URL || "wss://ws.testnet.arc.network";
+        const wsUrl = resolveArcWsUrl();
+        if (!wsUrl) {
+            /* No WebSocket endpoint for this network: block polling over HTTP covers it. */
+            this.wsProvider = null;
+            return;
+        }
         try {
             this.wsProvider = new ethers.WebSocketProvider(wsUrl);
             this.wsProvider.on("error", (err) => {

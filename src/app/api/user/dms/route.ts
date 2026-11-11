@@ -6,6 +6,7 @@ import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { accountDisplayName } from "@/lib/identityDisplay";
 import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import { ethers } from "ethers";
+import { resolveArcRpcUrl } from "@/lib/network/registry";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
@@ -29,7 +30,7 @@ const USDC_TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)").toLow
    `to` for at least `amountMicros`. Prevents spoofed "I sent you X" records. */
 async function verifyUsdcTransferOnChain(txHash: string, from: string, to: string, amountMicros: bigint): Promise<boolean> {
     try {
-        const url = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
+        const url = resolveArcRpcUrl();
         const provider = new ethers.JsonRpcProvider(url, undefined, { staticNetwork: true });
         /* Wait briefly for confirmation — the browser-wallet path submits without waiting. */
         const receipt = await provider.waitForTransaction(txHash, 1, 30_000);

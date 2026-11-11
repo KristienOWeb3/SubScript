@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     template: "%s · SubScript Docs",
   },
   description:
-    "Developer-first SubScript integration guide: create an Arc testnet Checkout Intent in five minutes, verify signed webhooks, understand identifiers and micro-USDC units, test idempotency, and ship Arc USDC payments safely.",
+    "Developer-first SubScript integration guide: create a sandbox Checkout Intent in five minutes, verify signed webhooks, understand identifiers and micro-USDC units, test idempotency, and ship Arc USDC payments safely.",
   alternates: {
     canonical: "/docs",
   },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
+import { resolveArcRpcUrl } from "@/lib/network/registry";
 import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
 import { ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => ({}));
-        const provider = new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network", undefined, { staticNetwork: true });
+        const provider = new ethers.JsonRpcProvider(resolveArcRpcUrl(), undefined, { staticNetwork: true });
         const latest = await provider.getBlockNumber();
         const fromBlock = parseBlock(body.fromBlock, Math.max(0, latest - 5000));
         const toBlock = parseBlock(body.toBlock, "latest");

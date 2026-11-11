@@ -248,7 +248,7 @@ export async function POST(request: Request) {
                     });
                 }
                 const existingReturnUrls = (existing.stateSnapshot as { returnUrls?: Record<string, string> } | null)?.returnUrls;
-                const existingSettlement = arcReconciliation();
+                const existingSettlement = arcReconciliation(null, settlementChainId);
                 return NextResponse.json({
                     success: true,
                     intent: {
@@ -332,7 +332,7 @@ export async function POST(request: Request) {
             } as any
         });
 
-        const settlement = arcReconciliation();
+        const settlement = arcReconciliation(null, settlementChainId);
 
         /* No receipt email from this route, and there is nothing here to send one for: an intent is
            a PaymentLink in PENDING with a checkout URL, so the only event it can honestly emit is

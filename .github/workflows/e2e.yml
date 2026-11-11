@@ -44,9 +44,24 @@ jobs:
 
       # Split from the browser download so a stalled apt mirror and a stalled CDN are
       # distinguishable in the log, and so the cache below can skip the download alone.
+      # Ubuntu's package archives can go unreachable from GitHub runners for hours (2026-11-11:
+      # every azure.archive.ubuntu.com request hung 20s and security.ubuntu.com errored), which ran
+      # this step into its timeout before a single test ran. The ubuntu-24.04 image already ships
+      # Google Chrome and the shared libraries Chromium needs, so the apt packages are mostly fonts:
+      # install them when the archive answers, warn when it doesn't. A genuinely missing library
+      # still fails loudly when the browser launches.
       - name: Install Playwright system dependencies
         timeout-minutes: 6
-        run: npx playwright install-deps chromium
+        run: |
+          # Fail fast on a dead mirror instead of the default 20s per request.
+          sudo tee /etc/apt/apt.conf.d/99ci-fast-fail >/dev/null <<'APT'
+          Acquire::http::Timeout "10";
+          Acquire::https::Timeout "10";
+          Acquire::Retries "1";
+          APT
+          if ! timeout 240 npx playwright install-deps chromium; then
+            echo "::warning::Ubuntu package archive unreachable; continuing with the runner image's preinstalled Chrome libraries"
+          fi
 
       - name: Cache Playwright browser
         uses: actions/cache@v4
@@ -109,8 +124,14 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
         run: npx playwright test --workers=1 --timeout=120000
 
-      - uses: actions/upload-artifact@v4
+      # Diagnostics only. On 2026-11-11 every Playwright test passed but this upload hung for 10
+      # minutes and failed, which failed the required e2e check by itself. A test failure still
+      # fails the job in the step above; the report upload just can't.
+      - name: Upload Playwright diagnostics
+        uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
+        timeout-minutes: 5
         with:
           name: playwright-diagnostics
           path: |

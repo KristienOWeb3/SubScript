@@ -14,12 +14,12 @@ Always include the email or wallet address on the account, plus a receipt ID or 
 ## Common questions
 
 - **Cancel a subscription:** Dashboard → the subscription → Cancel current plan. Free, immediate or at period end, and it revokes the on-chain billing authorization itself (FTC Click-to-Cancel compliant).
-- **Incorrect charge (wrong amount, duplicate, after cancelling):** email compliance@ with the receipt ID/tx hash. Beta billing errors are treated as launch-blocking bugs; on mainnet, SubScript billing errors are refunded in USDC to the paying wallet.
+- **Incorrect charge (wrong amount, duplicate, after cancelling):** email compliance@ with the receipt ID/tx hash. SubScript billing errors are refunded in USDC to the paying wallet.
 - **Merchant didn't deliver:** the merchant is the seller of record — contact them first; the SubScript receipt and on-chain transaction are proof of payment. Repeated non-fulfillment violates the Terms — report it.
 - **Premium paid but not active:** automatic within seconds; if not applied within 30 minutes of on-chain confirmation, email support with the transaction hash.
 - **Wallet backup prompt:** genuine for exportable email wallets — the dashboard stays locked until the recovery key is downloaded and verified. SubScript never asks for keys by email or DM.
 - **Webhooks not arriving (merchants):** Dashboard → Webhooks has a live delivery inspector with payloads and replay; verify the `x-subscript-signature` HMAC and return 2xx.
-- **Is this real money?** Not during the beta — SubScript runs on the Arc testnet and all payments settle in testnet USDC, which has no monetary value.
+- **Is this real money?** Yes for live payments. SubScript runs on Arc Mainnet (Chain ID `5042`) and settles native USDC with real value. Test and demo modes stay isolated and can't prove or settle a mainnet payment.
 
 ## Related policies
 

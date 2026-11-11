@@ -47,9 +47,25 @@ jobs:
       - name: Session recovery regressions
         run: node --test --test-isolation=none src/lib/auth/__tests__/session-persistence.test.mjs
 
+      # Ubuntu's package archives can go unreachable from GitHub runners for hours (2026-11-11:
+      # every azure.archive.ubuntu.com request hung 20s and security.ubuntu.com errored), which ran
+      # this step into its timeout before a single test ran. The ubuntu-24.04 image already ships
+      # Google Chrome and the shared libraries Chromium needs, so the apt packages are mostly fonts:
+      # install them when the archive answers, warn when it doesn't. A genuinely missing library
+      # still fails loudly when the browser launches.
       - name: Install Chromium for session regressions
-        timeout-minutes: 6
-        run: npx playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: |
+          # Fail fast on a dead mirror instead of the default 20s per request.
+          sudo tee /etc/apt/apt.conf.d/99ci-fast-fail >/dev/null <<'APT'
+          Acquire::http::Timeout "10";
+          Acquire::https::Timeout "10";
+          Acquire::Retries "1";
+          APT
+          if ! timeout 240 npx playwright install-deps chromium; then
+            echo "::warning::Ubuntu package archive unreachable; continuing with the runner image's preinstalled Chrome libraries"
+          fi
+          npx playwright install chromium
 
       - name: Transaction authorization and receipt recovery regressions
         run: npx tsx --test --test-concurrency=2 "src/lib/auth/__tests__/*.test.mjs" "src/lib/payments/__tests__/*.test.mjs" "src/lib/client/*.test.mjs" "src/lib/accounts/*.test.mjs" "src/lib/__tests__/dashboard-navigation.test.mjs"
