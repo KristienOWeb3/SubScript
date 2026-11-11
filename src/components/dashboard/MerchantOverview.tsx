@@ -19,6 +19,7 @@ import {
 } from "@/components/icons";
 import type { MerchantOverviewSummary, MerchantOverviewRange } from "@/lib/analytics/merchantOverview";
 import MerchantTrendChart from "@/components/dashboard/MerchantTrendChart";
+import RollingNumber from "@/components/ui/RollingNumber";
 import { activeArcChain } from "@/lib/wagmi";
 import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
@@ -134,6 +135,11 @@ function formatMicros(value: string | undefined) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     });
+}
+
+/** Rolls changed digits; masked (hidden-balance) values render as plain text. */
+function Figure({ value }: { value: string }) {
+    return value.startsWith("•") ? <>{value}</> : <RollingNumber value={value} />;
 }
 
 function OverviewCard({
@@ -292,7 +298,7 @@ export default function MerchantOverview({
                         ) : (
                             <div className="@container/balance mt-4">
                                 <p className="font-extrabold tracking-tight text-[#082824]" style={{ fontSize: `min(36px, ${150 / walletAmount.length}cqi)` }}>
-                                    {walletAmount}
+                                    <Figure value={walletAmount} />
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Instant spendable balance
@@ -358,7 +364,7 @@ export default function MerchantOverview({
                         ) : (
                             <div className="@container/balance mt-4">
                                 <p className="font-extrabold tracking-tight text-[#082824]" style={{ fontSize: `min(36px, ${150 / earningsAmount.length}cqi)` }}>
-                                    {earningsAmount}
+                                    <Figure value={earningsAmount} />
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Net settled ({rangeCaption})
@@ -406,7 +412,7 @@ export default function MerchantOverview({
                         ) : (
                             <div className="@container/balance mt-4">
                                 <p className="font-extrabold tracking-tight text-[#082824]" style={{ fontSize: `min(36px, ${150 / vaultAmount.length}cqi)` }}>
-                                    {vaultAmount}
+                                    <Figure value={vaultAmount} />
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Ready to Withdraw on Arc
@@ -444,7 +450,7 @@ export default function MerchantOverview({
                         ) : (
                             <div className="@container/balance mt-4">
                                 <p className="font-extrabold tracking-tight text-[#082824]" style={{ fontSize: `min(36px, ${150 / projectionAmount.length}cqi)` }}>
-                                    {projectionAmount}
+                                    <Figure value={projectionAmount} />
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
                                     Expected recurring renewals
@@ -485,7 +491,7 @@ export default function MerchantOverview({
                                             ""
                                         }`}
                                     >
-                                        ${grossTotal} USDC
+                                        $<RollingNumber value={grossTotal} /> USDC
                                     </strong>
                                 </p>
                             </div>
@@ -557,7 +563,7 @@ export default function MerchantOverview({
                                                     ""
                                                 }`}
                                             >
-                                                {plan.activeSubscriberCount.toLocaleString()}
+                                                <RollingNumber value={plan.activeSubscriberCount.toLocaleString()} />
                                             </span>
                                             <span className="text-[9px] text-black/50 dark:text-white/50 block leading-none">
                                                 subscribers
