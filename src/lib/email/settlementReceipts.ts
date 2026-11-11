@@ -47,6 +47,7 @@ import { buildDepositReceivedEmail, sendPaymentReceiptEmails } from "./transacti
    different kinds of settlement can never collide on one key even if they shared a hash. */
 export type SettlementKind =
     | "payment_link"
+    | "subscription_start"
     | "subscription_renewal"
     | "premium_renewal"
     | "vault_topup"
@@ -60,6 +61,7 @@ export type SettlementKind =
 
 const DEFAULT_TITLE: Record<SettlementKind, string> = {
     payment_link: "SubScript payment",
+    subscription_start: "First subscription payment",
     subscription_renewal: "Subscription renewal",
     premium_renewal: "SubScript Premium renewal",
     vault_topup: "Usage balance top-up",
@@ -315,17 +317,21 @@ export function buildSettlementReceiptEmail(input: {
             "",
             closing,
         ].join("\n"),
+        /* Platform shell and amount card, matching the deposit receipt the payee side of this same
+           settlement already gets — one payment shouldn't arrive in two different designs. */
         html: renderEmailLayout({
             previewText: `${heading}: ${amount} USDC`,
-            heading,
-            bodyHtml: `<p style="margin:0 0 16px">${safeTitle}</p>
-                <div style="margin:0 0 16px;padding:18px 20px;background:#f4f6f8;border-radius:14px">
-                    <span style="font-size:28px;font-weight:800;color:#08090a">${amount}</span>
-                    <span style="font-size:15px;font-weight:700;color:#00a892;margin-left:6px">USDC</span>
-                </div>
-                <p style="margin:0 0 4px;color:#6b7280;font-size:12px">${htmlEscape(referenceLabel)}</p>
-                <p style="margin:0 0 16px;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;color:#08090a;word-break:break-all">${htmlEscape(input.reference)}</p>
-                <p style="margin:0;color:#6b7280;font-size:12px">${htmlEscape(closing)}</p>`,
+            theme: "platform",
+            bodyHtml: `<h1 style="margin:0 0 8px;font-size:26px;font-weight:750;letter-spacing:-0.8px;line-height:1.2;color:#353935">${htmlEscape(heading)}</h1>
+                <p style="margin:0 0 24px;color:#676f6c;font-size:14px">${safeTitle}</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#d4e3e8" style="background:#d4e3e8;border:1px solid #aab8b9;border-radius:20px">
+                <tr><td align="center" style="padding:24px 12px">
+                    <span style="display:inline-block;padding:4px 12px;border:1px solid #899c98;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Paid</span>
+                    <p style="margin:14px 0 2px;font-size:36px;font-weight:750;letter-spacing:-1.3px;line-height:1.15;color:#353935;overflow-wrap:anywhere">${amount} <span style="font-size:15px;letter-spacing:0">USDC</span></p>
+                </td></tr></table>
+                <p style="margin:24px 0 3px;color:#676f6c;font-size:12px">${htmlEscape(referenceLabel)}</p>
+                <p style="margin:0 0 18px;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;font-weight:600;color:#353935;word-break:break-all">${htmlEscape(input.reference)}</p>
+                <p style="margin:0;color:#676f6c;font-size:12px">${htmlEscape(closing)}</p>`,
         }),
     };
 }

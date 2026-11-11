@@ -7,6 +7,7 @@ import { validateWebhookUrl } from "@/lib/webhookUrls";
 import { requireEnterpriseAndTier1, authenticateMerchant } from "@/lib/v1/merchantAuth";
 import { encryptWebhookSecret } from "@/lib/webhooks";
 import { validateEnabledEvents } from "@/lib/events/enabledEvents";
+import { isProd } from "@/lib/contracts/constants";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -211,7 +212,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: urlValidation.error }, { status: 400 });
         }
 
-        const env = environment === "LIVE" ? "LIVE" : "TEST";
+        /* An omitted environment follows the credential. Defaulting it to TEST is how a mainnet
+           merchant who added their URL from the dashboard (which sends only `url`) ended up with an
+           endpoint that real LIVE events never fan out to — recordMerchantEvent matches endpoints on
+           environment, so the merchant's site silently stopped hearing about their subscriptions. */
+        const env = environment === "LIVE" || environment === "TEST"
+            ? environment
+            : auth.mode === "live" || (auth.mode === "session" && isProd)
+                ? "LIVE"
+                : "TEST";
         if (auth.mode === "test" && env === "LIVE") {
             return NextResponse.json({ error: "Forbidden: TEST API credentials cannot configure LIVE endpoints." }, { status: 400 });
         }

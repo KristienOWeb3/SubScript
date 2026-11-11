@@ -42,6 +42,7 @@ import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { subscriptionKey } from "@/lib/subscriptions/contractBinding";
 import { haltGuard } from "@/lib/accountHalt";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 
 export const maxDuration = 120;
 
@@ -857,6 +858,21 @@ async function handlePOST(request: Request) {
             subscriber,
         });
         await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
+
+        /* Receipt for the first period, which the subscribe transaction charges on-chain. Renewals
+           already mailed one from cron/customer-billing, but the signup charge mailed nothing, so a
+           subscriber's first payment was the one they had no email proof of. Keyed on the tx hash,
+           so a retried request dedupes at the provider. Swallowed: the subscription is live and
+           mirrored by now, and a mail outage must never turn that into an error. */
+        await sendSettlementReceipts({
+            kind: "subscription_start",
+            amountUsdc: appliedPromo ? appliedPromo.introductoryAmountUsdc : plan.amountUsdc,
+            txHash,
+            payerAddress: subscriber,
+            payeeAddress: merchant,
+            /* Both sides read this line, so it names the plan and the subscription, not the customer. */
+            paymentTitle: `${plan.name || "Subscription"} (#${subId})`,
+        }).catch((err: unknown) => console.error("[subscription/subscribe] receipt email failed:", err));
 
         await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
             subscriptionId: subId,
