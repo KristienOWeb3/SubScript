@@ -59,6 +59,13 @@ test("the user and merchant mobile bottom bars, and the user skeleton, are 70px 
     assert.match(skeleton, /h-\[70px\]/);
     assert.match(skeleton, /w-\[70px\]/);
     assert.match(merchantNav, /merchant-bottom-nav[^"]*\sh-\[70px\]/);
+    // globals.css pins the live user bar with !important, overriding the inline CAPSULE_HEIGHT.
+    const css = source("src/app/globals.css");
+    const rule = css.match(/nav\[aria-label="Primary navigation"\],\s*\.user-dashboard-redesign \[data-testid="mobile-dm-btn"\] \{([^}]*)\}/);
+    assert.ok(rule, "mobile bottom bar height rule exists");
+    for (const prop of ["height", "min-height", "max-height"]) {
+        assert.match(rule[1], new RegExp(`(?:^|\\s)${prop}: 70px !important;`));
+    }
 });
 
 test("the mobile dashboard skeleton mirrors profile, tier, and notification controls", () => {

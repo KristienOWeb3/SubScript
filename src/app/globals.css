@@ -1138,11 +1138,13 @@ input[data-pin-slot][data-pin-slot-feedback="success"]:focus,
   stroke: #000000 !important;
 }
 
+/* Source of truth for the mobile bottom bar height: these !important rules beat the inline
+   CAPSULE_HEIGHT in MobileFloatingNav.tsx, so keep both (and the loading skeleton) in step. */
 .user-dashboard-redesign nav[aria-label="Primary navigation"],
 .user-dashboard-redesign [data-testid="mobile-dm-btn"] {
-  height: 50px !important;
-  min-height: 50px !important;
-  max-height: 50px !important;
+  height: 70px !important;
+  min-height: 70px !important;
+  max-height: 70px !important;
   box-sizing: border-box !important;
 }
 
