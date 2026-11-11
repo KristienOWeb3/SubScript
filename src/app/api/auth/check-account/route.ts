@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sanitizeInput } from "@/utils/security";
-import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
+import { resolveAccountRoleForSession } from "@/lib/accounts/roles";
 import { normalizeAccountEmail } from "@/lib/auth/accountEmail";
 import { localAuthenticationConfigurationError } from "@/lib/auth/localConfiguration";
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
             }
             const configurationError = localAuthenticationConfigurationError();
             if (configurationError) return configurationError;
-            const role = await resolveAccountRoleWithBackfill(addressLower);
+            const role = await resolveAccountRoleForSession(addressLower);
             if (role) {
                 return NextResponse.json({
                     exists: true,

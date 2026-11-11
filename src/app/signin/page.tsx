@@ -161,11 +161,19 @@ function SignInContent() {
   }, [safeNext]);
 
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
-    const role = (data.role || "USER") as "USER" | "ENTERPRISE";
+    /* A checkout or DM link that sent us here gets the user straight back; those flows heal a
+       missing role to USER when the payer actually acts. */
     if (safeNext) {
       window.location.href = safeNext;
       return;
     }
+    /* No role yet means a new account that hasn't picked user vs merchant. Send it to the
+       picker instead of guessing USER: a guessed USER locks an invited merchant out for good. */
+    if (!data.role) {
+      window.location.href = "/signup?completeRole=1";
+      return;
+    }
+    const role = data.role as "USER" | "ENTERPRISE";
     window.location.href = getDashboardUrl(role, "/dashboard");
   }, [safeNext]);
 
