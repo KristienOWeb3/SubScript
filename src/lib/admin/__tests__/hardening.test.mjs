@@ -201,3 +201,11 @@ test("manual IP bans are not cached past an admin unban", () => {
   assert.match(redisBanBlock, /redis\.get\(`ban:\$\{ip\}`\)/);
 });
 
+test("host rewrites carry the CSP nonce so rewritten roots like admin.subscriptonarc.com/ hydrate", () => {
+  const middleware = source("src/proxy.ts");
+  // A bare rewrite skips x-nonce and the per-request policy. next.config's baseline CSP then
+  // blocks Next's inline RSC payload, and the page sits on its server-rendered skeleton forever.
+  assert.doesNotMatch(middleware, /return NextResponse\.rewrite\(/);
+  assert.match(middleware, /return rewriteWithNonce\(request, adminUrl\)/);
+  assert.match(middleware, /requestHeaders\.set\("x-nonce", nonce\)/);
+});
