@@ -27,8 +27,8 @@ function loadRegistry(env) {
                 isProd,
                 ARC_TESTNET_CHAIN_ID: 5042002,
                 ARC_MAINNET_CHAIN_ID: 5042,
-                ARC_TESTNET: { id: 5042002, blockExplorers: { default: { url: "https://testnet.arcscan.app" } } },
-                ARC_MAINNET: { id: 5042, blockExplorers: { default: { url: "https://explorer.arc.io" } } },
+                ARC_TESTNET: { id: 5042002, rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } }, blockExplorers: { default: { url: "https://testnet.arcscan.app" } } },
+                ARC_MAINNET: { id: 5042, rpcUrls: { default: { http: ["https://rpc.mainnet.arc.io"] } }, blockExplorers: { default: { url: "https://explorer.arc.io" } } },
             };
         }
         throw new Error(`Unexpected import: ${specifier}`);
@@ -90,6 +90,57 @@ test("mainnet mode with malformed values fails closed", () => {
         assert.equal(validation.ok, false, `${key}=${bad} must be malformed`);
         assert.ok(validation.malformed.includes(key));
         assert.throws(() => registry.assertFinancialNetworkReady());
+    }
+});
+
+test("server RPC resolution never falls back to testnet on mainnet", () => {
+    /* Mainnet with no server override: the gate-required public RPC wins, then the chain default. */
+    assert.equal(loadRegistry(FULL_MAINNET_ENV).resolveArcRpcUrl(), "https://rpc.mainnet.arc.network");
+    const noPublic = { ...FULL_MAINNET_ENV };
+    delete noPublic.NEXT_PUBLIC_ARC_RPC_PRIMARY;
+    assert.equal(loadRegistry(noPublic).resolveArcRpcUrl(), "https://rpc.mainnet.arc.io");
+    assert.equal(loadRegistry(FULL_MAINNET_ENV).resolveArcWsUrl(), null, "no guessed mainnet WebSocket");
+
+    /* Precedence: ARC_RPC_PRIMARY > RPC_URL > ARC_RPC_URL > NEXT_PUBLIC_ARC_RPC_PRIMARY. */
+    const env = { ...FULL_MAINNET_ENV, ARC_RPC_URL: "https://c.example", RPC_URL: "https://b.example" };
+    assert.equal(loadRegistry(env).resolveArcRpcUrl(), "https://b.example");
+    assert.equal(loadRegistry({ ...env, ARC_RPC_PRIMARY: "https://a.example" }).resolveArcRpcUrl(), "https://a.example");
+
+    /* Testnet keeps its public defaults for dev and preview. */
+    const testnet = loadRegistry({ NEXT_PUBLIC_ENVIRONMENT: "testnet" });
+    assert.equal(testnet.resolveArcRpcUrl(), "https://rpc.testnet.arc.network");
+    assert.equal(testnet.resolveArcWsUrl(), "wss://ws.testnet.arc.network");
+});
+
+test("mainnet rejects a testnet value in any server RPC override", () => {
+    for (const key of ["ARC_RPC_PRIMARY", "RPC_URL", "ARC_RPC_URL", "WS_RPC_URL"]) {
+        const registry = loadRegistry({ ...FULL_MAINNET_ENV, [key]: "https://rpc.testnet.arc.network" });
+        const validation = registry.validateMainnetConfiguration();
+        assert.equal(validation.ok, false, `${key} pointing at testnet must fail the mainnet gate`);
+        assert.ok(validation.malformed.includes(key));
+    }
+});
+
+test("server code resolves the Arc RPC through the registry, not a testnet literal", () => {
+    for (const path of [
+        "src/app/api/keeper/trigger/route.ts",
+        "src/app/api/receipts/index/route.ts",
+        "src/app/api/user/dms/route.ts",
+        "src/lib/contracts/health.ts",
+        "src/lib/kafka/consumer.ts",
+        "src/lib/payments/rpc.ts",
+        "src/lib/subscriptions/onchain.ts",
+        "src/lib/vault/onchain.ts",
+    ]) {
+        let code = source(path);
+        assert.match(code, /resolveArcRpcUrl\(\)/, `${path} uses resolveArcRpcUrl()`);
+        if (path.endsWith("payments/rpc.ts")) {
+            /* The public testnet backup is the one allowed literal, and only behind the testnet branch. */
+            const gated = /IS_ARC_MAINNET\s*\?\s*\[\]\s*:\s*\["https:\/\/rpc\.blockdaemon\.testnet\.arc\.network"\]/;
+            assert.match(code, gated, "rpc.ts keeps its testnet backup behind the mainnet check");
+            code = code.replace(gated, "");
+        }
+        assert.doesNotMatch(code, /["'`](?:https|wss):\/\/[^"'`]*testnet\.arc\.network/, `${path} hardcodes a testnet RPC`);
     }
 });
 

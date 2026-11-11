@@ -58,6 +58,14 @@ function loadRpcModule({ probe }) {
         if (specifier === "@/lib/contracts/constants") {
             return { ARC_MAINNET_CHAIN_ID: 5042, ARC_TESTNET_CHAIN_ID: 5042002 };
         }
+        if (specifier === "@/lib/network/registry") {
+            /* Same precedence as the real resolver; the default is the active chain's public RPC. */
+            return {
+                resolveArcRpcUrl: () => process.env.ARC_RPC_PRIMARY || process.env.RPC_URL
+                    || process.env.ARC_RPC_URL || process.env.NEXT_PUBLIC_ARC_RPC_PRIMARY
+                    || (process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet" ? "https://rpc.mainnet.arc.io" : primary),
+            };
+        }
         throw new Error(`Unexpected import: ${specifier}`);
     }, testModule, testModule.exports);
     return testModule.exports;
@@ -68,6 +76,8 @@ async function withRpcEnvironment(run) {
         "NEXT_PUBLIC_ENVIRONMENT",
         "ARC_RPC_PRIMARY",
         "RPC_URL",
+        "ARC_RPC_URL",
+        "NEXT_PUBLIC_ARC_RPC_PRIMARY",
         "ARC_RPC_SECONDARY",
         "RPC_FALLBACK_URL_1",
         "RPC_FALLBACK_URL_2",

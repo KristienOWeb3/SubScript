@@ -3,6 +3,7 @@
    createSubscription takes the first payment immediately (so the user must approve
    USDC first), mirroring the vault-commit approve+act pattern. */
 import { ethers } from "ethers";
+import { resolveArcRpcUrl } from "@/lib/network/registry";
 import { getWalletCustody, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
 import { ensureUsdcAllowance } from "@/lib/vault/onchain";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -33,7 +34,7 @@ const USDC_ABI = [
 ];
 
 function readProvider() {
-    return new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network", undefined, { staticNetwork: true });
+    return new ethers.JsonRpcProvider(resolveArcRpcUrl(), undefined, { staticNetwork: true });
 }
 
 export type OnChainSubscription = {

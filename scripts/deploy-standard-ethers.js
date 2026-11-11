@@ -5,7 +5,12 @@ const path = require("path");
 
 async function main() {
   const privateKey = process.env.PRIVATE_KEY;
-  const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
+  const isMainnet = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
+  const rpcUrl = process.env.RPC_URL || process.env.ARC_RPC_PRIMARY || (isMainnet ? null : "https://rpc.testnet.arc.network");
+  if (!rpcUrl) {
+    console.error("Error: mainnet mode requires RPC_URL or ARC_RPC_PRIMARY. Refusing to deploy against the testnet RPC.");
+    process.exit(2);
+  }
   const usdcAddress = process.env.USDC_ADDRESS || "0x3600000000000000000000000000000000000000";
 
   if (!privateKey) {

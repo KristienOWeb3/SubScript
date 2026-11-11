@@ -22,7 +22,14 @@
  */
 import { ethers } from "ethers";
 
-const RPC_URL = process.env.RPC_URL || process.env.ARC_RPC_PRIMARY || "https://rpc.testnet.arc.network";
+/* Mainnet mode needs an explicit RPC: falling back to the public testnet endpoint would run an
+   ownership change against the wrong chain without saying so. */
+const IS_MAINNET = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
+const RPC_URL = process.env.RPC_URL || process.env.ARC_RPC_PRIMARY || (IS_MAINNET ? null : "https://rpc.testnet.arc.network");
+if (!RPC_URL) {
+    console.error("FATAL: Mainnet mode requires RPC_URL or ARC_RPC_PRIMARY. Refusing to fall back to the testnet RPC.");
+    process.exit(2);
+}
 
 const TARGETS = [
     { name: "Router",      address: process.env.ROUTER_ADDRESS || "0x6946B7746c2968B195BD15319D25F67E587CAe3C" },

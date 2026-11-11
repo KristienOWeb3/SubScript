@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { ethers } from "ethers";
+import { resolveArcRpcUrl } from "@/lib/network/registry";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { getAccountKycTier } from "@/lib/kyc/tier";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
+        const rpcUrl = resolveArcRpcUrl();
         const adminPrivateKey = process.env.PRIVATE_KEY;
         if (!adminPrivateKey) {
             return NextResponse.json({ error: "Configuration Error: Admin private key missing on server" }, { status: 500 });

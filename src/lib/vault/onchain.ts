@@ -2,6 +2,7 @@
    off-chain mirror sync, and embedded-wallet writes routed through the custody
    provider (legacy AES key or Circle MPC — see src/lib/custody). */
 import { ethers } from "ethers";
+import { resolveArcRpcUrl } from "@/lib/network/registry";
 import { prisma } from "@/lib/prisma";
 import { deterministicIdempotencyKey, getWalletCustody, type WalletCustody } from "@/lib/custody";
 import {
@@ -47,7 +48,7 @@ let _cachedReadProvider: ethers.JsonRpcProvider | null = null;
 let _cachedReadProviderUrl: string | null = null;
 
 export function readProvider(): ethers.JsonRpcProvider {
-    const url = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
+    const url = resolveArcRpcUrl();
     if (!_cachedReadProvider || _cachedReadProviderUrl !== url) {
         _cachedReadProvider = new ethers.JsonRpcProvider(url, SUBSCRIPT_VAULT_CHAIN_ID, {
             staticNetwork: true,

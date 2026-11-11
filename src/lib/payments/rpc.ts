@@ -1,10 +1,8 @@
 import { ethers } from "ethers";
 import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
+import { resolveArcRpcUrl } from "@/lib/network/registry";
 
 const IS_ARC_MAINNET = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
-const DEFAULT_ARC_RPC = IS_ARC_MAINNET
-    ? undefined
-    : "https://rpc.testnet.arc.network";
 const ARC_TESTNET_PUBLIC_FALLBACKS = IS_ARC_MAINNET
     ? []
     : ["https://rpc.blockdaemon.testnet.arc.network"];
@@ -23,7 +21,7 @@ const ARC_TESTNET_PUBLIC_FALLBACKS = IS_ARC_MAINNET
 const ARC_CHAIN_ID = IS_ARC_MAINNET ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
 
 const RPC_ENDPOINTS = Array.from(new Set([
-    process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || DEFAULT_ARC_RPC,
+    resolveArcRpcUrl(),
     process.env.ARC_RPC_SECONDARY,
     process.env.RPC_FALLBACK_URL_1,
     process.env.RPC_FALLBACK_URL_2,

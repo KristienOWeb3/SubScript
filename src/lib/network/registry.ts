@@ -40,6 +40,32 @@ export function explorerAddressUrl(address: string): string {
     return `${ACTIVE_EXPLORER_URL}/address/${address}`;
 }
 
+/* Server-side Arc RPC env vars, in precedence order. Older server code read ARC_RPC_PRIMARY or
+   RPC_URL and fell back to the public TESTNET endpoint when neither was set, so a mainnet
+   deployment missing them quietly read (and keepers wrote) against testnet. The mainnet gate
+   requires NEXT_PUBLIC_ARC_RPC_PRIMARY, so it's the last explicit fallback here. */
+export const ARC_RPC_ENV = ["ARC_RPC_PRIMARY", "RPC_URL", "ARC_RPC_URL", "NEXT_PUBLIC_ARC_RPC_PRIMARY"] as const;
+
+/** Arc JSON-RPC URL for server-side reads/writes on the ACTIVE chain. Uses the first configured
+    ARC_RPC_ENV value, else the active chain's own public RPC from constants.ts. Never falls back
+    to testnet while mainnet is selected. */
+export function resolveArcRpcUrl(): string {
+    for (const name of ARC_RPC_ENV) {
+        const value = process.env[name]?.trim();
+        if (value) return value;
+    }
+    return ACTIVE_ARC_CHAIN.rpcUrls.default.http[0];
+}
+
+/** Arc WebSocket RPC for the ACTIVE chain, or null when none is configured. Arc publishes no
+    mainnet WebSocket endpoint we can default to, so mainnet needs WS_RPC_URL; callers poll
+    over HTTP without one. */
+export function resolveArcWsUrl(): string | null {
+    const configured = process.env.WS_RPC_URL?.trim();
+    if (configured) return configured;
+    return isProd ? null : "wss://ws.testnet.arc.network";
+}
+
 /** Test-mode resources stay pinned to Arc testnet regardless of the active network. */
 export const TEST_MODE_CHAIN_ID = ARC_TESTNET_CHAIN_ID;
 
@@ -118,6 +144,13 @@ export function validateMainnetConfiguration(): MainnetValidation {
         if (name === "NEXT_PUBLIC_ARC_RPC_PRIMARY" && (!/^https:\/\//.test(value) || /testnet/i.test(value))) {
             malformed.push(name);
         }
+    }
+    /* Optional server RPC overrides take precedence over NEXT_PUBLIC_ARC_RPC_PRIMARY in
+       resolveArcRpcUrl(), so a testnet value in any of them would win on mainnet. */
+    for (const name of [...ARC_RPC_ENV, "WS_RPC_URL"]) {
+        if (name === "NEXT_PUBLIC_ARC_RPC_PRIMARY") continue;
+        const value = process.env[name]?.trim();
+        if (value && /testnet/i.test(value)) malformed.push(name);
     }
     return { ok: missing.length === 0 && malformed.length === 0, missing, malformed };
 }

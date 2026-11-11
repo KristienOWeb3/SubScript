@@ -10,6 +10,7 @@
  * scripts/check-contracts.mjs.
  */
 import { ethers } from "ethers";
+import { resolveArcRpcUrl } from "@/lib/network/registry";
 import {
     SUBSCRIPT_ROUTER_ADDRESS,
     STANDARD_CONTRACT_ADDRESS,
@@ -108,7 +109,7 @@ export type AuditResult = {
 };
 
 function defaultRpc() {
-    return process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
+    return resolveArcRpcUrl();
 }
 
 export async function auditContracts(rpcUrl: string = defaultRpc()): Promise<AuditResult> {

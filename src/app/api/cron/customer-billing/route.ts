@@ -228,7 +228,6 @@ export async function POST(request: Request) {
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
         /* 3. Web3 */
-        const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
         const adminPrivateKey = process.env.PRIVATE_KEY;
         if (!adminPrivateKey) {
             return NextResponse.json({ error: "Configuration Error: Admin private key missing on server" }, { status: 500 });
