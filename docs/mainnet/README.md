@@ -508,7 +508,6 @@ Auth, Custody, Payment API & Account Lifecycle Hardening (2026-11-08):
 8. Verification: Clean TypeScript compilation (`tsc --noEmit`), 66/66 admin tests pass, 19/19 KYC tests pass, 100% clean.
 
 =======
->>>>>>> origin/main
 iOS Performance, Dynamic Island Safe Area & CI Runner Hardening (2026-11-07):
 1. iOS PWA Dynamic Island Clipping: Standalone PWA mode with `viewportFit: "cover"` positioned headers at (0,0) beneath the physical Dynamic Island cutout. Created `--header-floating-top: max(1.25rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))` and `.floating-header-top` across `HomeHeader`, `ChatHeader`, `Navbar`, `DashboardHeader`, `UserDashboardHeader`, and loading skeleton headers, with `<main>` container top padding dynamically adjusted to `pt-[calc(5rem+env(safe-area-inset-top,0px))]`.
 2. iOS Safari Landing Page & 120fps Fluidity: Replaced heavy `blur-[120px]` atmospheric glow divs with native CSS radial gradients; isolated floating coins on GPU compositor layers (`translateZ(0)`); replaced marquee CSS `mask-image` with GPU-accelerated gradient fades; removed dynamic `filter: blur(...)` transitions from CSS keyframes to stop WebKit raster cache invalidation; added `-webkit-overflow-scrolling: touch`; throttled landing and dashboard scroll/resize handlers.
