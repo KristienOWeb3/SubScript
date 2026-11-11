@@ -39,6 +39,7 @@
     "integration:smoke": "node scripts/subscript-integration-smoke.mjs",
     "test:live-surface": "node scripts/test-live-surface.cjs",
     "test:docs": "node --test src/app/docs/__tests__/docs-quality.test.mjs",
+    "test:network-claims": "node --test src/lib/ops/__tests__/network-claims.test.mjs",
     "test:repo-docs": "node --test src/app/docs/__tests__/repo-docs-structure.test.mjs",
     "test:push": "node --test src/lib/__tests__/push-notifications.test.mjs",
     "security:secrets": "node scripts/check-secrets.mjs",

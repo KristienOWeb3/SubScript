@@ -95,7 +95,9 @@ export async function getIntentStatus(
 
     const settlement = arcReconciliation(
         latestPayment?.txHash,
-        latestPayment?.verificationChainId ? Number(latestPayment.verificationChainId) : undefined
+        latestPayment?.verificationChainId
+            ? Number(latestPayment.verificationChainId)
+            : Number(link.settlementChainId),
     );
 
     /* Payer address + transaction hash are the payer's business and the merchant's — an

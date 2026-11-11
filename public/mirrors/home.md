@@ -25,7 +25,7 @@ SubScript is an Arc-native programmable USDC commerce layer that abstracts Web3,
 - Public route: `/protocol`
 - SubScript's Unified Payment Authorization model gives one-time payments, subscriptions, usage events, invoices, sponsor payments, and AI-native transactions the same lifecycle: create an intent, approve a bounded USDC action, record an Arc memo receipt, and fulfill with a signed webhook.
 - Direct Arc USDC hosted checkout is the live rail, and encrypted private-key export is live for exportable email wallets (not applicable to Circle MPC custody). CCTP checkout, fiat-to-USDC onramps, full Chainlink Automation, production Paymaster sponsorship, ArcaneVM confidentiality, dedicated invoice terms, sponsor workflows, smart dunning schedules, and merchant commitment windows remain deployment-scoped until verified live.
-- SubScript is in public beta on the Arc testnet: beta payments settle in testnet USDC (no monetary value) and integrations carry over to mainnet with a configuration change. Policies: `/terms`, `/privacy`, `/refunds`, `/fulfillment`.
+- SubScript is live on Arc Mainnet (Chain ID `5042`): live payments settle in native USDC with real value. Test mode (`sk_test_` keys) stays on a separate sandbox network with valueless test USDC. Policies: `/terms`, `/privacy`, `/refunds`, `/fulfillment`.
 
 ## Integration Paths
 

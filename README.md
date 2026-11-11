@@ -16,9 +16,9 @@ hidden fees, or chargebacks.
 ![Next.js](https://img.shields.io/badge/Next.js-App_Router-000000?logo=nextdotjs)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Settlement](https://img.shields.io/badge/settlement-USDC_on_Arc-2775CA)
-![Status](https://img.shields.io/badge/status-Mainnet_Ready_%26_Live_Audit_Verified-00d2b4)
+![Status](https://img.shields.io/badge/status-Live_on_Arc_Mainnet-00d2b4)
 
-> **Public beta & Mainnet Readiness:** SubScript runs on Circle's Arc Network — with comprehensive mainnet hardening, KYC tier limits, non-extractable MPC custody, and live Arc Mainnet readiness verified. Testnet settlement is active for public developer sandboxing.
+> **Live on Arc Mainnet:** SubScript runs on Circle's Arc Mainnet (chain id 5042) and settles native USDC with real value. `sk_test_` keys and local/preview builds stay on Arc Testnet for sandboxing. The network is chosen by `NEXT_PUBLIC_ENVIRONMENT` (see [`src/lib/network/registry.ts`](src/lib/network/registry.ts)).
 > See the [Terms](https://subscriptonarc.com/terms), [Refund Policy](https://subscriptonarc.com/refunds),
 > and [Fulfillment Policy](https://subscriptonarc.com/fulfillment).
 
