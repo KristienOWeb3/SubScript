@@ -1426,6 +1426,126 @@ export default function AdminDashboardPage() {
             </div>
           </header>
 
+          {/* Mobile Navigation Sidebar Drawer (Matches desktop: #353935, topo-admin-header, #FFFFF0 active items).
+              Keep it outside .admin-workspace: that wrapper's light-console overrides in globals.css
+              repaint text-white as slate, which hid the group labels and identity pill on this dark panel. */}
+          <AnimatePresence>
+            {mobileNavOpen && (
+              <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true" aria-label="Admin Navigation Sidebar">
+                {/* Backdrop */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  onClick={() => setMobileNavOpen(false)}
+                  className="fixed inset-0 bg-black/75 backdrop-blur-md"
+                  aria-hidden="true"
+                />
+
+                {/* Slide-over Drawer Panel */}
+                <motion.aside
+                  initial={{ x: "-100%" }}
+                  animate={{ x: 0 }}
+                  exit={{ x: "-100%" }}
+                  transition={{ type: "spring", damping: 28, stiffness: 300 }}
+                  className="relative z-10 w-[84vw] max-w-[320px] h-full bg-[#353935] topo-admin-header border-r border-white/10 text-white shadow-2xl flex flex-col justify-between overflow-hidden"
+                >
+                  {/* Header: Identity pill + Close button */}
+                  <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/10 shrink-0 bg-[#353935]/80 backdrop-blur-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTab("admins");
+                        setMobileNavOpen(false);
+                      }}
+                      className="inline-flex max-w-[220px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] text-white p-1 px-2 py-1 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14]"
+                      title={`${viewerIsRoot ? "Root authority" : "Delegated authority"} • Arc Mainnet`}
+                    >
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
+                        {viewerAdminHandle.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="truncate font-mono text-[11px] font-bold text-white leading-tight">
+                          {viewerAdminHandle}
+                        </span>
+                        <span className="truncate font-mono text-[9px] font-bold text-white/80 leading-tight">
+                          {viewerIsRoot ? "Root" : "Delegated"} • Arc Mainnet
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setMobileNavOpen(false)}
+                      className="flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-white/20 bg-white/[0.08] text-white/90 hover:text-white hover:bg-white/15 hover:border-white/30 transition shrink-0"
+                      aria-label="Close navigation"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Scrollable Navigation Groups */}
+                  <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {adminNavGroups.map((group) => (
+                      <div key={group.id} className="space-y-1">
+                        <div className="flex items-center gap-1.5 px-2 pt-1 text-[10px] font-black uppercase tracking-wider text-white/80">
+                          <group.icon className="h-3.5 w-3.5 text-white/80" />
+                          <span>{group.label}</span>
+                        </div>
+                        <div className="space-y-0.5">
+                          {group.items.map((sub) => {
+                            const isSubActive = sub.id === tab;
+                            return (
+                              <button
+                                key={sub.id}
+                                type="button"
+                                onClick={() => {
+                                  setTab(sub.id);
+                                  setMobileNavOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-left text-xs font-semibold transition-all ${
+                                  isSubActive
+                                    ? "bg-[#FFFFF0] text-[#353935] font-bold shadow-sm"
+                                    : "text-white/95 hover:bg-white/[0.12] hover:text-white"
+                                }`}
+                              >
+                                <sub.icon className={`h-4 w-4 shrink-0 ${isSubActive ? "text-[#353935]" : "text-white/90"}`} />
+                                <span className="truncate">{sub.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer Action */}
+                  <div className="p-3.5 border-t border-white/10 bg-black/20 shrink-0 flex items-center justify-between gap-2">
+                    <a
+                      href={getDashboardUrl("USER", "/dashboard")}
+                      onClick={() => setMobileNavOpen(false)}
+                      className="flex items-center gap-1.5 text-xs font-bold text-white/95 hover:text-white transition"
+                    >
+                      <span>← User Dashboard</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex items-center gap-1.5 text-xs font-bold text-red-300 hover:text-red-200 transition"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      <span>Sign Out</span>
+                    </button>
+                    <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      Mainnet
+                    </span>
+                  </div>
+                </motion.aside>
+              </div>
+            )}
+          </AnimatePresence>
+
           {/* min-h-full, not min-h-screen: this sits inside a scroller with a definite
               h-[100dvh], so 100% resolves to exactly that. min-h-screen was 100vh — larger than
               the container on mobile — which forced a phantom scroll of the toolbar's height even
@@ -1433,123 +1553,6 @@ export default function AdminDashboardPage() {
               vh-inside-dvh mistake as the black bar above. */}
           <main className="min-h-full pt-3 sm:pt-6 pb-16">
             <div className="admin-workspace mx-auto min-w-0 max-w-6xl space-y-4 sm:space-y-6 px-4 py-2 sm:px-8">
-              {/* Mobile Navigation Sidebar Drawer (Matches desktop: #353935, topo-admin-header, #FFFFF0 active items) */}
-              <AnimatePresence>
-                {mobileNavOpen && (
-                  <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true" aria-label="Admin Navigation Sidebar">
-                    {/* Backdrop */}
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      onClick={() => setMobileNavOpen(false)}
-                      className="fixed inset-0 bg-black/75 backdrop-blur-md"
-                      aria-hidden="true"
-                    />
-
-                    {/* Slide-over Drawer Panel */}
-                    <motion.aside
-                      initial={{ x: "-100%" }}
-                      animate={{ x: 0 }}
-                      exit={{ x: "-100%" }}
-                      transition={{ type: "spring", damping: 28, stiffness: 300 }}
-                      className="relative z-10 w-[84vw] max-w-[320px] h-full bg-[#353935] topo-admin-header border-r border-white/10 text-white shadow-2xl flex flex-col justify-between overflow-hidden"
-                    >
-                      {/* Header: Identity pill + Close button */}
-                      <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/10 shrink-0 bg-[#353935]/80 backdrop-blur-xs">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTab("admins");
-                            setMobileNavOpen(false);
-                          }}
-                          className="inline-flex max-w-[220px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] text-white p-1 px-2 py-1 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14]"
-                          title={`${viewerIsRoot ? "Root authority" : "Delegated authority"} • Arc Mainnet`}
-                        >
-                          <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
-                            {viewerAdminHandle.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex flex-col min-w-0">
-                            <span className="truncate font-mono text-[11px] font-bold text-white leading-tight">
-                              {viewerAdminHandle}
-                            </span>
-                            <span className="truncate font-mono text-[9px] font-bold text-white/80 leading-tight">
-                              {viewerIsRoot ? "Root" : "Delegated"} • Arc Mainnet
-                            </span>
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setMobileNavOpen(false)}
-                          className="flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-white/20 bg-white/[0.08] text-white/90 hover:text-white hover:bg-white/15 hover:border-white/30 transition shrink-0"
-                          aria-label="Close navigation"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {/* Scrollable Navigation Groups */}
-                      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                        {adminNavGroups.map((group) => (
-                          <div key={group.id} className="space-y-1">
-                            <div className="flex items-center gap-1.5 px-2 pt-1 text-[10px] font-black uppercase tracking-wider text-white/80">
-                              <group.icon className="h-3.5 w-3.5 text-white/80" />
-                              <span>{group.label}</span>
-                            </div>
-                            <div className="space-y-0.5">
-                              {group.items.map((sub) => {
-                                const isSubActive = sub.id === tab;
-                                return (
-                                  <button
-                                    key={sub.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setTab(sub.id);
-                                      setMobileNavOpen(false);
-                                    }}
-                                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-left text-xs font-semibold transition-all ${
-                                      isSubActive
-                                        ? "bg-[#FFFFF0] text-[#353935] font-bold shadow-sm"
-                                        : "text-white/95 hover:bg-white/[0.12] hover:text-white"
-                                    }`}
-                                  >
-                                    <sub.icon className={`h-4 w-4 shrink-0 ${isSubActive ? "text-[#353935]" : "text-white/90"}`} />
-                                    <span className="truncate">{sub.label}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Footer Action */}
-                      <div className="p-3.5 border-t border-white/10 bg-black/20 shrink-0 flex items-center justify-between gap-2">
-                        <a
-                          href={getDashboardUrl("USER", "/dashboard")}
-                          onClick={() => setMobileNavOpen(false)}
-                          className="flex items-center gap-1.5 text-xs font-bold text-white/95 hover:text-white transition"
-                        >
-                          <span>← User Dashboard</span>
-                        </a>
-                        <button
-                          type="button"
-                          onClick={handleLogout}
-                          className="flex items-center gap-1.5 text-xs font-bold text-red-300 hover:text-red-200 transition"
-                        >
-                          <LogOut className="h-3.5 w-3.5" />
-                          <span>Sign Out</span>
-                        </button>
-                        <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          Mainnet
-                        </span>
-                      </div>
-                    </motion.aside>
-                  </div>
-                )}
-              </AnimatePresence>
 
         {error && (
           <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs font-medium text-red-800">
