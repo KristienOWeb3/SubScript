@@ -43,7 +43,7 @@ function sessionRoute(auth) {
     return load("src/app/api/auth/session/route.ts", {
         "@/lib/auth": auth,
         "@/lib/authCookies": load("src/lib/authCookies.ts"),
-        "@/lib/accounts/roles": { resolveAccountRoleWithBackfill: async () => "USER" },
+        "@/lib/accounts/roles": { resolveAccountRoleForSession: async () => "USER" },
         "@/lib/offlineDb": { isConnectionError: () => false },
         "@/lib/auth/verifiedEmail": { getVerifiedAccountEmail: async () => null },
         "@/lib/auth/walletCustody": { getWalletCustody: async () => null, isCustodialWallet: () => false },

@@ -18,3 +18,30 @@ test('role checks use the configured database and preserve explicit roles withou
     role='USER';assert.equal((await api.requireAccountRole('0xABC','USER')).ok,true);
     role=null;assert.equal(await api.getAccountRole('0xABC'),null);
 });
+
+function loadRoles(pg){
+    const compiled=ts.transpileModule(readFileSync(new URL('./roles.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+    const context=vm.createContext({module:{exports:{}},console,require:()=>pg});
+    context.exports=context.module.exports;vm.runInContext(compiled,context);
+    return context.module.exports;
+}
+
+test('sign-in role resolution leaves a brand-new wallet role-less so the account-type picker shows',async()=>{
+    const writes=[];
+    const api=loadRoles({
+        pgMaybeOne:async(sql)=>sql.includes('as legacy')?{legacy:false}:null,
+        pgQuery:async(sql)=>{writes.push(sql);},
+    });
+    assert.equal(await api.resolveAccountRoleForSession('0xNEW'),null);
+    assert.equal(writes.length,0,'a new wallet must not get a USER role at sign-in');
+});
+
+test('sign-in role resolution still heals a legacy wallet to USER',async()=>{
+    const writes=[];
+    const api=loadRoles({
+        pgMaybeOne:async(sql,args)=>{if(sql.includes('as legacy')){assert.equal(args[0],'0xold');return {legacy:true};}return null;},
+        pgQuery:async(sql)=>{writes.push(sql);},
+    });
+    assert.equal(await api.resolveAccountRoleForSession('0xOLD'),'USER');
+    assert.ok(writes.some(s=>s.includes("'USER'")));
+});
