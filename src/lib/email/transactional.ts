@@ -34,7 +34,7 @@ export {
 };
 export type { WalletEmailPreference, EmailCategory, EmailSendOutcome } from "./core";
 
-type PaymentReceipt = {
+export type PaymentReceipt = {
     chainId?: number;
     recipient: string;
     recipientKind: "payer" | "merchant";
@@ -162,6 +162,11 @@ export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
             idempotencyKey: `payment-receipt:${receipt.recipientKind}:${receipt.txHash}:${receipt.recipient}`,
         });
     }
+    return sendTransactionalEmail(buildPaymentReceiptEmail(receipt));
+}
+
+/** The payer's (or a merchant fallback) payment-link receipt. Pure: no lookups, no sending. */
+export function buildPaymentReceiptEmail(receipt: PaymentReceipt) {
     const amount = formatUsdc(receipt.amountUsdc);
     /* Who was paid, in words. Falls back to a shortened address rather than a full one: an
        inbox is a place where a 42-character hex string is pure noise. */
@@ -176,9 +181,9 @@ export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
     const emailSubject = receipt.recipientKind === "payer"
         ? `Your receipt: ${subject}`
         : `You got paid: ${subject}`;
-    return sendTransactionalEmail({
+    return {
         to: receipt.recipient,
-        category: "transactional",
+        category: "transactional" as const,
         subject: emailSubject,
         text: `${subject}. ${amount} USDC. ${receipt.recipientKind === "payer" ? `Paid to ${paidTo}.` : "Paid into your account."} Open your receipt: ${receipt.receiptUrl} (reference ${receipt.receiptId})`,
         /* Same design as the merchant's copy of this payment (buildDepositReceivedEmail), so one
@@ -207,7 +212,7 @@ export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
         }),
         idempotencyKey: `payment-receipt:${receipt.recipientKind}:${receipt.txHash}:${receipt.recipient}`,
         receiptEvent: arcReceiptEvent(receipt.txHash, receipt.chainId),
-    });
+    };
 }
 
 /** The merchant's governed display name, or null when none is set. */
