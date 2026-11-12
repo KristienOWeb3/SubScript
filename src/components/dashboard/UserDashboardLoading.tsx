@@ -196,15 +196,15 @@ export default function UserDashboardLoading({
 
       {/* Mobile Bottom Bar Skeleton */}
       {!pinSettings && <div className="md:hidden fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2">
-        <div className="flex h-[70px] flex-1 items-center justify-around rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-3 backdrop-blur-2xl">
+        <div className="flex h-[60px] flex-1 items-center justify-around rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/20 dark:bg-[#2775CA]/10 px-3 backdrop-blur-2xl">
           {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
-              className="h-6 w-6 subscript-skeleton max-w-full rounded-full"
+              className={`subscript-skeleton max-w-full rounded-full ${i === 1 ? "h-11 w-[90px]" : "h-6 w-6"}`}
             />
           ))}
         </div>
-        <div className="h-[70px] w-[70px] shrink-0 rounded-full subscript-skeleton" />
+        <div className="h-[60px] w-[60px] shrink-0 rounded-full subscript-skeleton" />
       </div>}
     </div>
   );

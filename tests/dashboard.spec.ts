@@ -56,11 +56,12 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       create: { address: testWallet, role: "ENTERPRISE" }
     });
 
-    // Seed/Upsert the merchant as PREMIUM
+    // Seed/Upsert the merchant as PREMIUM. A saved payout destination marks it as an onboarded
+    // merchant; without one the dashboard opens the first-sign-in payout notice over every tab.
     await prisma.merchant.upsert({
       where: { walletAddress: testWallet },
-      update: { tier: "PREMIUM" },
-      create: { walletAddress: testWallet, tier: "PREMIUM" }
+      update: { tier: "PREMIUM", payoutDestination: testWallet },
+      create: { walletAddress: testWallet, tier: "PREMIUM", payoutDestination: testWallet }
     });
 
     // Seed/Upsert verified email & KYC approval for Tier 1 / Tier 2 live credential operations

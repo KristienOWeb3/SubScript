@@ -1142,9 +1142,9 @@ input[data-pin-slot][data-pin-slot-feedback="success"]:focus,
    CAPSULE_HEIGHT in MobileFloatingNav.tsx, so keep both (and the loading skeleton) in step. */
 .user-dashboard-redesign nav[aria-label="Primary navigation"],
 .user-dashboard-redesign [data-testid="mobile-dm-btn"] {
-  height: 70px !important;
-  min-height: 70px !important;
-  max-height: 70px !important;
+  height: 60px !important;
+  min-height: 60px !important;
+  max-height: 60px !important;
   box-sizing: border-box !important;
 }
 

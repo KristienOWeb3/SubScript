@@ -1,4 +1,5 @@
 import { docsSections } from "../_components/sections";
+import { createResponseIntent, createResponseTopLevel, fieldTable, statusResponseIntent, statusTable } from "./intentResponse";
 import {
   checkoutIntentCode,
   errorEnvelopeCode,
@@ -11,6 +12,7 @@ import {
   subscriptionReconcileCode,
   subscriptionResponseCode,
   intentResponseCode,
+  intentStatusResponseCode,
   vibePrompt,
   viemMemoCode,
   webhookCode,
@@ -374,6 +376,21 @@ ${fence("javascript", checkoutIntentCode)}
 
 ${fence("tsx", frontendEmbedCode)}
 
+## Create response
+
+A new intent returns \`201\`. Retrying with the same \`idempotencyKey\` returns \`200\` with the same
+body. Store \`intent.id\` and send the payer to \`intent.checkoutUrl\`.
+
+${fence("json", intentResponseCode)}
+
+${fieldTable(createResponseTopLevel)}
+
+\`intent\` fields:
+
+${fieldTable(createResponseIntent)}
+
+Errors come back as \`{ error, code, message, request_id, doc_url }\`. Branch on \`code\`.
+
 ## Status polling
 
 Use \`GET /api/intent/:id\` for support tools, dashboards, and agent-driven test loops. The legacy
@@ -383,6 +400,18 @@ session) to also receive \`latestPayment\` — payer identity and transaction pr
 the merchant who owns the checkout. Fulfillment should still happen from the signed webhook.
 
 ${fence("javascript", intentStatusCode)}
+
+### Status response
+
+Both \`GET /api/intent/:id\` and \`GET /api/intent/status?id=...\` return \`{ success: true, intent }\`, or
+\`404\` with \`{ "error": "Intent not found" }\`. The example is the owner view. Anonymous callers get
+\`latestPayment: null\` and no \`webhookDelivery\` field.
+
+${fence("json", intentStatusResponseCode)}
+
+${statusTable()}
+
+${fieldTable(statusResponseIntent)}
 
 Polling is for reading; webhooks are for acting. Polling races settlement, costs rate limit, and
 gives no delivery guarantee if your process restarts.

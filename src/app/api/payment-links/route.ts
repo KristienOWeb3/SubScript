@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ProtocolConfig } from "@/lib/payments/config";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
-import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
+import { getSecretKeyMode, hasEffectivePayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
@@ -429,8 +429,8 @@ export async function POST(request: Request) {
 
         /* Verification is a manual trust badge, not a functional gate — merchants can create links
            without it. Access is gated only by the tier system (active-link quota below) and, for
-           live keys, a configured payout destination. */
-        if (!isSandboxRequest && !isConfiguredPayoutDestination(merchantRes.data?.payout_destination)) {
+           live keys, a payout destination (the merchant wallet unless they saved another). */
+        if (!isSandboxRequest && !hasEffectivePayoutDestination(merchantRes.data ? { payoutDestination: merchantRes.data.payout_destination } : null, merchantAddress)) {
             return merchantPayoutWalletMissingResponse();
         }
 

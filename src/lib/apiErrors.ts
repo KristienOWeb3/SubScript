@@ -85,6 +85,15 @@ export function isConfiguredPayoutDestination(value: string | null | undefined) 
     return !!value && value.trim() !== "" && value !== "0x0000000000000000000000000000000000000000";
 }
 
+/**
+ * A merchant who never saved a payout destination pays out to their own wallet: it is already a
+ * pre-authorized withdrawal target (see execute-tx), so live checkout only needs a merchant record.
+ */
+export function hasEffectivePayoutDestination(merchant: { payoutDestination?: string | null } | null | undefined, merchantWallet: string | null | undefined) {
+    if (!merchant) return false;
+    return isConfiguredPayoutDestination(merchant.payoutDestination) || isConfiguredPayoutDestination(merchantWallet);
+}
+
 export function getSecretKeyMode(secretKey: string) {
     const mode = resolveSecretKeyMode(secretKey);
     return mode === "TEST" ? "test" : mode === "LIVE" ? "live" : "unknown";
