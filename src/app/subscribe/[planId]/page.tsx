@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import SubscribeClient from "./SubscribeClient";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
 import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
+import { OG_IMAGE_PATH } from "@/lib/seo/ogImage";
 
 type PageProps = {
     params: Promise<{ planId: string }>;
@@ -113,14 +114,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         openGraph: {
             title,
             description,
-            images: [{ url: "/og.png", width: 1200, height: 630, alt: title }],
+            images: [{ url: OG_IMAGE_PATH, width: 1200, height: 630, alt: title }],
             type: "website",
         },
         twitter: {
             card: "summary_large_image",
             title,
             description,
-            images: ["/og.png"],
+            images: [OG_IMAGE_PATH],
         },
     };
 }

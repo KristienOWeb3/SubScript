@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import CommitClient from "./CommitClient";
 import { prisma } from "@/lib/prisma";
 import { isCommitSlug, resolveMerchantDisplayName } from "@/lib/merchants/identity";
+import { OG_IMAGE_PATH } from "@/lib/seo/ogImage";
 
 type PageProps = {
     params: Promise<{ merchantAddress: string }>;
@@ -45,7 +46,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         openGraph: {
             title,
             description,
-            images: [{ url: "/og.png", width: 1200, height: 630, alt: title }],
+            images: [{ url: OG_IMAGE_PATH, width: 1200, height: 630, alt: title }],
             type: "website",
         },
     };

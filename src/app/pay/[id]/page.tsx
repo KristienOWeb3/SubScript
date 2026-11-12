@@ -8,6 +8,7 @@ import { paymentLinkSettlementVersion } from "@/lib/paymentLinks/settlementVersi
 import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
 import { classifyCheckoutArrival } from "@/lib/paymentLinks/arrival";
 import PublicPayClient from "./PublicPayClient";
+import { OG_IMAGE_PATH } from "@/lib/seo/ogImage";
 
 /* Define parameters type according to Next.js App Router specs */
 type PageProps = {
@@ -137,7 +138,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
             description,
             images: [
                 {
-                    url: "/og.png",
+                    url: OG_IMAGE_PATH,
                     width: 1200,
                     height: 630,
                     alt: title,
@@ -149,7 +150,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
             card: "summary_large_image",
             title,
             description,
-            images: ["/og.png"],
+            images: [OG_IMAGE_PATH],
         },
     };
 }

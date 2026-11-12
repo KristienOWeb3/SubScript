@@ -7,6 +7,7 @@ import PostHogProvider from "@/components/providers/PostHogProvider";
 import PwaInstaller from "@/components/PwaInstaller";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import TransactionPinLifecycle from "@/components/TransactionPinLifecycle";
+import { OG_IMAGE_PATH } from "@/lib/seo/ogImage";
 
 export const dynamic = "force-dynamic";
 
@@ -225,7 +226,7 @@ export const metadata: Metadata = {
         siteName: "SubScript Protocol",
         images: [
             {
-                url: `${appUrl}/og.png`,
+                url: `${appUrl}${OG_IMAGE_PATH}`,
                 width: 1200,
                 height: 630,
                 alt: "SubScript — stablecoin payment infrastructure for USDC checkout and recurring billing on Arc",
@@ -238,7 +239,7 @@ export const metadata: Metadata = {
         card: "summary_large_image",
         title: "SubScript | Stablecoin Payment Infrastructure on Arc",
         description: siteDescription,
-        images: [`${appUrl}/og.png`],
+        images: [`${appUrl}${OG_IMAGE_PATH}`],
     },
     verification: {
         google: googleSiteVerification,
