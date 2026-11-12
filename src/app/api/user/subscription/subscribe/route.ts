@@ -567,6 +567,11 @@ async function handlePOST(request: Request) {
                 }
                 const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
                 if (recoveredId) {
+                    /* The promo terms come from the chain, not from appliedPromo: this branch is
+                       reached from ATTEMPT_EXISTS, where appliedPromo is always null, so reading it
+                       stamped every promo subscription with a 0-amount, 0-cycle snapshot — losing
+                       the real terms and the pricing block on every renewal webhook after it. */
+                    const recoveredIntro = await getIntroductoryTermsOnChain(recoveredId);
                     await mirrorSubscriptionCreated({
                         subscriptionId: recoveredId,
                         merchantAddress: merchant,
@@ -575,15 +580,22 @@ async function handlePOST(request: Request) {
                         periodSeconds: plan.periodSeconds,
                         beneficiaryAddress,
                         minCommitmentSeconds: plan.minCommitmentSeconds,
-                        promotion: attempt.promotionClaimId ? {
+                        promotion: recoveredIntro ? {
                             promotionId: attempt.promotionClaimId,
-                            introAmountUsdc: appliedPromo?.introductoryAmountUsdc || BigInt(0),
-                            introCycles: appliedPromo?.introductoryCycles || 0,
+                            introAmountUsdc: recoveredIntro.introAmountUsdc,
+                            introCycles: recoveredIntro.introCycles,
                         } : null,
                         externalReference,
                         sourceCheckoutId,
                     planId: canonicalPlanId,
                     });
+                    /* Bind the claimed redemption to the subscription, as the normal path does.
+                       Left unbound it has no subscription_id, which is exactly what
+                       release_promotion_redemption deletes. */
+                    if (attempt.promotionClaimId) {
+                        await confirmPromotionRedemption(attempt.promotionClaimId, subscriber, BigInt(recoveredId))
+                            .catch((err: unknown) => console.error("[subscription/subscribe] recovered redemption confirm failed:", err));
+                    }
                     await mailSignupReceipt({
                         subId: recoveredId,
                         txHash: attempt.txHash,
