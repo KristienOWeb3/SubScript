@@ -20,6 +20,7 @@ export const quickstartCurl = `curl --request POST \\
 export const intentResponseCode = `{
   "success": true,
   "sandbox": true,
+  "simulationOnly": false,
   "intent": {
     "id": "clx_intent_123",
     "checkoutSessionId": "clx_intent_123",
@@ -27,12 +28,55 @@ export const intentResponseCode = `{
     "paymentType": "one_time",
     "appearsInDmPlanPicker": false,
     "title": "Order #1042",
+    "description": "One-time account activation",
+    "amountUsdc": "15000000",
     "amountUsdcMicros": "15000000",
+    "merchantAddress": "0x8f3c...a91e",
+    "receiverAddress": "0x8f3c...a91e",
     "status": "PENDING",
     "receiptToken": "rcpt-7e10c918a3aa672eb783f1b965914b12",
     "checkoutUrl": "https://www.subscriptonarc.com/pay/clx_intent_123",
     "chainId": 5042002,
-    "usdcAddress": "0x3600000000000000000000000000000000000000"
+    "usdcAddress": "0x3600000000000000000000000000000000000000",
+    "returnUrls": {
+      "successUrl": "https://yourapp.com/billing/success",
+      "cancelUrl": "https://yourapp.com/pricing"
+    }
+  }
+}`;
+
+export const intentStatusResponseCode = `{
+  "success": true,
+  "intent": {
+    "id": "clx_intent_123",
+    "status": "PAID",
+    "title": "Order #1042",
+    "description": "One-time account activation",
+    "amountUsdc": "15000000",
+    "amountUsdcMicros": "15000000",
+    "merchantAddress": "0x8f3c...a91e",
+    "maxUses": 1,
+    "useCount": 1,
+    "active": true,
+    "expiresAt": null,
+    "checkoutUrl": "https://www.subscriptonarc.com/pay/clx_intent_123",
+    "chainId": 5042,
+    "usdcAddress": "0x3600000000000000000000000000000000000000",
+    "latestPayment": {
+      "id": "pay_01HX...",
+      "txHash": "0x5b1e...c4d2",
+      "payerAddress": "0x21aa...07f3",
+      "credited": true,
+      "creditedAt": "2026-11-12T09:41:07.000Z",
+      "explorerUrl": "https://explorer.arc.io/tx/0x5b1e...c4d2"
+    },
+    "webhookDelivery": {
+      "status": 200,
+      "lastAttemptAt": "2026-11-12T09:41:09.000Z",
+      "endpoint": "https://yourapp.com/api/webhooks/subscript",
+      "responseBody": "ok",
+      "event": "payment.succeeded"
+    }
   }
 }`;
 

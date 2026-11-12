@@ -11,11 +11,25 @@ import {
   StatCard,
 } from "../_components/primitives";
 import { docsMetadata, pagerFor } from "../_components/meta";
-import { checkoutIntentCode, frontendEmbedCode, intentStatusCode } from "../_content/samples";
+import {
+  checkoutIntentCode,
+  frontendEmbedCode,
+  intentResponseCode,
+  intentStatusCode,
+  intentStatusResponseCode,
+} from "../_content/samples";
+import {
+  createResponseIntent,
+  createResponseTopLevel,
+  statusResponseIntent,
+  statusValues,
+} from "../_content/intentResponse";
+
+const rowsOf = (rows: readonly (readonly string[])[]) => rows.map((row) => [...row]);
 
 export const metadata = docsMetadata("developer", {
   description:
-    "POST /api/intent reference: every request field, the response shape, status polling with GET /api/intent/:id, and what each status code means for retries.",
+    "POST /api/intent reference: every request field, every response field, the status response from GET /api/intent/:id, polling with GET /api/intent/:id, and what each status code means for retries.",
 });
 
 export default function DeveloperPage() {
@@ -91,6 +105,29 @@ export default function DeveloperPage() {
       </section>
 
       <section className="space-y-4">
+        <h2 id="response" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
+          Create response
+        </h2>
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
+          A new intent returns <span className="font-mono">201</span>. Retrying with the same{" "}
+          <span className="font-mono">idempotencyKey</span> returns <span className="font-mono">200</span> with the
+          same body. The two fields you need are <span className="font-mono">intent.id</span> (store it) and{" "}
+          <span className="font-mono">intent.checkoutUrl</span> (send the payer there).
+        </p>
+        <CodeBlock code={intentResponseCode} language="json" />
+        <ApiTable columns={["Top-level field", "Type", "Meaning"]} rows={rowsOf(createResponseTopLevel)} />
+        <ApiTable columns={["intent field", "Type", "Meaning"]} rows={rowsOf(createResponseIntent)} />
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
+          Errors come back as <span className="font-mono">{"{ error, code, message, request_id, doc_url }"}</span>.
+          Branch on <span className="font-mono">code</span>. The full list is on the{" "}
+          <Link href="/docs/errors" className="font-semibold text-[#2775CA] hover:underline">
+            errors page
+          </Link>
+          .
+        </p>
+      </section>
+
+      <section className="space-y-4">
         <h2 id="polling" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Status polling
         </h2>
@@ -106,6 +143,21 @@ export default function DeveloperPage() {
           </p>
         </Callout>
         <CodeBlock code={intentStatusCode} language="javascript" />
+
+        <h3 id="status-response" className="scroll-mt-24 text-lg font-bold tracking-tight text-[#111827]">
+          Status response
+        </h3>
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
+          Both <span className="font-mono">GET /api/intent/:id</span> and{" "}
+          <span className="font-mono">GET /api/intent/status?id=...</span> return{" "}
+          <span className="font-mono">{"{ success: true, intent }"}</span>, or <span className="font-mono">404</span>{" "}
+          with <span className="font-mono">{'{ error: "Intent not found" }'}</span>. This example is what the owning
+          merchant sees. Anonymous callers get the same object with{" "}
+          <span className="font-mono">latestPayment: null</span> and no <span className="font-mono">webhookDelivery</span>.
+        </p>
+        <CodeBlock code={intentStatusResponseCode} language="json" />
+        <ApiTable columns={["Status", "Meaning"]} rows={rowsOf(statusValues)} />
+        <ApiTable columns={["intent field", "Type", "Meaning"]} rows={rowsOf(statusResponseIntent)} />
 
         <Callout tone="amber" title="Polling is for reading, webhooks are for acting">
           <p>
