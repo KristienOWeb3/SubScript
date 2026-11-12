@@ -25,6 +25,7 @@ import QrScannerModal from "@/components/QrScannerModal";
 import { resolveScannedTarget } from "@/lib/qr/scanTargets";
 import ConfirmModal from "@/components/ConfirmModal";
 import MerchantDisplayNameModal from "@/components/dashboard/MerchantDisplayNameModal";
+import PayoutDestinationNoticeModal, { hasSeenPayoutDestinationNotice, markPayoutDestinationNoticeSeen } from "@/components/dashboard/PayoutDestinationNoticeModal";
 import MerchantPreviewModal from "@/components/dashboard/MerchantPreviewModal";
 import DurationPicker from "@/components/DurationPicker";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
@@ -833,6 +834,11 @@ export default function DashboardPage() {
     const [showNameOnboarding, setShowNameOnboarding] = useState(false);
     const [showCheckoutPreview, setShowCheckoutPreview] = useState(false);
     const nameOnboardingHandledRef = useRef(false);
+    /* One-time payout destination notice: on a new merchant's first sign-in, or before their first
+       webhook endpoint. pendingWebhookAddRef holds the add that the notice interrupted. */
+    const [showPayoutNotice, setShowPayoutNotice] = useState(false);
+    const payoutNoticeHandledRef = useRef(false);
+    const pendingWebhookAddRef = useRef(false);
     const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
     const [settingsTxCategory, setSettingsTxCategory] = useState<string>("all");
     const [settingsTxStatus, setSettingsTxStatus] = useState<string>("all");
@@ -852,6 +858,15 @@ export default function DashboardPage() {
         if (userSettings) setPayoutDestinationDraft(savedPayoutDestination);
     }, [savedPayoutDestination, userSettings]);
     const [churnQuestionDraft, setChurnQuestionDraft] = useState("");
+
+    /* A new merchant (no saved payout destination yet) sees the payout notice once after sign-in.
+       It waits for the display-name onboarding to close so the two never stack. */
+    useEffect(() => {
+        if (!address || !userSettings || payoutNoticeHandledRef.current) return;
+        if (userSettings.payoutDestination) return;
+        if (hasSeenPayoutDestinationNotice(address)) return;
+        setShowPayoutNotice(true);
+    }, [address, userSettings]);
 
     const fetchSettings = useCallback(async () => {
         if (!address) return;
@@ -1724,6 +1739,16 @@ export default function DashboardPage() {
 
     const handleAddWebhook = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!webhookUrlInput) return;
+        if (!payoutNoticeHandledRef.current && !hasSeenPayoutDestinationNotice(address)) {
+            pendingWebhookAddRef.current = true;
+            setShowPayoutNotice(true);
+            return;
+        }
+        await addWebhookEndpoint();
+    };
+
+    const addWebhookEndpoint = async () => {
         if (!webhookUrlInput) return;
         setIsAddingWebhook(true);
         try {
@@ -3507,7 +3532,9 @@ Please complete the following implementation tasks:
                                 </h3>
                                 <div className="flex gap-2">
                                     <input
+                                        id="payout-destination-input"
                                         type="text"
+                                        aria-label="Payout destination address"
                                         value={payoutDestinationDraft}
                                         placeholder="0x..."
                                         onChange={(e) => { setPayoutDestinationDraft(e.target.value); setPayoutDestinationError(null); }}
@@ -5813,6 +5840,32 @@ Please complete the following implementation tasks:
             </main>
             </div>
             </div>
+            <PayoutDestinationNoticeModal
+                open={showPayoutNotice && !showNameOnboarding}
+                destination={userSettings?.payoutDestination || address || ""}
+                onChangeNow={() => {
+                    markPayoutDestinationNoticeSeen(address);
+                    payoutNoticeHandledRef.current = true;
+                    pendingWebhookAddRef.current = false;
+                    setShowPayoutNotice(false);
+                    setActiveTab("settings");
+                    setMerchantSubView("profile");
+                    window.setTimeout(() => {
+                        const field = document.getElementById("payout-destination-input");
+                        field?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        field?.focus({ preventScroll: true });
+                    }, 250);
+                }}
+                onChangeLater={() => {
+                    markPayoutDestinationNoticeSeen(address);
+                    payoutNoticeHandledRef.current = true;
+                    setShowPayoutNotice(false);
+                    if (pendingWebhookAddRef.current) {
+                        pendingWebhookAddRef.current = false;
+                        void addWebhookEndpoint();
+                    }
+                }}
+            />
             <MerchantDisplayNameModal
                 open={showNameOnboarding}
                 defaultName={userSettings?.displayName || ""}

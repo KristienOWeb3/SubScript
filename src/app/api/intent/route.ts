@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
 import { ProtocolConfig } from "@/lib/payments/config";
-import { apiError, getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
+import { apiError, getSecretKeyMode, hasEffectivePayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
@@ -253,6 +253,7 @@ export async function POST(request: Request) {
                     success: true,
                     intent: {
                         id: existing.id,
+                        checkoutSessionId: existing.id,
                         object: "payment_intent",
                         paymentType: "one_time",
                         appearsInDmPlanPicker: false,
@@ -268,7 +269,9 @@ export async function POST(request: Request) {
                         chainId: existingSettlement.chainId,
                         usdcAddress: existingSettlement.usdcAddress,
                         ...(existingReturnUrls ? { returnUrls: existingReturnUrls } : {})
-                    }
+                    },
+                    sandbox: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
                 }, { status: 200 });
             }
         }
@@ -277,7 +280,7 @@ export async function POST(request: Request) {
         const merchant = await prisma.merchant.findUnique({
             where: { walletAddress: merchantAddress }
         });
-        if (!isSandboxRequest && !isConfiguredPayoutDestination(merchant?.payoutDestination)) {
+        if (!isSandboxRequest && !hasEffectivePayoutDestination(merchant, merchantAddress)) {
             return merchantPayoutWalletMissingResponse();
         }
         const tierInfo = await getAccountKycTier(merchantAddress);
