@@ -21,6 +21,7 @@ import {
     shortAddress,
     type WalletEmailPreference,
 } from "./core";
+import { arcReconciliation } from "@/lib/arc/reconciliation";
 
 export {
     safelySendEmail,
@@ -180,15 +181,28 @@ export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
         category: "transactional",
         subject: emailSubject,
         text: `${subject}. ${amount} USDC. ${receipt.recipientKind === "payer" ? `Paid to ${paidTo}.` : "Paid into your account."} Open your receipt: ${receipt.receiptUrl} (reference ${receipt.receiptId})`,
+        /* Same design as the merchant's copy of this payment (buildDepositReceivedEmail), so one
+           payment never arrives in two different looks. */
         html: renderEmailLayout({
             previewText: `${subject} · ${amount} USDC`,
-            heading: subject,
-            bodyHtml: `<p style="margin:0 0 16px">${lead}</p>
-                <div style="margin:0 0 14px;padding:18px 20px;background:#f4f6f8;border-radius:14px">
-                    <span style="font-size:28px;font-weight:800;color:#08090a">${amount}</span>
-                    <span style="font-size:15px;font-weight:700;color:#00a892;margin-left:6px">USDC</span>
-                </div>
-                <p style="margin:0;color:#6b7280;font-size:12px">Reference ${htmlEscape(receipt.receiptId)} · keep it if you need to ask us about this payment</p>`,
+            theme: "platform",
+            bodyHtml: renderReceiptBody({
+                chainName: "Arc Network",
+                heading: subject,
+                lead,
+                badge: "Paid",
+                amount,
+                rows: [
+                    { label: "Paid to", valueHtml: htmlEscape(paidTo) },
+                    { label: "Network", valueHtml: "Arc Network" },
+                    { label: "Paid", valueHtml: htmlEscape(formatSpendaDateTime()) },
+                    { label: "Transaction", valueHtml: receiptTxLink(
+                        arcReconciliation(receipt.txHash, receipt.chainId ?? undefined).explorerTxUrl || "",
+                        receipt.txHash,
+                    ) },
+                    { label: "Reference", valueHtml: `<span style="font-family:'SFMono-Regular',Consolas,monospace">${htmlEscape(receipt.receiptId)}</span>` },
+                ],
+            }),
             cta: { label: "Open your receipt", url: receipt.receiptUrl },
         }),
         idempotencyKey: `payment-receipt:${receipt.recipientKind}:${receipt.txHash}:${receipt.recipient}`,
@@ -513,25 +527,46 @@ function formatSpendaDateTime(d: Date = new Date()): string {
     return `${day}-${month}-${year} / ${hoursStr}:${minutes}${ampm} UTC`;
 }
 
-function renderSpendaReceiptCard(rows: Array<{ label: string; valueHtml: string }>): string {
-    const rowHtml = rows.map((r, i) => {
-        const border = i < rows.length - 1 ? "border-bottom:1px solid #1e222b;" : "";
-        return `<tr>
-          <td style="padding:10px 0;font-size:13px;color:#8b929e;${border}">${htmlEscape(r.label)}</td>
-          <td align="right" style="padding:10px 0;font-size:13px;font-weight:600;color:#ffffff;${border}">${r.valueHtml}</td>
-        </tr>`;
-    }).join("");
-
-    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#13151b;border:1px solid #232732;border-radius:16px;padding:12px 18px;margin:18px 0 24px">
-      ${rowHtml}
+/**
+ * The current receipt design: platform shell, network banner, amount card, then a details table.
+ * Every money-movement email (deposits, withdrawals, payment receipts) renders through this so
+ * they can't drift back to the old dark layout one template at a time.
+ */
+function renderReceiptBody(opts: {
+    chainName: string;
+    greetingName?: string | null;
+    heading: string;
+    lead: string;
+    badge: string;
+    amount: string;
+    amountCaption?: string;
+    rows: Array<{ label: string; valueHtml: string }>;
+}): string {
+    const bannerHtml = `<img src="${htmlEscape(getNetworkBannerUrl(opts.chainName))}" alt="${htmlEscape(opts.chainName)}" width="518" style="display:block;width:100%;max-width:518px;height:auto;border:0;border-radius:16px;margin:0 0 24px">`;
+    const greetingHtml = opts.greetingName === undefined
+        ? ""
+        : `<p style="margin:0 0 6px;font-size:14px">Hi ${htmlEscape(opts.greetingName?.trim() || "there")},</p>`;
+    const detailsCard = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;margin:24px 0 0">
+        ${opts.rows.map((row, index) => `<tr><td width="32%" style="padding:13px 8px 13px 0;vertical-align:top;color:#676f6c;font-size:12px;${index ? "border-top:1px solid #d4d9cf" : ""}">${htmlEscape(row.label)}</td>
+        <td align="right" style="padding:13px 0;font-size:12px;font-weight:600;overflow-wrap:anywhere;word-break:break-word;${index ? "border-top:1px solid #d4d9cf" : ""}">${row.valueHtml}</td></tr>`).join("")}
     </table>`;
+    return `
+                ${bannerHtml}
+                ${greetingHtml}
+                <h1 style="margin:0 0 8px;font-size:26px;font-weight:750;letter-spacing:-0.8px;line-height:1.2">${htmlEscape(opts.heading)}</h1>
+                <p style="margin:0 0 24px;color:#676f6c;font-size:14px">${opts.lead}</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#d4e3e8" style="background:#d4e3e8;border:1px solid #aab8b9;border-radius:20px">
+                <tr><td align="center" style="padding:24px 12px">
+                    <span style="display:inline-block;padding:4px 12px;border:1px solid #899c98;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">${htmlEscape(opts.badge)}</span>
+                    <p style="margin:14px 0 2px;font-size:36px;font-weight:750;letter-spacing:-1.3px;line-height:1.15;overflow-wrap:anywhere;word-break:break-word">${htmlEscape(opts.amount)} <span style="font-size:15px;letter-spacing:0">USDC</span></p>
+                    ${opts.amountCaption ? `<p style="margin:8px 0 0;font-size:11px;color:#526660;letter-spacing:1px;text-transform:uppercase">${htmlEscape(opts.amountCaption)}</p>` : ""}
+                </td></tr></table>
+                ${detailsCard}
+            `;
 }
 
-function getNetworkBannerHtml(chainName: string): string {
-    const bannerUrl = getNetworkBannerUrl(chainName);
-    return `<div style="margin:0 0 20px;border-radius:18px;overflow:hidden;background:#181b22;border:1px solid #282d38;text-align:center">
-      <img src="${bannerUrl}" alt="${htmlEscape(chainName)}" width="100%" style="display:block;max-height:170px;width:100%;object-fit:cover;border-radius:18px" />
-    </div>`;
+function receiptTxLink(url: string, txHash: string): string {
+    return `<a href="${htmlEscape(url)}" target="_blank" style="color:#2775ca;text-decoration:underline">${htmlEscape(`${txHash.slice(0, 10)}...${txHash.slice(-8)}`)}</a>`;
 }
 
 export type DepositEmailParams = {
@@ -623,49 +658,48 @@ export function buildWithdrawalCompletedEmail(params: WithdrawalEmailParams) {
     const amount = formatBridgeEmailAmount(params.amountUsdc);
     const destName = params.destinationChainName || "External Chain";
     const dateStr = formatSpendaDateTime(params.completedAt);
-    const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
-    const txLinkHtml = params.txHash
-        ? `<a href="${getExplorerTxUrl(destName, params.txHash)}" target="_blank" style="color:#38bdf8;text-decoration:none">${htmlEscape(shortHash!)}</a>`
-        : `<span style="color:#94a3b8">Delivered on-chain</span>`;
 
-    const bannerHtml = getNetworkBannerHtml(destName);
     const greetingName = params.recipientName?.trim() || "there";
     const destAddrHtml = params.destinationAddress ? shortAddress(params.destinationAddress) : destName;
+    const txLinkHtml = params.txHash
+        ? receiptTxLink(getExplorerTxUrl(destName, params.txHash), params.txHash)
+        : `<span>Delivered on-chain</span>`;
 
     const rows = [
-        { label: "Quantity", valueHtml: `${htmlEscape(amount)} USDC` },
-        { label: "Amount in USD", valueHtml: `$${htmlEscape(amount)}` },
+        { label: "Network", valueHtml: htmlEscape(destName) },
+        { label: "To", valueHtml: `<span style="font-family:'SFMono-Regular',Consolas,monospace">${htmlEscape(destAddrHtml)}</span>` },
         { label: "Fee", valueHtml: htmlEscape(params.feeUsdc || "$0.00") },
-        { label: "Destination Network", valueHtml: htmlEscape(destName) },
-        { label: "Destination Address", valueHtml: `<span style="font-family:'SFMono-Regular',Consolas,monospace">${htmlEscape(destAddrHtml)}</span>` },
-        { label: "Date/Time", valueHtml: htmlEscape(dateStr) },
-        { label: "Transaction Hash", valueHtml: txLinkHtml },
+        { label: "Delivered", valueHtml: htmlEscape(dateStr) },
+        { label: "Transaction", valueHtml: txLinkHtml },
     ];
-
-    const detailsCard = renderSpendaReceiptCard(rows);
 
     return {
         to: params.recipientEmail,
         category: "transactional" as const,
         subject: `Withdrawal delivered: ${amount} USDC to ${destName}`,
-        text: `Hi ${greetingName},\n\nYou have successfully made a withdrawal from your SubScript account to ${destName}.\n\nQuantity: ${amount} USDC\nDestination: ${destAddrHtml}\nDate: ${dateStr}\n\nCheck your transaction at https://subscriptonarc.com/dashboard/user/transactions`,
+        text: `Hi ${greetingName},
+
+Your withdrawal to ${destName} has arrived.
+
+Quantity: ${amount} USDC
+Destination: ${destAddrHtml}
+Date: ${dateStr}
+
+Check your transaction at https://subscriptonarc.com/dashboard/user/transactions`,
         html: renderEmailLayout({
             previewText: `Withdrawal delivered: ${amount} USDC to ${destName}`,
-            theme: "dark",
-            bodyHtml: `
-                ${bannerHtml}
-                <p style="margin:0 0 10px;font-size:15px;color:#cbd5e1">Hi <strong style="color:#ffffff">${htmlEscape(greetingName)}</strong>,</p>
-                <p style="margin:0 0 18px;font-size:14px;color:#94a3b8;line-height:1.6">You have successfully made a withdrawal from your <strong style="color:#00d2b4">SubScript</strong> account to <strong style="color:#ffffff">${htmlEscape(destName)}</strong>. See withdrawal details below.</p>
-                <div style="border-top:1px solid #232732;margin:18px 0"></div>
-                <div style="text-align:center;margin:0 0 8px">
-                    <span style="display:inline-block;padding:4px 14px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:9999px;font-size:12px;font-weight:700;color:#22c55e">Completed</span>
-                </div>
-                <div style="text-align:center;margin:6px 0 20px;font-size:32px;font-weight:900;color:#ffffff;letter-spacing:-0.5px">
-                    $${htmlEscape(amount)} <span style="font-size:18px;font-weight:700;color:#00d2b4">USDC</span>
-                </div>
-                ${detailsCard}
-            `,
-            cta: { label: "View Transactions", url: "https://subscriptonarc.com/dashboard/user/transactions" },
+            theme: "platform",
+            bodyHtml: renderReceiptBody({
+                chainName: destName,
+                greetingName,
+                heading: "Withdrawal delivered.",
+                lead: `Your USDC has arrived on ${htmlEscape(destName)}.`,
+                badge: "Completed",
+                amount,
+                amountCaption: "Sent from SubScript",
+                rows,
+            }),
+            cta: { label: "View transactions", url: "https://subscriptonarc.com/dashboard/user/transactions" },
         }),
         idempotencyKey: `withdrawal:${destName}:${params.txHash?.toLowerCase() || params.referenceId || `${params.recipientEmail.toLowerCase()}:${dateStr}`}`,
     };
@@ -689,48 +723,49 @@ export function buildDepositInitiatedEmail(params: DepositInitiatedEmailParams) 
     const amount = formatBridgeEmailAmount(params.amountUsdc);
     const chainName = params.originChainName || "External Chain";
     const dateStr = formatSpendaDateTime(params.initiatedAt);
-    const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
-    const txLinkHtml = params.txHash
-        ? `<a href="${getExplorerTxUrl(chainName, params.txHash)}" target="_blank" style="color:#38bdf8;text-decoration:none">${htmlEscape(shortHash!)}</a>`
-        : `<span style="color:#94a3b8">Submitted on-chain</span>`;
 
-    const bannerHtml = getNetworkBannerHtml(chainName);
     const greetingName = params.recipientName?.trim() || "there";
+    const txLinkHtml = params.txHash
+        ? receiptTxLink(getExplorerTxUrl(chainName, params.txHash), params.txHash)
+        : `<span>Submitted on-chain</span>`;
 
     const rows = [
-        { label: "Quantity", valueHtml: `${htmlEscape(amount)} USDC` },
-        { label: "Amount in USD", valueHtml: `$${htmlEscape(amount)}` },
-        { label: "Origin Network", valueHtml: htmlEscape(chainName) },
-        { label: "Destination Network", valueHtml: "Arc Network" },
-        { label: "Estimated Duration", valueHtml: "~15-20 min (Circle CCTP)" },
-        { label: "Date/Time", valueHtml: htmlEscape(dateStr) },
-        { label: "Transaction Hash", valueHtml: txLinkHtml },
+        { label: "From", valueHtml: htmlEscape(chainName) },
+        { label: "To", valueHtml: "Arc Network" },
+        { label: "Usually takes", valueHtml: "15 to 20 min (Circle CCTP)" },
+        { label: "Started", valueHtml: htmlEscape(dateStr) },
+        { label: "Transaction", valueHtml: txLinkHtml },
     ];
-
-    const detailsCard = renderSpendaReceiptCard(rows);
 
     return {
         to: params.recipientEmail,
         category: "transactional" as const,
         subject: `Deposit initiated: ${amount} USDC from ${chainName}`,
-        text: `Hi ${greetingName},\n\nA USDC deposit from ${chainName} to your SubScript account has been initiated via Circle CCTP.\n\nQuantity: ${amount} USDC\nOrigin Network: ${chainName}\nDestination Network: Arc Network\nEstimated Time: ~15-20 minutes\nDate: ${dateStr}\n\nTrack your deposit at https://subscriptonarc.com/dashboard/user`,
+        text: `Hi ${greetingName},
+
+Your USDC deposit from ${chainName} is on its way to your SubScript account through Circle CCTP.
+
+Quantity: ${amount} USDC
+Origin Network: ${chainName}
+Destination Network: Arc Network
+Estimated Time: ~15-20 minutes
+Date: ${dateStr}
+
+Track your deposit at https://subscriptonarc.com/dashboard/user`,
         html: renderEmailLayout({
             previewText: `Deposit initiated: ${amount} USDC from ${chainName} (~15 mins)`,
-            theme: "dark",
-            bodyHtml: `
-                ${bannerHtml}
-                <p style="margin:0 0 10px;font-size:15px;color:#cbd5e1">Hi <strong style="color:#ffffff">${htmlEscape(greetingName)}</strong>,</p>
-                <p style="margin:0 0 18px;font-size:14px;color:#94a3b8;line-height:1.6">Your USDC deposit has been detected and is moving to your <strong style="color:#00d2b4">SubScript</strong> account on Arc via Circle CCTP. Cross-chain finality takes approximately 15 minutes. We will send you another email as soon as your funds land and are spendable.</p>
-                <div style="border-top:1px solid #232732;margin:18px 0"></div>
-                <div style="text-align:center;margin:0 0 8px">
-                    <span style="display:inline-block;padding:4px 14px;background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.25);border-radius:9999px;font-size:12px;font-weight:700;color:#eab308">Moving to Arc (~15 mins)</span>
-                </div>
-                <div style="text-align:center;margin:6px 0 20px;font-size:32px;font-weight:900;color:#ffffff;letter-spacing:-0.5px">
-                    $${htmlEscape(amount)} <span style="font-size:18px;font-weight:700;color:#00d2b4">USDC</span>
-                </div>
-                ${detailsCard}
-            `,
-            cta: { label: "Track in Dashboard", url: "https://subscriptonarc.com/dashboard/user" },
+            theme: "platform",
+            bodyHtml: renderReceiptBody({
+                chainName,
+                greetingName,
+                heading: "Deposit on its way.",
+                lead: "We spotted your deposit. It usually lands in about 15 minutes, and we'll email you when it's ready to spend.",
+                badge: "Moving to Arc (~15 mins)",
+                amount,
+                amountCaption: `From ${chainName}`,
+                rows,
+            }),
+            cta: { label: "Track in dashboard", url: "https://subscriptonarc.com/dashboard/user" },
         }),
         idempotencyKey: `deposit-init:${chainName}:${params.txHash?.toLowerCase() || params.referenceId || `${params.recipientEmail.toLowerCase()}:${dateStr}`}`,
     };
@@ -756,50 +791,50 @@ export function buildWithdrawalInitiatedEmail(params: WithdrawalInitiatedEmailPa
     const amount = formatBridgeEmailAmount(params.amountUsdc);
     const destName = params.destinationChainName || "External Chain";
     const dateStr = formatSpendaDateTime(params.initiatedAt);
-    const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
-    const txLinkHtml = params.txHash
-        ? `<a href="${getExplorerTxUrl("Arc Network", params.txHash)}" target="_blank" style="color:#38bdf8;text-decoration:none">${htmlEscape(shortHash!)}</a>`
-        : `<span style="color:#94a3b8">Burned on Arc</span>`;
 
-    const bannerHtml = getNetworkBannerHtml(destName);
     const greetingName = params.recipientName?.trim() || "there";
     const destAddrHtml = params.destinationAddress ? shortAddress(params.destinationAddress) : destName;
+    const txLinkHtml = params.txHash
+        ? receiptTxLink(getExplorerTxUrl("Arc Network", params.txHash), params.txHash)
+        : `<span>Burned on Arc</span>`;
 
     const rows = [
-        { label: "Quantity", valueHtml: `${htmlEscape(amount)} USDC` },
-        { label: "Amount in USD", valueHtml: `$${htmlEscape(amount)}` },
+        { label: "Network", valueHtml: htmlEscape(destName) },
+        { label: "To", valueHtml: `<span style="font-family:'SFMono-Regular',Consolas,monospace">${htmlEscape(destAddrHtml)}</span>` },
         { label: "Fee", valueHtml: htmlEscape(params.feeUsdc || "$0.00") },
-        { label: "Destination Network", valueHtml: htmlEscape(destName) },
-        { label: "Destination Address", valueHtml: `<span style="font-family:'SFMono-Regular',Consolas,monospace">${htmlEscape(destAddrHtml)}</span>` },
-        { label: "Estimated Duration", valueHtml: "~15-20 min (Circle CCTP)" },
-        { label: "Date/Time", valueHtml: htmlEscape(dateStr) },
-        { label: "Arc Burn Hash", valueHtml: txLinkHtml },
+        { label: "Usually takes", valueHtml: "15 to 20 min (Circle CCTP)" },
+        { label: "Started", valueHtml: htmlEscape(dateStr) },
+        { label: "Arc burn", valueHtml: txLinkHtml },
     ];
-
-    const detailsCard = renderSpendaReceiptCard(rows);
 
     return {
         to: params.recipientEmail,
         category: "transactional" as const,
         subject: `Withdrawal initiated: ${amount} USDC to ${destName}`,
-        text: `Hi ${greetingName},\n\nA withdrawal of ${amount} USDC from your SubScript account to ${destName} has been submitted and is processing via Circle CCTP.\n\nQuantity: ${amount} USDC\nDestination: ${destAddrHtml}\nEstimated Time: ~15-20 minutes\nDate: ${dateStr}\n\nTrack your withdrawal at https://subscriptonarc.com/dashboard/user/transactions`,
+        text: `Hi ${greetingName},
+
+Your withdrawal of ${amount} USDC to ${destName} is processing through Circle CCTP.
+
+Quantity: ${amount} USDC
+Destination: ${destAddrHtml}
+Estimated Time: ~15-20 minutes
+Date: ${dateStr}
+
+Track your withdrawal at https://subscriptonarc.com/dashboard/user/transactions`,
         html: renderEmailLayout({
             previewText: `Withdrawal initiated: ${amount} USDC to ${destName} (~15 mins)`,
-            theme: "dark",
-            bodyHtml: `
-                ${bannerHtml}
-                <p style="margin:0 0 10px;font-size:15px;color:#cbd5e1">Hi <strong style="color:#ffffff">${htmlEscape(greetingName)}</strong>,</p>
-                <p style="margin:0 0 18px;font-size:14px;color:#94a3b8;line-height:1.6">Your withdrawal has been burned on Arc and is being routed to <strong style="color:#ffffff">${htmlEscape(destName)}</strong> via Circle CCTP. Cross-chain attestation and minting takes approximately 15 minutes. We will send you a final delivery confirmation once the funds have minted at the destination.</p>
-                <div style="border-top:1px solid #232732;margin:18px 0"></div>
-                <div style="text-align:center;margin:0 0 8px">
-                    <span style="display:inline-block;padding:4px 14px;background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.25);border-radius:9999px;font-size:12px;font-weight:700;color:#eab308">Processing (~15 mins)</span>
-                </div>
-                <div style="text-align:center;margin:6px 0 20px;font-size:32px;font-weight:900;color:#ffffff;letter-spacing:-0.5px">
-                    $${htmlEscape(amount)} <span style="font-size:18px;font-weight:700;color:#00d2b4">USDC</span>
-                </div>
-                ${detailsCard}
-            `,
-            cta: { label: "View Transactions", url: "https://subscriptonarc.com/dashboard/user/transactions" },
+            theme: "platform",
+            bodyHtml: renderReceiptBody({
+                chainName: destName,
+                greetingName,
+                heading: "Withdrawal on its way.",
+                lead: `It's left Arc and is heading to ${htmlEscape(destName)}. That usually takes about 15 minutes, and we'll email you when it arrives.`,
+                badge: "Processing (~15 mins)",
+                amount,
+                amountCaption: `To ${destName}`,
+                rows,
+            }),
+            cta: { label: "View transactions", url: "https://subscriptonarc.com/dashboard/user/transactions" },
         }),
         idempotencyKey: `withdrawal-init:${destName}:${params.txHash?.toLowerCase() || params.referenceId || `${params.recipientEmail.toLowerCase()}:${dateStr}`}`,
     };
