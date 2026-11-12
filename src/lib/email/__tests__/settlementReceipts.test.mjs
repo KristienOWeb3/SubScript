@@ -63,7 +63,10 @@ test("there is no receipt button, because these settlements mint no receipt row"
        "view receipt" link, which is the point: inventing a receipt id here would send people to
        a 404 on a payment that really happened. */
     assert.ok(!email.html.includes("<a href"));
-    assert.ok(!email.html.toLowerCase().includes("receipt"));
+    /* Not a blanket "receipt" check: the platform shell's footer says "You received this
+       receipt", which is true. What must never appear is an offer to open one. */
+    assert.ok(!/view (the |your )?receipt/i.test(email.html));
+    assert.ok(!/view (the |your )?receipt/i.test(email.text));
 });
 
 test("the transaction hash stands in for the receipt link, in both parts", () => {
@@ -83,7 +86,8 @@ test("a settlement proved without a hash is labelled a reference, not a transact
 test("a hostile payment title cannot inject markup into the html", () => {
     const email = build({ title: `<img src=x onerror="alert(1)"> & 'paid'` });
 
-    assert.ok(!email.html.includes("<img"));
+    /* The shell's own logo is an <img>, so look for the injected one specifically. */
+    assert.ok(!email.html.includes("<img src=x"));
     assert.ok(!email.html.includes(`onerror="alert(1)"`));
     assert.ok(email.html.includes("&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;paid&#39;"));
 

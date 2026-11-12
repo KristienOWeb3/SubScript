@@ -19,6 +19,7 @@ import {
     findActiveOnChainSubscriptionId,
     getSubscriptionOnChain,
     getIntroductoryTermsOnChain,
+    getSignupChargeOnChain,
     verifyExternalSubscriptionTx,
     horizonAllowance,
 } from "@/lib/subscriptions/onchain";
@@ -40,7 +41,7 @@ import { checkoutExpiresAt, isCheckoutExpired } from "@/lib/subscriptions/apiSub
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
-import { subscriptionKey } from "@/lib/subscriptions/contractBinding";
+import { activeSubscriptionContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
 import { haltGuard } from "@/lib/accountHalt";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 
@@ -59,6 +60,51 @@ async function markSubscriptionOfferAccepted(checkoutSessionId: string, subscrib
     }).catch((err: unknown) =>
         console.error("[subscription/subscribe] offer acceptance sync failed:", err)
     );
+}
+
+/**
+ * Receipt for the signup charge, shared by the normal path and every recovery path.
+ *
+ * One settlement reference for all of them — the subscription's contract and id — so a request
+ * that charged, mailed and then died, followed by a retry that lands in a recovery branch, dedupes
+ * to a single email. Keying on the tx hash would not: two of the recovery branches don't have it.
+ *
+ * The normal path knows the amount it just charged. Recovery paths don't (the applied promotion
+ * lived in the request that died), so they read it back from the chain and skip the email unless
+ * the subscription is still in its first period — one found later is a reconciliation of an old
+ * signup, and a "payment confirmed" mail for it would read as a new charge.
+ *
+ * Never throws: by the time this runs the subscription is live and mirrored.
+ */
+async function mailSignupReceipt(args: {
+    subId: string;
+    txHash: string | null | undefined;
+    subscriber: string;
+    merchant: string;
+    planName: string | null | undefined;
+    /** Set only by the path that submitted the charge in this same request. */
+    knownChargeUsdc?: bigint;
+}) {
+    try {
+        let amount = args.knownChargeUsdc;
+        if (amount === undefined) {
+            const signup = await getSignupChargeOnChain(args.subId);
+            if (!signup || !signup.firstPeriod) return;
+            amount = signup.amount;
+        }
+        await sendSettlementReceipts({
+            kind: "subscription_start",
+            amountUsdc: amount,
+            txHash: args.txHash || null,
+            settlementRef: `subscription-start:${activeSubscriptionContract()}:${args.subId}`,
+            payerAddress: args.subscriber,
+            payeeAddress: args.merchant,
+            /* Both sides read this line, so it names the plan and the subscription, not the customer. */
+            paymentTitle: `${args.planName || "Subscription"} (#${args.subId})`,
+        });
+    } catch (err) {
+        console.error(`[subscription/subscribe] receipt email failed for sub ${args.subId}:`, err);
+    }
 }
 
 async function deactivateConsumedApiPlan({
@@ -474,6 +520,13 @@ async function handlePOST(request: Request) {
                 amountUsdc: plan.amountUsdc,
                 periodSeconds: plan.periodSeconds,
             }).catch((err: unknown) => console.error("[subscription/subscribe] recovered DM creation failed:", err));
+            await mailSignupReceipt({
+                subId: recoveredId,
+                txHash: checkout!.verifiedTxHash,
+                subscriber,
+                merchant,
+                planName: plan.name,
+            });
             await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
             return NextResponse.json({ success: true, txHash: checkout!.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
         }
@@ -494,6 +547,17 @@ async function handlePOST(request: Request) {
                     orderBy: { createdAt: "desc" }
                 });
                 if (sub) {
+                    /* The request that charged may have died before mailing. Only for a row on the
+                       live contract: the id means nothing against any other deployment. */
+                    if (sub.contractAddress === activeSubscriptionContract()) {
+                        await mailSignupReceipt({
+                            subId: String(sub.subscriptionId),
+                            txHash: attempt.txHash || sub.paymentTxHash,
+                            subscriber,
+                            merchant,
+                            planName: plan.name,
+                        });
+                    }
                     return NextResponse.json({
                         success: true,
                         txHash: attempt.txHash || sub.paymentTxHash,
@@ -503,6 +567,11 @@ async function handlePOST(request: Request) {
                 }
                 const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
                 if (recoveredId) {
+                    /* The promo terms come from the chain, not from appliedPromo: this branch is
+                       reached from ATTEMPT_EXISTS, where appliedPromo is always null, so reading it
+                       stamped every promo subscription with a 0-amount, 0-cycle snapshot — losing
+                       the real terms and the pricing block on every renewal webhook after it. */
+                    const recoveredIntro = await getIntroductoryTermsOnChain(recoveredId);
                     await mirrorSubscriptionCreated({
                         subscriptionId: recoveredId,
                         merchantAddress: merchant,
@@ -511,14 +580,28 @@ async function handlePOST(request: Request) {
                         periodSeconds: plan.periodSeconds,
                         beneficiaryAddress,
                         minCommitmentSeconds: plan.minCommitmentSeconds,
-                        promotion: attempt.promotionClaimId ? {
+                        promotion: recoveredIntro ? {
                             promotionId: attempt.promotionClaimId,
-                            introAmountUsdc: appliedPromo?.introductoryAmountUsdc || BigInt(0),
-                            introCycles: appliedPromo?.introductoryCycles || 0,
+                            introAmountUsdc: recoveredIntro.introAmountUsdc,
+                            introCycles: recoveredIntro.introCycles,
                         } : null,
                         externalReference,
                         sourceCheckoutId,
                     planId: canonicalPlanId,
+                    });
+                    /* Bind the claimed redemption to the subscription, as the normal path does.
+                       Left unbound it has no subscription_id, which is exactly what
+                       release_promotion_redemption deletes. */
+                    if (attempt.promotionClaimId) {
+                        await confirmPromotionRedemption(attempt.promotionClaimId, subscriber, BigInt(recoveredId))
+                            .catch((err: unknown) => console.error("[subscription/subscribe] recovered redemption confirm failed:", err));
+                    }
+                    await mailSignupReceipt({
+                        subId: recoveredId,
+                        txHash: attempt.txHash,
+                        subscriber,
+                        merchant,
+                        planName: plan.name,
                     });
                     return NextResponse.json({
                         success: true,
@@ -626,6 +709,13 @@ async function handlePOST(request: Request) {
                     sourceCheckoutId,
                     txHash: checkout?.verifiedTxHash || null,
                 }), `reconciled-created:${onChainActiveId}:${sourceCheckoutId || plan.id}`);
+                await mailSignupReceipt({
+                    subId: onChainActiveId,
+                    txHash: checkout?.verifiedTxHash || null,
+                    subscriber,
+                    merchant,
+                    planName: plan.name,
+                });
 
                 await prisma.subscriptionAttempt.update({
                     where: { attemptId: attempt.attemptId },
@@ -861,18 +951,16 @@ async function handlePOST(request: Request) {
 
         /* Receipt for the first period, which the subscribe transaction charges on-chain. Renewals
            already mailed one from cron/customer-billing, but the signup charge mailed nothing, so a
-           subscriber's first payment was the one they had no email proof of. Keyed on the tx hash,
-           so a retried request dedupes at the provider. Swallowed: the subscription is live and
-           mirrored by now, and a mail outage must never turn that into an error. */
-        await sendSettlementReceipts({
-            kind: "subscription_start",
-            amountUsdc: appliedPromo ? appliedPromo.introductoryAmountUsdc : plan.amountUsdc,
+           subscriber's first payment was the one they had no email proof of. The recovery branches
+           above send the same receipt under the same reference, so a retry never mails it twice. */
+        await mailSignupReceipt({
+            subId,
             txHash,
-            payerAddress: subscriber,
-            payeeAddress: merchant,
-            /* Both sides read this line, so it names the plan and the subscription, not the customer. */
-            paymentTitle: `${plan.name || "Subscription"} (#${subId})`,
-        }).catch((err: unknown) => console.error("[subscription/subscribe] receipt email failed:", err));
+            subscriber,
+            merchant,
+            planName: plan.name,
+            knownChargeUsdc: appliedPromo ? appliedPromo.introductoryAmountUsdc : plan.amountUsdc,
+        });
 
         await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
             subscriptionId: subId,
