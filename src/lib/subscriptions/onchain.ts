@@ -101,6 +101,50 @@ export async function getIntroductoryTermsOnChain(
     }
 }
 
+/**
+ * What the signup transaction charged, read back from the chain, plus whether the subscription
+ * is still in that first period. For the recovery paths, whose original request (and with it
+ * the applied promotion) is gone and must not be guessed.
+ *
+ * - amount: chargeAmountFor(subId, 0) — the PSA defines sequence 0 as the signup payment and
+ *   returns the introductory amount when one applied (0 for a free trial). Contracts that
+ *   predate chargeAmountFor fall back to the flat amount, which is what they charged.
+ * - firstPeriod: nextPayment never moves after creation, while paid-through advances with each
+ *   renewal, so the two are equal only until the first renewal settles. (A canceled subscription
+ *   still answers, so a retry after a fast cancel still gets its receipt.)
+ *
+ * Null on any read failure: no receipt beats a receipt with a guessed amount.
+ */
+export async function getSignupChargeOnChain(
+    subId: string | bigint,
+): Promise<{ amount: bigint; firstPeriod: boolean } | null> {
+    try {
+        const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+        const id = BigInt(subId);
+        const s = await c.subscriptions(id);
+        if (String(s.subscriber ?? s[0]).toLowerCase() === ethers.ZeroAddress) return null;
+        const nextPayment = BigInt(s.nextPayment ?? s[4]);
+        const period = BigInt(s.period ?? s[3]);
+        let amount = BigInt(s.amount ?? s[2]);
+        try {
+            amount = BigInt(await c.chargeAmountFor(id, 0));
+        } catch (error) {
+            if ((error as { code?: string })?.code !== "CALL_EXCEPTION") throw error;
+        }
+        /* Not c.paidThrough directly: the live mainnet PSA predates that getter and reverts on it.
+           readSubscriptionPaidThrough falls back to the execution bitmap, which every deployment has. */
+        const paidThrough = await readSubscriptionPaidThrough(
+            c as unknown as Parameters<typeof readSubscriptionPaidThrough>[0],
+            id,
+            { nextPayment, period },
+            BigInt(Math.floor(Date.now() / 1000)),
+        );
+        return { amount, firstPeriod: paidThrough === nextPayment };
+    } catch {
+        return null;
+    }
+}
+
 /* Belt-and-suspenders for the double-subscribe guard. The DB advisory-lock + mirror check in
    the subscribe route only sees subscriptions we ourselves mirrored; a sub that exists on-chain
    but was never mirrored (e.g. legacy, or a failed mirror write) would slip past it. This scans
