@@ -30,9 +30,9 @@ const SCROLL_DOWN_DELTA_THRESHOLD = 14; // Requires 14px of intentional down-scr
 const SCROLL_UP_DELTA_THRESHOLD = 8;   // Requires 8px of intentional up-scroll to expand
 const TOP_DEADZONE_PX = 16;            // Keep locked expanded at the very top of page
 
-// Fixed 70px bar (matches the merchant bottom nav) for a larger mobile touch target.
-const CAPSULE_HEIGHT = 70;
-const CAPSULE_RETRACTED_SIZE = 70;
+// Fixed 60px bar; the selection pill inside it is 44px tall for a comfortable touch target.
+const CAPSULE_HEIGHT = 60;
+const CAPSULE_RETRACTED_SIZE = 60;
 
 export default function MobileFloatingNav<T extends string = string>({
   tabs,
@@ -398,7 +398,7 @@ export default function MobileFloatingNav<T extends string = string>({
                   haptics.microTick();
                   onSelectTab(tab.id);
                 }}
-                className={`relative h-8.5 shrink-0 flex items-center justify-center rounded-full bg-transparent active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#353935] dark:focus-visible:ring-[#2775CA] ${
+                className={`relative h-11 shrink-0 flex items-center justify-center rounded-full bg-transparent active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#353935] dark:focus-visible:ring-[#2775CA] ${
                   isActive
                     ? "text-[#FFFFF0] dark:text-white"
                     : "text-black dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/10"

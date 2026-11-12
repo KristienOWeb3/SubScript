@@ -47,24 +47,25 @@ test("mobile admin navigation uses high-contrast labels", () => {
     assert.doesNotMatch(drawer, /text-white\/(?:40|50|60|70)(?:\s|\")/);
 });
 
-test("the user and merchant mobile bottom bars, and the user skeleton, are 70px tall", () => {
+test("the user mobile bottom bar and its skeleton are 60px tall, the merchant bar 70px", () => {
     const nav = source("src/components/dashboard/MobileFloatingNav.tsx");
     const dashboard = source("src/app/dashboard/user/page.tsx");
     const skeleton = source("src/components/dashboard/UserDashboardLoading.tsx");
     const merchantNav = source("src/components/dashboard/MerchantDashboardNav.tsx");
 
-    assert.match(nav, /const CAPSULE_HEIGHT = 70;/);
-    assert.match(nav, /const CAPSULE_RETRACTED_SIZE = 70;/);
+    assert.match(nav, /const CAPSULE_HEIGHT = 60;/);
+    assert.match(nav, /const CAPSULE_RETRACTED_SIZE = 60;/);
     assert.match(dashboard, /<UserDashboardLoading\s+items=\{userDesktopTabs\}/);
-    assert.match(skeleton, /h-\[70px\]/);
-    assert.match(skeleton, /w-\[70px\]/);
+    assert.match(skeleton, /h-\[60px\]/);
+    assert.match(skeleton, /h-11 w-\[90px\]/);
+    assert.match(skeleton, /w-\[60px\]/);
     assert.match(merchantNav, /merchant-bottom-nav[^"]*\sh-\[70px\]/);
     // globals.css pins the live user bar with !important, overriding the inline CAPSULE_HEIGHT.
     const css = source("src/app/globals.css");
     const rule = css.match(/nav\[aria-label="Primary navigation"\],\s*\.user-dashboard-redesign \[data-testid="mobile-dm-btn"\] \{([^}]*)\}/);
     assert.ok(rule, "mobile bottom bar height rule exists");
     for (const prop of ["height", "min-height", "max-height"]) {
-        assert.match(rule[1], new RegExp(`(?:^|\\s)${prop}: 70px !important;`));
+        assert.match(rule[1], new RegExp(`(?:^|\\s)${prop}: 60px !important;`));
     }
 });
 
