@@ -2,6 +2,7 @@ import { GET as recoverEmailDelivery } from "../email-delivery/route";
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { processPaymentLinkVerificationJobs } from "@/lib/payments/paymentLinkVerificationWorker";
+import { sweepOrphanedCheckoutPayments } from "@/lib/payments/orphanedCheckoutSweeper";
 import { healSubscriptionDrift } from "@/lib/subscriptions/driftHealer";
 import { deliverPendingWebhookOutboxEvents } from "@/lib/webhookOutbox";
 import { processPaymentReconciliationEvents } from "@/lib/payments/reconciliationRetry";
@@ -82,6 +83,17 @@ export async function POST(request: Request) {
             })),
         ]);
 
+        /* Recover checkout payments that moved on-chain but never reached /verify (expired
+           session, rate limit, closed tab, wallet error after broadcast). Best-effort like the
+           drift healer: a scan failure is reported, and the cursor makes the next run retry it. */
+        let orphanSweep: Awaited<ReturnType<typeof sweepOrphanedCheckoutPayments>> | { error: string };
+        try {
+            orphanSweep = await sweepOrphanedCheckoutPayments(supabase);
+        } catch (sweepError: any) {
+            console.error("[reconcile] Orphaned checkout sweep failed:", sweepError?.message || sweepError);
+            orphanSweep = { error: sweepError?.message || "orphaned checkout sweep failed" };
+        }
+
         /* Drain durable hosted-checkout verifications before the broader sweep.
            The DB claim uses SKIP LOCKED leases, so overlapping keepers are safe. */
         let paymentLinkVerification: Awaited<ReturnType<typeof processPaymentLinkVerificationJobs>> | { error: string };
@@ -134,7 +146,7 @@ export async function POST(request: Request) {
             ? false
             : paymentLinkVerification.success;
         return NextResponse.json(
-            { ...result, paymentLinkVerification, webhookOutbox, paymentOperations, drift },
+            { ...result, paymentLinkVerification, webhookOutbox, paymentOperations, drift, orphanSweep },
             {
                 status: result.success
                     && workerHealthy

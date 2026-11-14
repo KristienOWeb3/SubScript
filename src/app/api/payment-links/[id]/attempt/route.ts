@@ -61,7 +61,12 @@ export async function POST(request: Request, { params }: RouteContext) {
         return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
     }
     if (data?.outcome === "FINGERPRINT_MISMATCH") {
-        return NextResponse.json({ error: "Checkout attempt belongs to a different payment." }, { status: 409 });
+        /* Usually a shared checkout link that still carried the sender's ?attempt=. The code tells
+           the browser to mint its own attempt instead of leaving the payer stuck. */
+        return NextResponse.json(
+            { error: "Checkout attempt belongs to a different payment.", code: "ATTEMPT_FOREIGN" },
+            { status: 409 },
+        );
     }
     if (data?.outcome === "RELEASED") {
         /* Terminal attempt: the client must rotate to a fresh attempt UUID before paying. */
@@ -122,11 +127,14 @@ export async function GET(request: Request, { params }: RouteContext) {
     if (!data || data.payment_link_id !== id || String(data.payer_address).toLowerCase() !== payer) {
         return NextResponse.json({ exists: false });
     }
-    const terminal = data.status === "RELEASED" || data.status === "FAILED_TERMINAL";
+    /* A late-bound attempt can stay RELEASED with a payment bound to it (another live attempt held
+       the payer's slot). It has a real transaction to resume, so it is not terminal. */
+    const lateBound = data.status === "RELEASED" && Boolean(data.tx_hash);
+    const terminal = (data.status === "RELEASED" && !lateBound) || data.status === "FAILED_TERMINAL";
     return NextResponse.json({
         exists: true,
-        status: terminal ? "RELEASED" : data.status,
-        txHash: data.status === "SUBMITTED" || data.status === "SETTLED" ? data.tx_hash : null,
+        status: terminal ? "RELEASED" : lateBound ? "SUBMITTED" : data.status,
+        txHash: data.status === "SUBMITTED" || data.status === "SETTLED" || lateBound ? data.tx_hash : null,
         receiptId: terminal ? null : data.receipt_id,
         settlementChainId: Number(data.settlement_chain_id),
     });

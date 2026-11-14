@@ -100,6 +100,12 @@ export async function GET(request: Request) {
                 }
                 await new Promise((res) => setTimeout(res, 3000));
             }
+            /* Out of attempts with no final status: say so explicitly instead of just closing. A bare
+               close read as an error on the client ("stream disconnected") while settlement was still
+               running. "pending" tells it to keep polling quietly. */
+            if (active && attempts >= maxAttempts) {
+                sendEvent("pending", { message: "Still confirming. We'll keep checking." });
+            }
             try {
                 controller.close();
             } catch {

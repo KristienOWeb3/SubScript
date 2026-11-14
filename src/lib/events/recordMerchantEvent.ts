@@ -49,6 +49,12 @@ export interface RecordMerchantEventParams {
     sequence?: number;
     /** Previous resource attributes for update diffs */
     previousAttributes?: Record<string, unknown>;
+    /**
+     * Fan out webhook deliveries (default true). Set false when another producer already delivers
+     * this business event to endpoints, so the event still lands in the merchant event log without
+     * a second webhook under a different id.
+     */
+    fanOut?: boolean;
 }
 
 export interface RecordMerchantEventResult {
@@ -139,6 +145,10 @@ export async function recordMerchantEvent(
         } else {
             throw error;
         }
+    }
+
+    if (params.fanOut === false) {
+        return { eventId, queued: 0, envelope };
     }
 
     /* Step 2: Fan out to matching active endpoints.

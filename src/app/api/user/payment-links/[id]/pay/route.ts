@@ -194,10 +194,39 @@ async function handlePOST(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "This link cannot accept a payment right now." }, { status: 409 });
         }
 
+        /* Return this attempt's hold. Only for refusals that happen before anything is signed. */
+        const releaseHold = async () => {
+            const { error: releaseError } = await supabaseAdmin!.rpc("release_payment_link_checkout_attempt", {
+                p_attempt_id: clientIntentId,
+                p_payer_address: payer,
+            });
+            if (releaseError) console.error("Embedded checkout hold release failed:", releaseError.message);
+        };
+
+        /* An earlier attempt on this link timed out at the custody provider, so it may or may not
+           have paid. The Circle idempotency key is per attempt, so signing again under a new attempt
+           could charge twice. Hold off until that outcome is known: the reconcile sweep binds a
+           payment that did land within about 15 minutes, and this marker lapses after 30. */
+        const outcomePendingKey = `embedded-pay-outcome-pending:${id}:${payer}`;
+        const outcomePending = await prisma.idempotencyKey.findUnique({ where: { executionKey: outcomePendingKey } })
+            .catch(() => null);
+        if (
+            outcomePending
+            && outcomePending.expiresAt && new Date(outcomePending.expiresAt) > new Date()
+            && (outcomePending.responsePayload as { attemptId?: string } | null)?.attemptId !== clientIntentId
+        ) {
+            await releaseHold();
+            return NextResponse.json({
+                error: "Your last payment on this link is still being confirmed, so we haven't charged you again. If it went through, you'll get a receipt within about 15 minutes. Otherwise you can try again after that.",
+                code: "PAYMENT_OUTCOME_PENDING",
+            }, { status: 409 });
+        }
+
         /* Both settlement paths need a valid receipt token downstream in /verify (the merchant path
            uses it as the on-chain memo; the peer path still requires one for the receipt record), so
            validate it BEFORE moving any funds rather than transferring and only failing at verify. */
         if (!isReceiptId(reservation.receiptId)) {
+            await releaseHold();
             return NextResponse.json(
                 { error: "This checkout is missing a valid receipt token. Ask the merchant to regenerate the link." },
                 { status: 400 },
@@ -262,7 +291,10 @@ async function handlePOST(request: Request, { params }: RouteContext) {
             }
             const message = err?.message || "Payment could not be signed from your SubScript wallet.";
             /* getWalletCustody throws for wallets with no server-held key (external/browser wallets). */
-            const isPreSubmission = /no server-held key|connect a browser wallet/i.test(message);
+            /* An insufficient-balance refusal also moved nothing: either the provider refused before
+               submitting, or the transfer reverted on-chain. Treating it as ambiguous would lock the
+               payer out for 30 minutes for a top-up problem. */
+            const isPreSubmission = /no server-held key|connect a browser wallet|insufficient|balance|exceeds/i.test(message);
             /* Only release the claim for failures that provably happened BEFORE any transaction was
                submitted (custody resolution / validation). For a signing or polling-timeout error we
                cannot be sure Circle didn't accept the tx, so we KEEP the PROCESSING claim: a retry is
@@ -270,9 +302,28 @@ async function handlePOST(request: Request, { params }: RouteContext) {
                even a post-expiry retry cannot double-charge. */
             if (isPreSubmission) {
                 await prisma.idempotencyKey.delete({ where: { executionKey: claimKey } }).catch(() => {});
+                await releaseHold();
+            } else {
+                /* Outcome unknown. Mark it so a retry under a fresh attempt (after this hold is
+                   reaped) refuses instead of signing a second transfer. */
+                const pendingUntil = new Date(Date.now() + 30 * 60 * 1000);
+                await prisma.idempotencyKey.upsert({
+                    where: { executionKey: outcomePendingKey },
+                    create: {
+                        executionKey: outcomePendingKey,
+                        status: "PROCESSING",
+                        expiresAt: pendingUntil,
+                        responsePayload: { attemptId: clientIntentId },
+                    },
+                    update: {
+                        status: "PROCESSING",
+                        expiresAt: pendingUntil,
+                        responsePayload: { attemptId: clientIntentId },
+                    },
+                }).catch((markerError: unknown) => console.error("Outcome-pending marker failed:", markerError));
             }
-            const status = isPreSubmission ? 400
-                : /insufficient|balance|exceeds/i.test(message) ? 402
+            const status = /insufficient|balance|exceeds/i.test(message) ? 402
+                : isPreSubmission ? 400
                 : 502;
             return NextResponse.json({ error: message }, { status });
         }
