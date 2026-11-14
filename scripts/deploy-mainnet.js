@@ -5,14 +5,13 @@
  *
  * Deploys the full production contract suite:
  *   1. SubScriptRouter (UUPS Implementation + ERC1967Proxy initialized with paymentToken, treasury, owner)
- *   2. SubScriptPSA (Standard Subscription contract with StableFX multi-currency routing)
+ *   2. SubScriptPSA v3 (Standard Subscription contract, USDC-only, atomic replaceSubscription)
  *   3. SubScriptVault (UUPS Implementation + ERC1967Proxy initialized with paymentToken, owner,
  *      then initializeV2(treasury) and setAuthorizedDrawer(keeper))
  *   4. SubScriptConfidential (Privacy-preserving batch payout & commit-reveal view-key contract)
  *
  * Features:
  *   - Dry-run validation (checks deployer balance, verifies parameters, ensures owner != exposed key)
- *   - Automatic mock StableFX deployment when testing on local networks (localhost / hardhat)
  *   - Produces exact .env variables ready for .env.local and Vercel
  *   - Writes deployment receipt JSON to docs/mainnet/deployment-receipt.json
  *
@@ -73,10 +72,6 @@ async function main() {
   let owner = process.env.MULTISIG_ADDRESS || process.env.CONTRACT_OWNER_ADDRESS || process.env.VAULT_OWNER_ADDRESS;
   let treasury = process.env.TREASURY_ADDRESS;
   let keeper = process.env.KEEPER_ADDRESS || process.env.KEEPER_DRAWER_ADDRESS || "";
-  let stableFXRouter = process.env.STABLEFX_ROUTER_ADDRESS;
-  if (network === "arcMainnet" && (!stableFXRouter || stableFXRouter.toLowerCase() === "0xd0c699768d0e92657d5e5b96cec3546197b2fa9c")) {
-    stableFXRouter = "0xe2E5F173576B513d994073CCbDaCBE027d43DFe6";
-  }
 
   // On local networks, default unset parameters to deployer for seamless localhost testing
   if (network === "localhost" || network === "hardhat") {
@@ -87,9 +82,6 @@ async function main() {
     if (!treasury) {
       console.log("[INFO] No TREASURY_ADDRESS provided. Defaulting treasury to deployer for local test.");
       treasury = deployer.address;
-    }
-    if (!stableFXRouter) {
-      console.log("[INFO] No STABLEFX_ROUTER_ADDRESS provided. Will deploy MockStableFX for local test.");
     }
   }
 
@@ -142,8 +134,7 @@ async function main() {
   console.log(`  - Payment Token (USDC):  ${paymentToken}`);
   console.log(`  - Contract Owner / Safe: ${owner}`);
   console.log(`  - Protocol Treasury:     ${treasury}`);
-  console.log(`  - Vault Drawer Keeper:   ${keeper || "(none specified)"}`);
-  console.log(`  - StableFX Router:       ${stableFXRouter || "(auto-resolved on local / required on live)"}\n`);
+  console.log(`  - Vault Drawer Keeper:   ${keeper || "(none specified)"}\n`);
 
   /* ──────────────────────── Dry-Run Balance Check ──────────────────────────── */
   const MIN_GAS_BALANCE = hre.ethers.parseEther("0.05"); // 0.05 native USDC
@@ -180,7 +171,6 @@ async function main() {
         treasury,
         owner,
         keeper: keeper || null,
-        stableFXRouter: stableFXRouter || "0x0000000000000000000000000000000000000001 (placeholder)",
       },
       predictedContracts: {
         SubScriptRouter: {
@@ -218,20 +208,6 @@ async function main() {
   }
 
   /* ──────────────────────── Live Deployment / Local Execution ──────────────── */
-  // Handle local MockStableFX deployment if needed
-  if (!stableFXRouter) {
-    if (network === "localhost" || network === "hardhat") {
-      console.log("--- Deploying MockStableFX for Local Environment ---");
-      const MockStableFXFactory = await hre.ethers.getContractFactory("MockStableFX");
-      const mockStableFX = await MockStableFXFactory.deploy();
-      await mockStableFX.waitForDeployment();
-      stableFXRouter = await mockStableFX.getAddress();
-      console.log(`MockStableFX deployed at: ${stableFXRouter}\n`);
-    } else {
-      throw new Error("STABLEFX_ROUTER_ADDRESS is required for mainnet deployment.");
-    }
-  }
-
   // Handle local MockUSDC if running on localhost with default mock token
   if ((network === "localhost" || network === "hardhat") && paymentToken === "0x3600000000000000000000000000000000000000") {
     // Check if code exists at paymentToken
@@ -272,12 +248,16 @@ async function main() {
   /* 2. Deploy SubScriptPSA (Standard Contract) */
   console.log("Step 2: Deploying SubScriptPSA (Standard Contract)...");
   const PSAFactory = await hre.ethers.getContractFactory("SubScriptPSA");
-  const psa = await PSAFactory.deploy(paymentToken, stableFXRouter, treasury);
+  /* v3 constructor: (paymentToken, treasury). USDC-only, so there is no FX router argument. */
+  const psa = await PSAFactory.deploy(paymentToken, treasury);
   await psa.waitForDeployment();
   const psaAddress = await psa.getAddress();
   const psaTx = psa.deploymentTransaction()?.hash || "";
   console.log(`  -> SubScriptPSA Address:  ${psaAddress} (tx: ${psaTx})`);
-  console.log(`     Configured with paymentToken=${paymentToken}, stableFXRouter=${stableFXRouter}, treasury=${treasury}\n`);
+  if (!(await psa.supportsDeferredSubscriptions()) || !(await psa.supportsReplaceSubscriptions())) {
+    throw new Error("CRITICAL: deployed SubScriptPSA is missing deferred/replace support. Wrong artifact?");
+  }
+  console.log(`     Configured with paymentToken=${paymentToken}, treasury=${treasury} (deferred + replace supported)\n`);
 
   /* 3. Deploy SubScriptVault (UUPS Proxy + Setup) */
   console.log("Step 3: Deploying SubScriptVault...");
@@ -325,7 +305,7 @@ async function main() {
   /* 4. Deploy SubScriptConfidential */
   console.log("Step 4: Deploying SubScriptConfidential...");
   const ConfidentialFactory = await hre.ethers.getContractFactory("SubScriptConfidential");
-  const confidential = await ConfidentialFactory.deploy(paymentToken, stableFXRouter, treasury, owner);
+  const confidential = await ConfidentialFactory.deploy(paymentToken, treasury, owner);
   await confidential.waitForDeployment();
   const confidentialAddress = await confidential.getAddress();
   const confidentialTx = confidential.deploymentTransaction()?.hash || "";
@@ -367,7 +347,6 @@ async function main() {
       treasury,
       owner,
       keeper: keeper || null,
-      stableFXRouter,
     },
     contracts: {
       SubScriptRouter: {
