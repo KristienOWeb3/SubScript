@@ -2142,6 +2142,62 @@ export default function UserDashboard() {
     setActiveTab("inbox");
   };
 
+  /* Renew authorization, for connected wallets.
+   *
+   * Renewals draw on one ERC-20 approval the wallet gave the subscription contract, sized for about
+   * a year of cycles. SubScript renews that approval itself for wallets it custodies (the keeper
+   * does it at renewal), but it can't sign for a connected wallet, so the ALLOWANCE_LOW notice
+   * asks the subscriber to do it here.
+   *
+   * The approval is per wallet, not per subscription, and `approve` replaces rather than adds. So
+   * the target is a year of every live subscription on this wallet combined, and we only send an
+   * approval when the current one is below it, never lowering an approval the user set higher. */
+  const [renewingAuthorization, setRenewingAuthorization] = useState(false);
+  const handleRenewAuthorization = async () => {
+    if (renewingAuthorization || !userWallet) return;
+    const live = subscriptions.filter((sub) => sub.status === "ACTIVE" && !sub.cancelAtPeriodEnd);
+    if (live.length === 0) {
+      triggerToast("You don't have an active subscription that needs renewing.", "info");
+      return;
+    }
+    const yearSeconds = 365.25 * 24 * 60 * 60;
+    const target = live.reduce((sum, sub) => {
+      const amount = BigInt(String(sub.amountCapUsdc).split(".")[0] || "0");
+      const period = Number(sub.billingIntervalSeconds);
+      const cycles = Number.isFinite(period) && period > 0 ? Math.max(1, Math.round(yearSeconds / period)) : 1;
+      return sum + amount * BigInt(cycles);
+    }, BigInt(0));
+    setRenewingAuthorization(true);
+    await runAction("renew-authorization", async () => {
+      if (chainId !== activeArcChain.id) await switchChainAsync({ chainId: activeArcChain.id });
+      const approvalAbi = [
+        { type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], outputs: [{ type: "uint256" }] },
+        { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }] },
+      ] as const;
+      const current = await publicClient.readContract({
+        address: USDC_NATIVE_GAS_ADDRESS, abi: approvalAbi, functionName: "allowance",
+        args: [userWallet as `0x${string}`, STANDARD_CONTRACT_ADDRESS as `0x${string}`],
+      });
+      if (current >= target) {
+        triggerToast("Your authorization already covers about a year of renewals.", "info");
+        return;
+      }
+      const hash = await writeContractAsync({
+        address: USDC_NATIVE_GAS_ADDRESS, abi: approvalAbi, functionName: "approve",
+        args: [STANDARD_CONTRACT_ADDRESS as `0x${string}`, target],
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+      if (receipt.status !== "success") throw new Error("The approval didn't confirm. Nothing changed.");
+      triggerToast("Authorization renewed. Your renewals are covered for about a year.");
+    }).catch((err: any) => {
+      if (err instanceof Error && err.name === "AbortError") return;
+      triggerToast(/user rejected|denied/i.test(err?.message || "")
+        ? "You declined the approval in your wallet."
+        : err?.message || "We couldn't renew the authorization.", "error");
+    });
+    setRenewingAuthorization(false);
+  };
+
   const handleResumeSubscription = async (subscription: Subscription) => {
     if (resumingSubscriptionId) return;
 
@@ -5265,6 +5321,7 @@ export default function UserDashboard() {
                               onManagePlan={handleTogglePlanManager}
                               onCancelSubscription={() => handleCancelSubscriptionForMerchant(dm.senderAddress)}
                               onResumeSubscription={() => activeThreadSubscription && handleResumeSubscription(activeThreadSubscription)}
+                              onRenewAuthorization={isEmbeddedWalletSession ? undefined : handleRenewAuthorization}
                               resumeBusy={vaultResumeBusyId === dm.senderAddress || vaultResumeBusyId === dm.senderAddress?.toLowerCase()}
                             />
                           ))}
@@ -5533,6 +5590,7 @@ export default function UserDashboard() {
                                   onManagePlan={handleTogglePlanManager}
                                   onCancelSubscription={() => handleCancelSubscriptionForMerchant(dm.senderAddress)}
                                   onResumeSubscription={() => activeThreadSubscription && handleResumeSubscription(activeThreadSubscription)}
+                                  onRenewAuthorization={isEmbeddedWalletSession ? undefined : handleRenewAuthorization}
                                   resumeBusy={vaultResumeBusyId === dm.senderAddress || vaultResumeBusyId === dm.senderAddress?.toLowerCase()}
                                 />
                               ))}
@@ -9959,6 +10017,7 @@ function DmBubble({
   onManagePlan,
   onCancelSubscription,
   onResumeSubscription,
+  onRenewAuthorization,
   resumeBusy,
 }: {
   dm: DmMessage;
@@ -9990,6 +10049,8 @@ function DmBubble({
   onManagePlan?: () => void;
   onCancelSubscription?: () => void;
   onResumeSubscription?: () => void;
+  /* Connected wallets only; see handleRenewAuthorization. */
+  onRenewAuthorization?: () => void;
   resumeBusy?: boolean;
 }) {
   const isPending = dm.status === "PENDING";
@@ -10083,9 +10144,11 @@ function DmBubble({
   }
   /* Subscription-lifecycle notices. Each one names an action in its copy — this is that action,
      in the same message, instead of "from your dashboard".
-     ALLOWANCE_LOW is deliberately absent: its remedy is re-authorizing the ERC-20 allowance, and
-     there is no endpoint for that yet (extendAllowanceForCustodial has no callers), so a button
-     would go nowhere. */
+     ALLOWANCE_LOW only gets a button for connected wallets: the keeper renews a custodial wallet's
+     approval itself (extendAllowanceForCustodial), and that notice says there's nothing to do. */
+  if (dm.messageType === "ALLOWANCE_LOW" && onRenewAuthorization) {
+    actionItems.push({ key: "renew-authorization", label: "Renew authorization", onClick: onRenewAuthorization, loadingKey: "renew-authorization" });
+  }
   if (dm.messageType === "SUBSCRIPTION_STARTED" || dm.messageType === "RENEWAL_UPCOMING") {
     if (onManagePlan) {
       actionItems.push({ key: "manage-plan", label: "Manage plan", onClick: onManagePlan });

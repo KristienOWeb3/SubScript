@@ -8,10 +8,6 @@
   ],
   "crons": [
     {
-      "path": "/api/cron/customer-billing",
-      "schedule": "0 3 * * *"
-    },
-    {
       "path": "/api/keeper/vault-draw",
       "schedule": "0 4 * * *"
     }

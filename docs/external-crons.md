@@ -24,10 +24,11 @@ header, not a query param.
 
 | Endpoint | Method | Cadence | Purpose |
 |---|---|---|---|
-| `/api/cron/customer-billing` | GET | daily | Renew customer→merchant subscriptions; deferred period-end cancels |
 | `/api/keeper/vault-draw` | GET | daily | Draw matured metered-vault cycles on-chain |
 
 ## Ready-made scheduler: GitHub Actions
+
+`/api/cron/customer-billing` runs **hourly** from here (renewals, period-end cancels, revocation retries, PAST_DUE close-out). It moved off Vercel because Hobby crons are daily-only, which broke the "renews within 6 hours of expiry" promise.
 
 A workflow that runs all four on the cadences below already lives at
 **[`.github/workflows/keepers.yml`](../.github/workflows/keepers.yml)**. It's free for

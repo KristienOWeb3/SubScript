@@ -94,10 +94,12 @@ test("migration runner never fabricates a baseline or hides privilege failures",
 test("Vercel configuration contains all required cron schedules", async () => {
     const config = JSON.parse(await source("vercel.json"));
     assert.deepEqual(config.crons, [
-        { path: "/api/cron/customer-billing", schedule: "0 3 * * *" },
         { path: "/api/keeper/vault-draw", schedule: "0 4 * * *" },
     ]);
     const keepers = await source(".github/workflows/keepers.yml");
+    /* customer-billing runs hourly from GitHub Actions; a daily Vercel cron broke the
+       "renews within 6 hours of expiry" promise. */
+    assert.match(keepers, /cron: "7 \* \* \* \*"[\s\S]*\/api\/cron\/customer-billing/);
     assert.match(keepers, /\/api\/cron\/reconcile/);
     assert.match(keepers, /\/api\/cron\/billing/);
     assert.match(keepers, /\/api\/internal\/payroll/);

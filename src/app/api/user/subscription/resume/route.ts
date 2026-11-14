@@ -4,6 +4,7 @@ import { withTransactionPin } from "@/lib/auth/transactionPin";
 /* Resume preserves paid-through access without another debit. The new authorization uses the
    original recurring interval and an independent first charge date, both enforced on-chain. */
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { getSessionWallet } from "@/lib/auth";
 import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
@@ -97,20 +98,47 @@ async function handlePOST(request: Request) {
 
         /* Branch 1: the revocation never landed, so the original authorization is still live. Clearing
            the cancellation is the whole job — minting a second authorization would leave the
-           subscriber with two, and the contract's duplicate guard would reject it anyway. */
+           subscriber with two, and the contract's duplicate guard would reject it anyway.
+
+           It races the keeper's revocation retry, though. That worker claims a row, then cancels it
+           on-chain. If we cleared the flags in between, the worker would still revoke, and the
+           subscriber would be told "resumed" about an authorization that was gone a second later.
+           So take the same row lease the worker takes (revocation_claim_id + lease expiry), and
+           re-read the chain under it before clearing anything. */
         if (onChain.isActive) {
-            await prisma.subscription.update({
-                where: subscriptionKey(row.subscriptionId, row.contractAddress),
-                data: {
-                    cancelAtPeriodEnd: false,
-                    cancelRequestedAt: null,
-                    revocationPending: false,
-                    revocationTxHash: null,
-                    status: "ACTIVE",
-                    updatedAt: new Date(),
-                },
-            });
+            const claim = await claimRevocationLeaseForResume(row.contractAddress, row.subscriptionId);
+            if (!claim) {
+                return NextResponse.json({
+                    error: "We're finishing your cancellation right now. Try resuming again in a minute.",
+                    code: "REVOCATION_IN_PROGRESS",
+                }, { status: 409 });
+            }
+            const underLease = await getSubscriptionOnChain(subscriptionId);
+            if (!underLease) {
+                await releaseRevocationLeaseForResume(row.contractAddress, row.subscriptionId, claim);
+                return NextResponse.json({
+                    error: "We couldn't read this subscription on-chain. Try again in a moment.",
+                    code: "CHAIN_READ_FAILED",
+                }, { status: 503 });
+            }
+            if (!underLease.isActive) {
+                /* The worker revoked it before we got the lease. Hand the lease back and take the
+                   re-authorization path below, which is what this state needs. */
+                await releaseRevocationLeaseForResume(row.contractAddress, row.subscriptionId, claim);
+                onChain.isActive = false;
+            } else {
+                const cleared = await clearCancellationUnderResumeLease(row.contractAddress, row.subscriptionId, claim);
+                if (!cleared) {
+                    return NextResponse.json({
+                        error: "We're finishing your cancellation right now. Try resuming again in a minute.",
+                        code: "REVOCATION_IN_PROGRESS",
+                    }, { status: 409 });
+                }
+            }
+        }
+        if (onChain.isActive) {
             await emitResumeSignals({
+                contractAddress: row.contractAddress,
                 merchant,
                 subscriber,
                 subscriptionId,
@@ -204,7 +232,7 @@ async function handlePOST(request: Request) {
         );
         if (!newSubscriptionId) {
             await recordPaymentReconciliationRequired({
-                dedupeKey: `subscription-resume-id:${subscriptionId}:${txHash.toLowerCase()}`,
+                dedupeKey: `subscription-resume-id:${row.contractAddress}:${subscriptionId}:${txHash.toLowerCase()}`,
                 kind: "SUBSCRIPTION_LOCAL_MIRROR",
                 message: "resume authorization confirmed on-chain but its subscription id could not be recovered",
                 context: { subscriptionId, merchant, subscriber, txHash: txHash.toLowerCase() },
@@ -221,6 +249,7 @@ async function handlePOST(request: Request) {
         const commitmentRemainingSeconds = row.minCommitmentUntil
             ? Math.max(0, Math.floor((row.minCommitmentUntil.getTime() - Date.now()) / 1000))
             : 0;
+        try {
         await mirrorSubscriptionCreated({
             subscriptionId: newSubscriptionId,
             merchantAddress: merchant,
@@ -242,6 +271,39 @@ async function handlePOST(request: Request) {
             sourceCheckoutId: row.sourceCheckoutId,
             planId: row.planId,
         });
+        } catch (mirrorError) {
+            /* The new authorization is live on-chain and can move money, but has no row the keeper
+               bills or the dashboard shows. Record it the way subscribe does, so the reconciliation
+               worker rebuilds the row from the chain (anchored to its paid-through date, with no
+               promotion) and closes the superseded one. The subscriber was not charged either way. */
+            await recordPaymentReconciliationRequired({
+                dedupeKey: `subscription-resume-mirror:${row.contractAddress}:${newSubscriptionId}:${txHash.toLowerCase()}`,
+                kind: "SUBSCRIPTION_RESUME_MIRROR",
+                message: "resume authorization confirmed on-chain but the local mirror write failed",
+                context: {
+                    subscriber,
+                    merchant,
+                    subscriptionId: String(newSubscriptionId),
+                    previousSubscriptionId: String(subscriptionId),
+                    contractAddress: row.contractAddress,
+                    amountUsdc: amountUsdc.toString(),
+                    periodSeconds: String(planPeriodSeconds),
+                    minCommitmentSeconds: String(commitmentRemainingSeconds),
+                    beneficiaryAddress: row.beneficiaryAddress,
+                    externalReference: row.externalReference,
+                    sourceCheckoutId: row.sourceCheckoutId,
+                    planId: row.planId,
+                    txHash: txHash.toLowerCase(),
+                },
+                error: mirrorError,
+            });
+            return NextResponse.json({
+                error: "Your subscription was restored on-chain but is still syncing. Refresh in a moment. You haven't been charged.",
+                code: "RECONCILIATION_PENDING",
+                subscriptionId: newSubscriptionId,
+                txHash,
+            }, { status: 202 });
+        }
 
         /* Close the old run. Two rows claiming ACTIVE for one (subscriber, merchant) would have the
            keeper charge a revoked authorization, fail, and eventually report a payment failure that
@@ -253,7 +315,7 @@ async function handlePOST(request: Request) {
             });
         } catch (closeError) {
             await recordPaymentReconciliationRequired({
-                dedupeKey: `subscription-resume-close:${subscriptionId}`,
+                dedupeKey: `subscription-resume-close:${row.contractAddress}:${subscriptionId}`,
                 kind: "SUBSCRIPTION_LOCAL_MIRROR",
                 message: "resume mirrored the new authorization but could not close the superseded row",
                 context: { subscriptionId, newSubscriptionId, merchant, subscriber },
@@ -262,6 +324,7 @@ async function handlePOST(request: Request) {
         }
 
         await emitResumeSignals({
+            contractAddress: row.contractAddress,
             merchant,
             subscriber,
             subscriptionId: newSubscriptionId,
@@ -292,6 +355,62 @@ async function handlePOST(request: Request) {
     }
 }
 
+/* Row lease shared with the keeper's revocation retry (claim_pending_subscription_revocations).
+   That worker only claims rows whose lease is empty or expired, and only completes or fails a claim
+   it still owns, so whichever side holds the lease is the only one acting on the row. Raw SQL
+   because the claim columns are not in the Prisma model. */
+const RESUME_LEASE_SECONDS = 120;
+
+async function claimRevocationLeaseForResume(contractAddress: string, subscriptionId: bigint): Promise<string | null> {
+    const claimId = crypto.randomUUID();
+    const rows = await prisma.$queryRaw<Array<{ subscription_id: bigint }>>`
+        UPDATE public.subscriptions
+           SET revocation_claim_id = ${claimId}::uuid,
+               revocation_lease_expires_at = now() + make_interval(secs => ${RESUME_LEASE_SECONDS}),
+               updated_at = now()
+         WHERE contract_address = ${contractAddress.toLowerCase()}
+           AND subscription_id = ${subscriptionId}
+           AND (revocation_lease_expires_at IS NULL OR revocation_lease_expires_at <= now())
+        RETURNING subscription_id
+    `;
+    return rows.length === 1 ? claimId : null;
+}
+
+async function releaseRevocationLeaseForResume(contractAddress: string, subscriptionId: bigint, claimId: string) {
+    await prisma.$executeRaw`
+        UPDATE public.subscriptions
+           SET revocation_claim_id = NULL,
+               revocation_lease_expires_at = NULL,
+               updated_at = now()
+         WHERE contract_address = ${contractAddress.toLowerCase()}
+           AND subscription_id = ${subscriptionId}
+           AND revocation_claim_id = ${claimId}::uuid
+    `.catch((err: unknown) => console.error("[subscription/resume] lease release failed:", err));
+}
+
+/* Clears the cancellation only while we still own the lease. */
+async function clearCancellationUnderResumeLease(contractAddress: string, subscriptionId: bigint, claimId: string): Promise<boolean> {
+    const rows = await prisma.$queryRaw<Array<{ subscription_id: bigint }>>`
+        UPDATE public.subscriptions
+           SET cancel_at_period_end = false,
+               cancel_requested_at = NULL,
+               revocation_pending = false,
+               revocation_tx_hash = NULL,
+               revocation_claim_id = NULL,
+               revocation_lease_expires_at = NULL,
+               revocation_next_attempt_at = NULL,
+               revocation_attempts = 0,
+               revocation_last_error = NULL,
+               status = 'ACTIVE',
+               updated_at = now()
+         WHERE contract_address = ${contractAddress.toLowerCase()}
+           AND subscription_id = ${subscriptionId}
+           AND revocation_claim_id = ${claimId}::uuid
+        RETURNING subscription_id
+    `;
+    return rows.length === 1;
+}
+
 /**
  * The customer's DM and the merchant's webhook for a reactivation.
  *
@@ -299,6 +418,7 @@ async function handlePOST(request: Request) {
  * runs, so a notification outage must not turn a completed resume into an ambiguous 500.
  */
 async function emitResumeSignals(params: {
+    contractAddress: string;
     merchant: string;
     subscriber: string;
     subscriptionId: string;
@@ -350,7 +470,7 @@ async function emitResumeSignals(params: {
             chargedNowUsdcMicros: "0",
             current_period_end: params.nextBillingDate.toISOString(),
             currentPeriodEnd: params.nextBillingDate.toISOString(),
-        }, `customer-reactivated:${params.subscriptionId}`);
+        }, `customer-reactivated:${params.contractAddress.toLowerCase()}:${params.subscriptionId}`);
     } catch (webhookError) {
         console.error("[ALERT] reactivation webhook enqueue failed after state committed:", webhookError);
     }

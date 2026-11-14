@@ -165,7 +165,7 @@ test("both renewal keepers pass a durable settlement ref, not just a hash", () =
        the double-send described on receiptReference. */
     assert.match(
         source("app/api/cron/customer-billing/route.ts"),
-        /settlementRef: `customer-renewal:\$\{[^}]+\}:\$\{[^}]+\}`/,
+        /settlementRef: `customer-renewal:\$\{activeSubscriptionContract\(\)\}:\$\{[^}]+\}:\$\{[^}]+\}`/,
     );
     assert.match(
         source("app/api/cron/billing/route.ts"),

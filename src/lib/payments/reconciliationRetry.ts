@@ -8,6 +8,7 @@ import {
     modifyFromEmbedded,
 } from "@/lib/subscriptions/onchain";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
+import { onActiveContract } from "@/lib/subscriptions/contractBinding";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { syncVaultMirror } from "@/lib/vault/onchain";
 
@@ -99,6 +100,12 @@ async function retrySubscriptionReconciliation(context: Record<string, unknown>)
         : null;
     const subscriptionId = contextSubscriptionId
         || await findActiveOnChainSubscriptionId(subscriber, merchant);
+    /* A resume event names the row it replaced. Mirroring the new authorization is half the job;
+       the superseded row also has to close, or the keeper's period-end pass later "cancels" it and
+       tells the merchant a resumed subscriber churned. */
+    const previousSubscriptionId = typeof context.previousSubscriptionId === "string" && /^\d+$/.test(context.previousSubscriptionId)
+        ? context.previousSubscriptionId
+        : null;
     if (!subscriptionId) throw new Error("No active on-chain subscription is discoverable yet");
 
     const onChain = await getSubscriptionOnChain(subscriptionId);
@@ -124,6 +131,19 @@ async function retrySubscriptionReconciliation(context: Record<string, unknown>)
         sourceCheckoutId,
         planId,
     });
+
+    if (previousSubscriptionId && previousSubscriptionId !== subscriptionId) {
+        await prisma.subscription.updateMany({
+            where: {
+                ...onActiveContract(),
+                subscriptionId: BigInt(previousSubscriptionId),
+                subscriber,
+                merchantAddress: merchant,
+                kind: "CUSTOMER",
+            },
+            data: { status: "CANCELED", revocationPending: false, updatedAt: new Date() },
+        });
+    }
 
     const checkoutSessionId = context.checkoutSessionId;
     if (typeof checkoutSessionId === "string" && checkoutSessionId) {

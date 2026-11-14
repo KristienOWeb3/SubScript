@@ -189,7 +189,10 @@ test("premium terminal transitions require the active database claim", () => {
 
 test("failed on-chain cancellation is never persisted as canceled", () => {
     const route = source("src/app/api/cron/customer-billing/route.ts");
-    const failureBlock = route.slice(route.indexOf("CANCEL_AT_PERIOD_END_FAILED") - 900);
+    /* Bounded to the period-end failure handler: the PAST_DUE pass after it writes CANCELED, but only
+       once the chain shows the authorization inactive. */
+    const failureAt = route.indexOf("CANCEL_AT_PERIOD_END_FAILED");
+    const failureBlock = route.slice(failureAt - 900, failureAt + 200);
 
     assert.doesNotMatch(failureBlock, /update\(\{\s*status:\s*"CANCELED"/);
     assert.match(failureBlock, /CANCEL_AT_PERIOD_END_FAILED/);

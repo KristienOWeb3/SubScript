@@ -221,7 +221,7 @@ test("the keeper is scheduled, since vercel.json's two Hobby cron slots are take
 
     const vercelConfig = JSON.parse(source("vercel.json"));
     const paths = (vercelConfig.crons || []).map((c) => c.path);
-    assert.equal(paths.length, 2, "Vercel Hobby caps crons at 2 — new keepers belong in keepers.yml");
+    assert.ok(paths.length <= 2, "Vercel Hobby crons are daily-only — new keepers belong in keepers.yml");
 });
 
 test("remaining balance has one definition, used by the config serializer", () => {

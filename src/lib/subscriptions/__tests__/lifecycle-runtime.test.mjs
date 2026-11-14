@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
+import nodeCrypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { resumeBridgeTerms } from "../resumeBridge.ts";
@@ -29,6 +30,7 @@ function routeStubs() {
         amountCapUsdc: "10000000", billingIntervalSeconds: month, plan: null };
     const noop = async () => {};
     const stubs = {
+        "node:crypto": { default: nodeCrypto, ...nodeCrypto },
         "next/server": { after: () => {}, NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } },
         "@/lib/auth": { getSessionWallet: async () => sub.subscriber },
         "@/lib/auth/walletCustody": { getWalletCustody: async () => ({}), isCustodialWallet: () => true },
