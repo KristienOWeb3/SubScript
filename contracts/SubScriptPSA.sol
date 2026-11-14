@@ -5,14 +5,16 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-import "./interfaces/IStableFX.sol";
 
 /*
  * @title SubScriptPSA
  * @author SubScript Protocol
  * @notice Decentralized subscription management protocol for the Arc Network.
  *         Enables non-custodial, recurring ERC-20 payments via keeper-triggered
- *         executions with native multi-currency StableFX swap routing.
+ *         executions. v3 is single-token: every subscription settles in `paymentToken`
+ *         (USDC on Arc). Cross-token (FX) routing was removed because Arc publishes no
+ *         StableFX router; the settlement/payment token fields stay on the struct
+ *         (always equal to `paymentToken`) so existing readers keep decoding it.
  */
 contract SubScriptPSA is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -26,10 +28,10 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 period;         /* Interval in seconds between payments */
         uint256 nextPayment;    /* Unix timestamp of the next due payment */
         bool    isActive;       /* Whether the authorization is live */
-        address settlementToken; /* The merchant's settlement token (e.g. EURC) */
-        address paymentToken;    /* The subscriber's payment token (e.g. USDC) */
-        uint256 maxPaymentAmount; /* Subscriber-approved ceiling on payment-token pulled per period.
-                                     Bounds FX slippage: the swap can never pull more input than this. */
+        address settlementToken; /* Always `paymentToken` (v3 is USDC-only) */
+        address paymentToken;    /* Always `paymentToken` (v3 is USDC-only) */
+        uint256 maxPaymentAmount; /* Always equal to `amount`. Kept so the `subscriptions(id)` getter
+                                     layout is unchanged for off-chain readers. */
     }
 
     /* Merchant-offered introductory pricing, authorized by the subscriber at creation.
@@ -48,9 +50,6 @@ contract SubScriptPSA is ReentrancyGuard {
 
     /* The default ERC-20 token used for compatibility */
     IERC20 public immutable paymentToken;
-
-    /* The Arc Network native StableFX router for multi-currency swaps */
-    IStableFX public immutable stableFXRouter;
 
     /* Treasury receiving the protocol's flat 1% merchant fee */
     address public immutable treasury;
@@ -128,6 +127,15 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 firstPayment
     );
 
+    /* Emitted once per atomic plan change. `chargeNow` is what was debited in this transaction
+       (0 for a deferred change); `firstPaymentAt` is when the new sub's sequence 1 falls due. */
+    event SubscriptionReplaced(
+        uint256 indexed oldSubId,
+        uint256 indexed newSubId,
+        uint256 chargeNow,
+        uint256 firstPaymentAt
+    );
+
     /* ──────────────────────────── Errors ─────────────────────────── */
 
     error InvalidAddress();
@@ -140,26 +148,19 @@ contract SubScriptPSA is ReentrancyGuard {
     error NotAuthorized(uint256 subId);
     error PlanReductionNotAllowed(uint256 subId);
     error DuplicateActiveSubscription(uint256 existingSubscriptionId);
-    error MaxPaymentAmountRequired();
     error InvalidIntroductoryTerms();
-    error ExcessiveSwapInput(uint256 amountIn, uint256 maxAllowed);
-    error InsufficientSwapOutput(uint256 expected, uint256 received);
+    error UnsupportedToken(address settlementToken, address paymentToken);
+    error InvalidReplacementTerms();
 
     /* ─────────────────────── Constructor ─────────────────────────── */
 
     /*
-     * @param _paymentToken Address of the default ERC-20 token.
-     * @param _stableFXRouter Address of the StableFX router contract.
+     * @param _paymentToken Address of the only accepted ERC-20 token (USDC).
      * @param _treasury Address receiving the flat 1% merchant fee.
      */
-    constructor(address _paymentToken, address _stableFXRouter, address _treasury) {
-        if (
-            _paymentToken == address(0)
-                || _stableFXRouter == address(0)
-                || _treasury == address(0)
-        ) revert InvalidAddress();
+    constructor(address _paymentToken, address _treasury) {
+        if (_paymentToken == address(0) || _treasury == address(0)) revert InvalidAddress();
         paymentToken = IERC20(_paymentToken);
-        stableFXRouter = IStableFX(_stableFXRouter);
         treasury = _treasury;
     }
 
@@ -173,14 +174,12 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 _amount,
         uint256 _period
     ) external nonReentrant returns (uint256 subId) {
-        /* Same settlement + payment token => no FX, so the cap equals the exact amount. */
         return _createSubscription(
             _merchant,
             _amount,
             _period,
             address(paymentToken),
             address(paymentToken),
-            _amount,
             0,
             0
         );
@@ -194,9 +193,6 @@ contract SubScriptPSA is ReentrancyGuard {
      *         The regular amount is stored on the authorization, so the promotion can only ever
      *         lower a charge — never raise one — and the phase switch is enforced on-chain per
      *         sequence, independent of any off-chain database state.
-     * @dev Default-token only: introductory pricing composes with FX routing poorly (the input
-     *      cap would need per-phase scaling), so promotional subscriptions settle in the
-     *      protocol's default payment token.
      */
     function createSubscriptionWithIntroductoryTerms(
         address _merchant,
@@ -216,13 +212,16 @@ contract SubScriptPSA is ReentrancyGuard {
             _period,
             address(paymentToken),
             address(paymentToken),
-            _amount,
             _introductoryAmount,
             _introductoryCycles
         );
     }
 
     function supportsDeferredSubscriptions() external pure returns (bool) {
+        return true;
+    }
+
+    function supportsReplaceSubscriptions() external pure returns (bool) {
         return true;
     }
 
@@ -235,45 +234,85 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 _firstPayment
     ) external nonReentrant returns (uint256 subId) {
         if (_firstPayment <= block.timestamp || _firstPayment > block.timestamp + _period) revert InvalidPeriod();
+        /* A free one-cycle introduction makes sequence 0 a zero charge. */
         subId = _createSubscription(
-            _merchant, _amount, _period, address(paymentToken), address(paymentToken), _amount, 0, 1
+            _merchant, _amount, _period, address(paymentToken), address(paymentToken), 0, 1
         );
-        subscriptions[subId].nextPayment = _firstPayment;
-        paidThrough[subId] = _firstPayment;
-        emit SubscriptionFirstPaymentDeferred(subId, _firstPayment);
+        _deferFirstPayment(subId, _firstPayment);
     }
 
     /*
-     * @notice Overloaded function to create a new recurring subscription with token specifications.
-     * @dev Cross-token (FX) subscriptions MUST use the overload that takes `_maxPaymentAmount`; this
-     *      overload only serves the same-token case and reverts for cross-token to avoid an unbounded
-     *      input pull.
+     * @notice Atomically swap an active subscription for a new one with the same merchant.
+     *         The old authorization is revoked and the new one created in one transaction, so
+     *         a plan change can never leave the subscriber with zero (or two) live subs.
+     * @param _oldSubId       The caller's active subscription to retire.
+     * @param _newAmount      Regular per-cycle charge of the new plan.
+     * @param _newPeriod      Billing interval of the new plan, in seconds.
+     * @param _chargeNow      Upgrade path (> 0): debited now as the new sub's sequence 0, usually
+     *                        the new price minus credit for unused paid time. Must not exceed
+     *                        `_newAmount`.
+     * @param _firstPaymentAt Deferred path (`_chargeNow == 0`): when the new plan first bills.
+     *                        Must be in the future and no later than the old sub's paidThrough,
+     *                        so a change can't grant time nobody paid for. Must be 0 when
+     *                        `_chargeNow > 0`.
+     * @param _introCycles    Upgrade path only: how many leading sequences (from 0) bill at
+     *                        `_chargeNow`. 0 when `_chargeNow == _newAmount` (no discount),
+     *                        otherwise 1..MAX_INTRODUCTORY_CYCLES. Must be 0 when deferred.
      */
-    function createSubscription(
-        address _merchant,
-        uint256 _amount,
-        uint256 _period,
-        address _settlementToken,
-        address _paymentToken
-    ) public nonReentrant returns (uint256 subId) {
-        /* max == 0 sentinel; _createSubscription requires an explicit cap when the tokens differ. */
-        return _createSubscription(_merchant, _amount, _period, _settlementToken, _paymentToken, 0, 0, 0);
-    }
+    function replaceSubscription(
+        uint256 _oldSubId,
+        uint256 _newAmount,
+        uint256 _newPeriod,
+        uint256 _chargeNow,
+        uint256 _firstPaymentAt,
+        uint256 _introCycles
+    ) external nonReentrant returns (uint256 newSubId) {
+        Authorization storage old = subscriptions[_oldSubId];
+        if (!old.isActive) revert SubscriptionNotActive(_oldSubId);
+        if (msg.sender != old.subscriber) revert NotAuthorized(_oldSubId);
 
-    /*
-     * @notice Create a multi-currency subscription with a subscriber-approved ceiling on the amount
-     *         of payment token that may be pulled each period. This bounds FX slippage — the swap can
-     *         never pull more input than `_maxPaymentAmount`, even if the FX router is manipulated.
-     */
-    function createSubscription(
-        address _merchant,
-        uint256 _amount,
-        uint256 _period,
-        address _settlementToken,
-        address _paymentToken,
-        uint256 _maxPaymentAmount
-    ) public nonReentrant returns (uint256 subId) {
-        return _createSubscription(_merchant, _amount, _period, _settlementToken, _paymentToken, _maxPaymentAmount, 0, 0);
+        address merchant = old.merchant;
+        address settlementToken = old.settlementToken;
+        address oldPaymentToken = old.paymentToken;
+
+        if (_chargeNow > 0) {
+            if (_firstPaymentAt != 0 || _chargeNow > _newAmount) revert InvalidReplacementTerms();
+            if (_chargeNow == _newAmount) {
+                if (_introCycles != 0) revert InvalidReplacementTerms();
+            } else if (_introCycles == 0 || _introCycles > MAX_INTRODUCTORY_CYCLES) {
+                revert InvalidIntroductoryTerms();
+            }
+        } else {
+            if (_introCycles != 0) revert InvalidReplacementTerms();
+            if (_firstPaymentAt <= block.timestamp || _firstPaymentAt > paidThrough[_oldSubId]) {
+                revert InvalidReplacementTerms();
+            }
+        }
+
+        /* Same effects as cancelSubscription. Done before the create so the duplicate guard
+           sees the old plan key as free (re-creating identical terms is allowed). */
+        _clearActiveSubscriptionIndex(_oldSubId, old);
+        old.isActive = false;
+        emit SubscriptionCancelled(_oldSubId, msg.sender);
+
+        if (_chargeNow > 0) {
+            newSubId = _createSubscription(
+                merchant,
+                _newAmount,
+                _newPeriod,
+                settlementToken,
+                oldPaymentToken,
+                _introCycles == 0 ? 0 : _chargeNow,
+                _introCycles
+            );
+            emit SubscriptionReplaced(_oldSubId, newSubId, _chargeNow, subscriptions[newSubId].nextPayment);
+        } else {
+            newSubId = _createSubscription(
+                merchant, _newAmount, _newPeriod, settlementToken, oldPaymentToken, 0, 1
+            );
+            _deferFirstPayment(newSubId, _firstPaymentAt);
+            emit SubscriptionReplaced(_oldSubId, newSubId, 0, _firstPaymentAt);
+        }
     }
 
     /*
@@ -285,30 +324,16 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 _period,
         address _settlementToken,
         address _paymentToken,
-        uint256 _maxPaymentAmount,
         uint256 _introductoryAmount,
         uint256 _introductoryCycles
     ) internal returns (uint256 subId) {
-        if (_merchant == address(0) || _settlementToken == address(0) || _paymentToken == address(0)) revert InvalidAddress();
+        if (_merchant == address(0)) revert InvalidAddress();
+        /* USDC-only: there is no FX router, so any other token pairing is refused outright. */
+        if (_settlementToken != address(paymentToken) || _paymentToken != address(paymentToken)) {
+            revert UnsupportedToken(_settlementToken, _paymentToken);
+        }
         if (_amount == 0) revert InvalidAmount();
         if (_period < 3600) revert InvalidPeriod();
-        /* Introductory pricing is default-token only (no FX input-cap phase scaling). */
-        if (_introductoryCycles != 0 && _settlementToken != _paymentToken) revert InvalidIntroductoryTerms();
-
-        /* Bound the payment-token pull. Same-token: no swap, so the cap is exactly the amount.
-           Cross-token: the subscriber MUST approve an explicit ceiling (>= quoted amountIn);
-           without it the FX router could pull an unbounded amount of their payment token. */
-        if (_settlementToken == _paymentToken) {
-            _maxPaymentAmount = _amount;
-        } else {
-            if (_maxPaymentAmount == 0) revert MaxPaymentAmountRequired();
-            uint256 quotedAmountIn = stableFXRouter.getAmountIn(
-                _paymentToken,
-                _settlementToken,
-                _amount
-            );
-            if (_maxPaymentAmount < quotedAmountIn) revert ExcessiveSwapInput(quotedAmountIn, _maxPaymentAmount);
-        }
 
         _assertNoActiveDuplicate(msg.sender, _merchant, _amount, _period, _settlementToken, _paymentToken, 0);
 
@@ -323,7 +348,7 @@ contract SubScriptPSA is ReentrancyGuard {
             isActive:    true,
             settlementToken: _settlementToken,
             paymentToken: _paymentToken,
-            maxPaymentAmount: _maxPaymentAmount
+            maxPaymentAmount: _amount
         });
         paidThrough[subId] = block.timestamp + _period;
         _indexActiveSubscription(
@@ -356,15 +381,7 @@ contract SubScriptPSA is ReentrancyGuard {
         }
 
         if (initialCharge != 0) {
-            _collectAndDistributePayment(
-                subId,
-                msg.sender,
-                _merchant,
-                _settlementToken,
-                _paymentToken,
-                initialCharge,
-                _maxPaymentAmount
-            );
+            _collectAndDistributePayment(subId, msg.sender, _merchant, initialCharge);
         }
 
         emit SubscriptionCreated(subId, msg.sender, _merchant, _amount, _period);
@@ -409,15 +426,7 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 chargeAmount = chargeAmountFor(_subId, _sequenceId);
         paidThrough[_subId] = Math.max(paidThrough[_subId], windowEnd);
         if (chargeAmount != 0) {
-            _collectAndDistributePayment(
-                _subId,
-                sub.subscriber,
-                sub.merchant,
-                sub.settlementToken,
-                sub.paymentToken,
-                chargeAmount,
-                sub.maxPaymentAmount
-            );
+            _collectAndDistributePayment(_subId, sub.subscriber, sub.merchant, chargeAmount);
         }
 
         emit PaymentExecuted(
@@ -472,14 +481,8 @@ contract SubScriptPSA is ReentrancyGuard {
 
         _reindexModifiedSubscription(_subId, sub, _newAmount, _newPeriod);
 
-        /* Keep the FX input ceiling consistent with the new amount. Same-token: exact. Cross-token:
-           scale the subscriber-approved cap by the amount ratio so the same slippage headroom carries
-           over (amount only ever increases here, so the cap only grows). */
-        if (sub.settlementToken == sub.paymentToken) {
-            sub.maxPaymentAmount = _newAmount;
-        } else if (sub.amount > 0) {
-            sub.maxPaymentAmount = (sub.maxPaymentAmount * _newAmount) / sub.amount;
-        }
+        /* Single-token: the pull ceiling is always exactly the amount. */
+        sub.maxPaymentAmount = _newAmount;
 
         sub.amount = _newAmount;
         sub.period = _newPeriod;
@@ -659,83 +662,22 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 _subId,
         address _subscriber,
         address _merchant,
-        address _settlementToken,
-        address _paymentToken,
-        uint256 _amount,
-        uint256 _maxPaymentAmount
-    ) internal {
-        if (_paymentToken != _settlementToken) {
-            uint256 amountIn = stableFXRouter.getAmountIn(
-                _paymentToken,
-                _settlementToken,
-                _amount
-            );
-            /* Slippage/manipulation guard: never pull more payment token than the subscriber approved,
-               even if the FX router quotes an inflated input. */
-            if (amountIn > _maxPaymentAmount) revert ExcessiveSwapInput(amountIn, _maxPaymentAmount);
-            IERC20(_paymentToken).safeTransferFrom(_subscriber, address(this), amountIn);
-            IERC20(_paymentToken).safeIncreaseAllowance(address(stableFXRouter), amountIn);
-
-            uint256 paymentTokenBalanceBefore = IERC20(_paymentToken).balanceOf(address(this));
-
-            IERC20 settlementToken = IERC20(_settlementToken);
-            uint256 balanceBefore = settlementToken.balanceOf(address(this));
-            stableFXRouter.swap(
-                _paymentToken,
-                _settlementToken,
-                amountIn,
-                _amount,
-                address(this)
-            );
-            uint256 amountReceived = settlementToken.balanceOf(address(this)) - balanceBefore;
-            if (amountReceived < _amount) {
-                revert InsufficientSwapOutput(_amount, amountReceived);
-            }
-
-            /* Zero-after: revoke any residual allowance the router did not consume.
-               Prevents stale-allowance accumulation (ERC-20 approval race vector). */
-            IERC20(_paymentToken).forceApprove(address(stableFXRouter), 0);
-
-            _distributeSettlement(_subId, _merchant, settlementToken, _amount);
-
-            // Refund any unspent payment token instead of excess settlement token
-            uint256 paymentTokenBalanceAfter = IERC20(_paymentToken).balanceOf(address(this));
-            uint256 unspentPayment = paymentTokenBalanceAfter > (paymentTokenBalanceBefore - amountIn) 
-                ? paymentTokenBalanceAfter - (paymentTokenBalanceBefore - amountIn) 
-                : 0;
-
-            if (unspentPayment > 0) {
-                // Return unspent payment token to the subscriber
-                IERC20(_paymentToken).safeTransfer(_subscriber, unspentPayment);
-            }
-
-            // Any excess settlement token generated by positive slippage goes to the treasury
-            if (amountReceived > _amount) {
-                settlementToken.safeTransfer(treasury, amountReceived - _amount);
-            }
-        } else {
-            IERC20 token = IERC20(_paymentToken);
-            uint256 fee = Math.mulDiv(_amount, PROTOCOL_FEE_BPS, BPS_DENOMINATOR);
-            token.safeTransferFrom(_subscriber, _merchant, _amount - fee);
-            if (fee > 0) {
-                token.safeTransferFrom(_subscriber, treasury, fee);
-            }
-            emit ProtocolFeePaid(_subId, _merchant, _settlementToken, fee);
-        }
-    }
-
-    function _distributeSettlement(
-        uint256 _subId,
-        address _merchant,
-        IERC20 _settlementToken,
         uint256 _amount
     ) internal {
         uint256 fee = Math.mulDiv(_amount, PROTOCOL_FEE_BPS, BPS_DENOMINATOR);
-        _settlementToken.safeTransfer(_merchant, _amount - fee);
+        paymentToken.safeTransferFrom(_subscriber, _merchant, _amount - fee);
         if (fee > 0) {
-            _settlementToken.safeTransfer(treasury, fee);
+            paymentToken.safeTransferFrom(_subscriber, treasury, fee);
         }
-        emit ProtocolFeePaid(_subId, _merchant, address(_settlementToken), fee);
+        emit ProtocolFeePaid(_subId, _merchant, address(paymentToken), fee);
+    }
+
+    /* Move a freshly created sub's sequence 1 (and its entitlement) to `_firstPayment`. The caller
+       must have created it with a free one-cycle introduction so sequence 0 charged nothing. */
+    function _deferFirstPayment(uint256 _subId, uint256 _firstPayment) internal {
+        subscriptions[_subId].nextPayment = _firstPayment;
+        paidThrough[_subId] = _firstPayment;
+        emit SubscriptionFirstPaymentDeferred(_subId, _firstPayment);
     }
 
     function _setSequenceExecuted(uint256 _subId, uint256 _sequenceId) internal {

@@ -1,3 +1,9 @@
+/* Deploy SubScriptPSA v3 (USDC-only, atomic replace) with plain ethers, no hardhat runtime.
+ * Run `npx hardhat compile` first so the artifact exists.
+ *
+ * Env: PRIVATE_KEY (deployer), RPC_URL / ARC_RPC_PRIMARY, USDC_ADDRESS (optional),
+ *      TREASURY_ADDRESS (optional on testnet, defaults to the deployer; required on mainnet).
+ */
 require("dotenv").config();
 const { ethers } = require("ethers");
 const fs = require("fs");
@@ -21,14 +27,20 @@ async function main() {
   console.log("Connecting to network via RPC:", rpcUrl);
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const wallet = new ethers.Wallet(privateKey, provider);
-  console.log("Deploying standard SubScript contract with account:", wallet.address);
+  console.log("Deploying SubScriptPSA v3 with account:", wallet.address);
+
+  const treasury = process.env.TREASURY_ADDRESS || (isMainnet ? "" : wallet.address);
+  if (!ethers.isAddress(treasury) || treasury === ethers.ZeroAddress) {
+    console.error("Error: TREASURY_ADDRESS must be a valid non-zero address (required on mainnet).");
+    process.exit(1);
+  }
 
   // Read balance
   const balance = await provider.getBalance(wallet.address);
-  console.log("Account balance (native USDC gas):", ethers.formatUnits(balance, 6), "USDC");
+  console.log("Account balance (native USDC gas):", ethers.formatUnits(balance, 18), "USDC");
 
   // Read compile artifact
-  const artifactPath = path.join(__dirname, "../artifacts/contracts/SubScript.sol/SubScript.json");
+  const artifactPath = path.join(__dirname, "../artifacts/contracts/SubScriptPSA.sol/SubScriptPSA.json");
   if (!fs.existsSync(artifactPath)) {
     console.error(`Error: Compilation artifact not found at ${artifactPath}. Run npx hardhat compile first.`);
     process.exit(1);
@@ -37,22 +49,31 @@ async function main() {
   const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
   const { abi, bytecode } = artifact;
 
-  console.log("\n--- Deploying Standard SubScript Contract ---");
+  console.log("\n--- Deploying SubScriptPSA ---");
+  console.log(`  paymentToken (USDC): ${usdcAddress}`);
+  console.log(`  treasury:            ${treasury}`);
   const factory = new ethers.ContractFactory(abi, bytecode, wallet);
-  const contract = await factory.deploy(usdcAddress);
+  /* v3 constructor: (paymentToken, treasury). No FX router: the contract is USDC-only. */
+  const contract = await factory.deploy(usdcAddress, treasury);
   console.log("Transaction hash:", contract.deploymentTransaction().hash);
-  
+
   console.log("Waiting for transaction confirmation...");
   await contract.waitForDeployment();
   const contractAddress = await contract.getAddress();
 
+  if (!(await contract.supportsDeferredSubscriptions()) || !(await contract.supportsReplaceSubscriptions())) {
+    throw new Error("Deployed contract is missing deferred/replace support. Wrong artifact?");
+  }
+
   console.log("\n========================================");
   console.log("  DEPLOYMENT COMPLETE");
   console.log("========================================");
-  console.log(`  SubScript Standard Contract: ${contractAddress}`);
+  console.log(`  SubScriptPSA v3: ${contractAddress}`);
   console.log("========================================");
   console.log("\nUpdate your configurations with:");
+  console.log(`  NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS=${contractAddress}`);
   console.log(`  STANDARD_CONTRACT_ADDRESS=${contractAddress}`);
+  console.log("Then set the subscriptions.contract_address column DEFAULT to the same address.");
 }
 
 main()

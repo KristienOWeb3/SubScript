@@ -14,16 +14,11 @@ describe("SubScriptConfidential", function () {
     const usdc = await MockUSDC.deploy();
     const usdcAddress = await usdc.getAddress();
 
-    /* Deploy MockStableFX */
-    const MockStableFX = await ethers.getContractFactory("MockStableFX");
-    const stableFX = await MockStableFX.deploy();
-    const stableFXAddress = await stableFX.getAddress();
 
     /* Deploy SubScriptConfidential (Ownable initial owner is set to owner) */
     const SubScriptConfidential = await ethers.getContractFactory("SubScriptConfidential");
     const confidentialContract = await SubScriptConfidential.deploy(
       usdcAddress,
-      stableFXAddress,
       treasury.address,
       owner.address
     );
@@ -38,7 +33,6 @@ describe("SubScriptConfidential", function () {
 
     return {
       usdc,
-      stableFX,
       confidentialContract,
       owner,
       subscriber,

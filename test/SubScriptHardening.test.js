@@ -15,15 +15,11 @@ describe("SubScript Hardening & Chaos Testing", function () {
     const MockUSDC = await ethers.getContractFactory("MockUSDC");
     const usdc = await MockUSDC.deploy();
 
-    /* Deploy MockStableFX */
-    const MockStableFX = await ethers.getContractFactory("MockStableFX");
-    const stableFX = await MockStableFX.deploy();
 
     /* Deploy SubScriptPSA */
     const SubScript = await ethers.getContractFactory("SubScriptPSA");
     const subScript = await SubScript.deploy(
       await usdc.getAddress(),
-      await stableFX.getAddress(),
       owner.address
     );
 
@@ -57,15 +53,11 @@ describe("SubScript Hardening & Chaos Testing", function () {
       const MaliciousToken = await ethers.getContractFactory("MaliciousToken");
       const malToken = await MaliciousToken.deploy();
 
-      /* Deploy MockStableFX */
-      const MockStableFX = await ethers.getContractFactory("MockStableFX");
-      const stableFX = await MockStableFX.deploy();
       
-      /* Deploy SubScriptPSA pointing to MaliciousToken and MockStableFX */
+      /* Deploy SubScriptPSA pointing to MaliciousToken */
       const SubScript = await ethers.getContractFactory("SubScriptPSA");
       const subScript = await SubScript.deploy(
         await malToken.getAddress(),
-        await stableFX.getAddress(),
         owner.address
       );
       

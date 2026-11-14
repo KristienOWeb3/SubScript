@@ -6,9 +6,8 @@ describe("Subscription entitlement and deferred renewal safety", function () {
   async function fixture() {
     const [, subscriber, merchant, stranger, treasury] = await ethers.getSigners();
     const usdc = await (await ethers.getContractFactory("MockUSDC")).deploy();
-    const fx = await (await ethers.getContractFactory("MockStableFX")).deploy();
     const psa = await (await ethers.getContractFactory("SubScriptPSA")).deploy(
-      await usdc.getAddress(), await fx.getAddress(), treasury.address,
+      await usdc.getAddress(), treasury.address,
     );
     const price = 10_000_000n;
     await usdc.mint(subscriber.address, 1_000_000_000n);
