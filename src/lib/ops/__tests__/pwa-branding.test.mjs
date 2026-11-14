@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const root = new URL("../../../../", import.meta.url);
@@ -47,6 +47,7 @@ test("brand generation remains reproducible from the supplied source logos", () 
         "src/components/UserDashboardHeader.tsx",
         "src/components/DashboardHeader.tsx",
     ]) {
-        assert.match(source(path), /\/logo-(?:transparent|colored)\.png|\/logo\.png/, `${path} uses a generated logo`);
+        assert.match(source(path), /\/logo-(?:transparent|colored)\.(?:png|svg)|\/logo\.png/, `${path} uses a generated logo`);
     }
+    assert.ok(existsSync(new URL("public/logo-colored.svg", root)),"the SVG header logo is shipped in public/");
 });
