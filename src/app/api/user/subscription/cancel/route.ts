@@ -402,7 +402,7 @@ export async function POST(request: Request) {
                 externalReference: mirrored?.externalReference ?? null,
                 sourceCheckoutId: mirrored?.sourceCheckoutId ?? null,
                 reason: "Canceled by subscriber",
-            }), `customer-canceled:${subscriptionId}:${confirmedTxHash?.toLowerCase() || "already-revoked"}`);
+            }), `customer-canceled:${activeSubscriptionContract()}:${subscriptionId}:${confirmedTxHash?.toLowerCase() || "already-revoked"}`);
         } catch (webhookError) {
             console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
         }

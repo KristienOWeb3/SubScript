@@ -142,3 +142,67 @@ test("an external-wallet cancellation reaches the merchant before the 409", () =
     assert.match(route, /own wallet must sign the on-chain revocation/);
     assert.match(route, /still needs to sign the on-chain revocation from their own wallet/);
 });
+
+test("revocation claims are keyed on (contract_address, subscription_id), never the id alone", () => {
+    /* After a redeploy the PSA re-mints ids from 1. An id-only claim could pick up a row minted by
+       the abandoned contract, and the keeper would then read that id on the ACTIVE contract and
+       revoke whichever stranger holds it now. */
+    const migration = source("supabase/migrations/20261114163712_contract_scoped_revocation_claims.sql");
+    for (const fn of [
+        "claim_pending_subscription_revocations",
+        "complete_subscription_revocation_claim",
+        "fail_subscription_revocation_claim",
+    ]) {
+        assert.ok(migration.includes(`DROP FUNCTION IF EXISTS public.${fn}(`), `${fn}: the unscoped signature must be dropped`);
+        const body = migration.slice(migration.indexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`));
+        const definition = body.slice(0, body.indexOf("$$;"));
+        assert.match(definition, /p_contract_address TEXT/, `${fn} must take the contract`);
+        assert.match(definition, /contract_address = lower\(p_contract_address\)/, `${fn} must filter on it`);
+    }
+    assert.match(migration, /WHERE sub\.contract_address = candidates\.contract_address\s+AND sub\.subscription_id = candidates\.subscription_id/);
+
+    const keeper = source("src/app/api/cron/customer-billing/route.ts");
+    for (const rpc of [
+        "claim_pending_subscription_revocations",
+        "complete_subscription_revocation_claim",
+        "fail_subscription_revocation_claim",
+    ]) {
+        const call = keeper.slice(keeper.indexOf(`"${rpc}"`), keeper.indexOf(`"${rpc}"`) + 300);
+        assert.match(call, /p_contract_address: activeSubscriptionContract\(\)/, `${rpc} call must pass the active contract`);
+    }
+});
+
+test("lifecycle dedupe keys carry the contract, so a redeployed id can't collide with an old one", () => {
+    const keeper = source("src/app/api/cron/customer-billing/route.ts");
+    const subscribe = source("src/app/api/user/subscription/subscribe/route.ts");
+    const resume = source("src/app/api/user/subscription/resume/route.ts");
+    const cancel = source("src/app/api/user/subscription/cancel/route.ts");
+
+    for (const [path, text, prefixes] of [
+        ["customer-billing", keeper, ["customer-renewal", "customer-canceled", "customer-renewed"]],
+        ["subscribe", subscribe, ["created"]],
+        ["resume", resume, ["customer-reactivated"]],
+        ["cancel", cancel, ["customer-canceled"]],
+    ]) {
+        for (const prefix of prefixes) {
+            const uses = [...text.matchAll(new RegExp("`" + prefix + ":([^`]*)`", "g"))].map((m) => m[1]);
+            assert.ok(uses.length > 0, `${path}: expected a ${prefix}: key`);
+            for (const rest of uses) {
+                assert.match(
+                    rest,
+                    /^\$\{(?:activeSubscriptionContract\(\)|row\.contractAddress|params\.contractAddress\.toLowerCase\(\))\}:/,
+                    `${path}: ${prefix}:${rest} must start with the contract address`,
+                );
+            }
+        }
+    }
+});
+
+test("the keeper revisits PAST_DUE rows on the active contract", () => {
+    const keeper = source("src/app/api/cron/customer-billing/route.ts");
+    const pass = keeper.slice(keeper.indexOf("PAST_DUE revisit"));
+    assert.match(pass, /\.eq\("contract_address", activeSubscriptionContract\(\)\)\s*\.eq\("kind", "CUSTOMER"\)\s*\.eq\("status", "PAST_DUE"\)/);
+    assert.match(pass, /status: "CANCELED", revocation_pending: false/);
+    assert.match(pass, /revocation_pending: true/);
+    assert.match(pass, /past-due-closed/);
+});

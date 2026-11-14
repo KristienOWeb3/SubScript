@@ -70,7 +70,14 @@ function getHostname(url: string) {
     }
 }
 
-type SubscriptionResult = { txHash?: string; subscriptionId?: string; planName?: string };
+type SubscriptionResult = {
+    txHash?: string;
+    subscriptionId?: string;
+    planName?: string;
+    /* Set when the visitor resumed a canceled plan instead of buying a new one. Drives the
+       "nothing charged" copy and keeps the payment wording off the success screen. */
+    resumedUntil?: string | null;
+};
 
 function buildMerchantSuccessUrl(successUrl: string, planId: string, result: SubscriptionResult) {
     try {
@@ -115,7 +122,15 @@ const ALREADY_SUBSCRIBED_CODES = new Set([
     "ACTIVE_MERCHANT_SUBSCRIPTION",
 ]);
 
-type SubscribeFailure = { message: string; code: string | null };
+type SubscribeFailure = {
+    message: string;
+    code: string | null;
+    /* RESUME_INSTEAD only: which subscription to resume, whether it is this same plan, and when
+       the paid period ends. */
+    subscriptionId?: string | null;
+    samePlan?: boolean;
+    accessUntil?: string | null;
+};
 
 /**
  * Server-priced upgrade terms for a visitor who already subscribes to this merchant.
@@ -359,8 +374,13 @@ export default function SubscribeClient({
             if (!res.ok || !data.success) {
                 /* Carry the response code, not just the message. It is what separates "you already
                    have this plan" from a real failure, and the two need different treatments. */
-                const failure = new Error(data.error || "Failed to subscribe.") as Error & { code?: string };
+                const failure = new Error(data.error || "Failed to subscribe.") as Error & {
+                    code?: string; subscriptionId?: string; samePlan?: boolean; accessUntil?: string | null;
+                };
                 if (typeof data.code === "string") failure.code = data.code;
+                if (typeof data.subscriptionId === "string") failure.subscriptionId = data.subscriptionId;
+                if (typeof data.samePlan === "boolean") failure.samePlan = data.samePlan;
+                if (typeof data.accessUntil === "string") failure.accessUntil = data.accessUntil;
                 throw failure;
             }
             subscribeRequestKey.current = null;
@@ -371,10 +391,58 @@ export default function SubscribeClient({
             setSubscribeError({
                 message: friendlyError(err?.message || "Failed to subscribe."),
                 code: typeof err?.code === "string" ? err.code : null,
+                subscriptionId: typeof err?.subscriptionId === "string" ? err.subscriptionId : null,
+                samePlan: err?.samePlan === true,
+                accessUntil: typeof err?.accessUntil === "string" ? err.accessUntil : null,
             });
         } finally {
             subscribeInFlight.current = false;
             setIsSubscribing(false);
+        }
+    };
+
+    /* Subscribing again to a plan you canceled but already paid for is a resume, not a purchase.
+     * The subscribe route answers RESUME_INSTEAD, and this restores the plan through the resume
+     * endpoint, which charges nothing until the paid period ends.
+     *
+     * A connected wallet has to sign the restored authorization itself, and that flow (allowance
+     * check, approve, deferred create) lives on the dashboard. So for those this hands off to the
+     * merchant's thread there rather than half-doing it here. */
+    const [isResuming, setIsResuming] = useState(false);
+    const handleResume = async () => {
+        if (!plan || !subscribeError?.subscriptionId || isResuming) return;
+        setIsResuming(true);
+        try {
+            const res = await fetchWithTransactionPin("/api/user/subscription/resume", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ subscriptionId: subscribeError.subscriptionId }),
+            }, { operation: "Resume subscription spending authorization", details: {
+                merchant: plan.merchantAddress, plan: plan.name,
+                subscriptionId: subscribeError.subscriptionId, chargeTodayUsdc: "0",
+            } });
+            const data = await res.json().catch(() => ({}));
+            if (data.requiresWalletResume) {
+                router.push(`/user?tab=inbox&peer=${encodeURIComponent(plan.merchantAddress)}`);
+                return;
+            }
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "We couldn't resume this subscription.");
+            }
+            setSubscribeError(null);
+            setResult({
+                subscriptionId: data.subscriptionId,
+                planName: plan.name,
+                resumedUntil: data.nextChargeAt ?? subscribeError.accessUntil ?? null,
+            });
+        } catch (err: any) {
+            if (err instanceof Error && err.name === "AbortError") return;
+            setSubscribeError((current) => current ? {
+                ...current,
+                message: friendlyError(err?.message || "We couldn't resume this subscription."),
+            } : current);
+        } finally {
+            setIsResuming(false);
         }
     };
 
@@ -580,9 +648,13 @@ export default function SubscribeClient({
                             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
                                 <CheckCircle className="w-8 h-8 text-emerald-700" />
                                 <div className="space-y-1">
-                                    <p className="text-sm font-bold text-emerald-900">{isUpgrade ? "Upgraded to" : "Subscribed to"} {result.planName || plan.name}</p>
+                                    <p className="text-sm font-bold text-emerald-900">{result.resumedUntil !== undefined ? "Resumed" : isUpgrade ? "Upgraded to" : "Subscribed to"} {result.planName || plan.name}</p>
                                     <p className="text-xs text-emerald-900/80 leading-relaxed">
-                                        {isUpgrade && upgradePreview
+                                        {result.resumedUntil !== undefined
+                                            ? result.resumedUntil
+                                                ? `Nothing was charged today. Your next payment is on ${new Date(result.resumedUntil).toLocaleDateString()}.`
+                                                : "Nothing was charged today. Billing picks up when your paid period ends."
+                                            : isUpgrade && upgradePreview
                                             ? `${upgradePreview.creditAppliedUsdc} USDC of unused time was credited, so you paid ${upgradePreview.chargedNowUsdc} USDC today.`
                                             : promo && isFreeTrial
                                                 ? "Your free period has started — nothing was charged today."
@@ -633,7 +705,39 @@ export default function SubscribeClient({
                                 <AnimatePresence initial={false}>
                                     {subscribeError && (
                                         <motion.div key={subscribeError.code || "failure"} {...panelMotion} className="overflow-hidden">
-                                            {subscribeError.code && ALREADY_SUBSCRIBED_CODES.has(subscribeError.code) ? (
+                                            {subscribeError.code === "RESUME_INSTEAD" ? (
+                                                <div className="space-y-3 rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 text-left">
+                                                    <div className="flex items-center gap-2">
+                                                        <RefreshCw className="w-4 h-4 text-[#1f62ab] shrink-0" />
+                                                        <p className="text-xs font-bold text-[#1f62ab]">
+                                                            {subscribeError.samePlan ? "You've already paid for this period" : "Your canceled plan is still running"}
+                                                        </p>
+                                                    </div>
+                                                    <p className="text-xs leading-relaxed text-black/70">
+                                                        {subscribeError.message}
+                                                        {subscribeError.accessUntil ? ` It runs until ${new Date(subscribeError.accessUntil).toLocaleDateString()}.` : ""}
+                                                    </p>
+                                                    {subscribeError.samePlan && subscribeError.subscriptionId ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleResume}
+                                                            disabled={isResuming}
+                                                            aria-busy={isResuming}
+                                                            className="w-full rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-60 px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-white flex items-center justify-center gap-2 transition-all"
+                                                        >
+                                                            {isResuming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                                            {isResuming ? "Resuming" : "Resume, no charge today"}
+                                                        </button>
+                                                    ) : null}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => router.push(`/user?tab=inbox&peer=${encodeURIComponent(plan.merchantAddress)}`)}
+                                                        className="w-full rounded-xl bg-white hover:bg-black/5 border border-black/15 px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-[#111827] flex items-center justify-center gap-2 transition-all"
+                                                    >
+                                                        Manage this subscription <ArrowRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ) : subscribeError.code && ALREADY_SUBSCRIBED_CODES.has(subscribeError.code) ? (
                                                 <div className="space-y-3 rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 text-left">
                                                     <div className="flex items-center gap-2">
                                                         <CheckCircle className="w-4 h-4 text-[#1f62ab] shrink-0" />

@@ -148,10 +148,40 @@ export async function getSignupChargeOnChain(
 /* Belt-and-suspenders for the double-subscribe guard. The DB advisory-lock + mirror check in
    the subscribe route only sees subscriptions we ourselves mirrored; a sub that exists on-chain
    but was never mirrored (e.g. legacy, or a failed mirror write) would slip past it. This scans
-   the chain directly — cheaply, via the `subscriber`+`merchant` indexed topics on
-   SubscriptionCreated, so it reads only this pair's own creations — and returns the id of the
-   first still-active one. Best-effort: any RPC error returns null so a transient failure never
-   blocks a legitimate subscribe (the DB guard already covers the normal path). */
+   the chain directly and returns the id of the first still-active one.
+
+   Fails CLOSED. It used to return null on any RPC error or when it hit the scan cap, and null
+   reads as "no active subscription" — so a flaky RPC was exactly the moment the guard waved a
+   second paid subscription through. It now throws ActiveSubscriptionScanUnavailableError
+   whenever it cannot prove the answer. Callers that only use it to recover a missing id (and
+   treat "none" as "keep reconciling") catch that error and carry on; the pre-charge guard in
+   the subscribe route lets it refuse the charge. */
+export class ActiveSubscriptionScanUnavailableError extends Error {
+    readonly code = "ACTIVE_SUBSCRIPTION_SCAN_UNAVAILABLE";
+    constructor(message: string) {
+        super(message);
+        this.name = "ActiveSubscriptionScanUnavailableError";
+    }
+}
+
+export function isActiveSubscriptionScanUnavailable(error: unknown): error is ActiveSubscriptionScanUnavailableError {
+    return (error as { code?: string } | null)?.code === "ACTIVE_SUBSCRIPTION_SCAN_UNAVAILABLE";
+}
+
+/* Recovery-path wrapper: "couldn't tell" collapses to "not found yet", which those paths already
+   handle by staying in RECONCILIATION_PENDING. Never use this as a guard before a charge. */
+export async function findActiveOnChainSubscriptionIdOrNull(
+    subscriber: string,
+    merchant: string,
+): Promise<string | null> {
+    try {
+        return await findActiveOnChainSubscriptionId(subscriber, merchant);
+    } catch (err) {
+        if (isActiveSubscriptionScanUnavailable(err)) return null;
+        throw err;
+    }
+}
+
 /* How many ids to walk back from the head of the counter before giving up.
    The PSA is redeployed rather than upgraded, so each deployment's id space starts at 1 and stays
    small. The cap only exists so a mature deployment cannot turn this into an unbounded scan; when it
@@ -180,41 +210,53 @@ const MAX_SUBSCRIPTION_ID_SCAN = 1_000;
 export async function findActiveOnChainSubscriptionId(
     subscriber: string,
     merchant: string,
+    contract: { nextSubscriptionId(): Promise<unknown>; subscriptions(id: bigint): Promise<any> } =
+        new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider()) as any,
 ): Promise<string | null> {
+    const sub = subscriber.toLowerCase();
+    const merch = merchant.toLowerCase();
+
+    let highest: bigint;
     try {
-        const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
-        const sub = subscriber.toLowerCase();
-        const merch = merchant.toLowerCase();
-
-        const nextId = BigInt(await contract.nextSubscriptionId());
-        const highest = nextId - BigInt(1);
-        const floor = highest > BigInt(MAX_SUBSCRIPTION_ID_SCAN)
-            ? highest - BigInt(MAX_SUBSCRIPTION_ID_SCAN) + BigInt(1)
-            : BigInt(1);
-
-        for (let id = highest; id >= floor; id--) {
-            const s = await contract.subscriptions(id).catch(() => null);
-            if (!s) continue;
-            if (
-                Boolean(s[5])
-                && String(s[0]).toLowerCase() === sub
-                && String(s[1]).toLowerCase() === merch
-            ) {
-                return id.toString();
-            }
-        }
-
-        if (floor > BigInt(1)) {
-            console.warn(
-                `[onchain] active-sub scan stopped at id ${floor} of ${highest} without a match for `
-                + `${sub}/${merch} — raise MAX_SUBSCRIPTION_ID_SCAN if this deployment has outgrown it.`,
-            );
-        }
-        return null;
+        highest = BigInt(await contract.nextSubscriptionId() as bigint) - BigInt(1);
     } catch (err) {
         console.error("[onchain] active-sub scan failed:", err instanceof Error ? err.message : err);
-        return null;
+        throw new ActiveSubscriptionScanUnavailableError("Could not read the subscription counter on-chain.");
     }
+    const floor = highest > BigInt(MAX_SUBSCRIPTION_ID_SCAN)
+        ? highest - BigInt(MAX_SUBSCRIPTION_ID_SCAN) + BigInt(1)
+        : BigInt(1);
+
+    for (let id = highest; id >= floor; id--) {
+        let s: any;
+        try {
+            s = await contract.subscriptions(id);
+        } catch (err) {
+            /* A skipped id could be the live one, so one failed read makes the whole answer unknown. */
+            console.error(`[onchain] active-sub scan failed at id ${id}:`, err instanceof Error ? err.message : err);
+            throw new ActiveSubscriptionScanUnavailableError(`Could not read subscription ${id} on-chain.`);
+        }
+        if (
+            Boolean(s[5])
+            && String(s[0]).toLowerCase() === sub
+            && String(s[1]).toLowerCase() === merch
+        ) {
+            return id.toString();
+        }
+    }
+
+    if (floor > BigInt(1)) {
+        /* Ids below the floor were never read. A live subscription could be among them, so this is
+           "don't know", not "none". */
+        console.warn(
+            `[onchain] active-sub scan stopped at id ${floor} of ${highest} without a match for `
+            + `${sub}/${merch} — raise MAX_SUBSCRIPTION_ID_SCAN if this deployment has outgrown it.`,
+        );
+        throw new ActiveSubscriptionScanUnavailableError(
+            `Scanned ${MAX_SUBSCRIPTION_ID_SCAN} subscription ids without reaching the start of the contract.`,
+        );
+    }
+    return null;
 }
 
 /* How many billing cycles of allowance to authorize up front. createSubscription only
@@ -311,7 +353,7 @@ export async function subscribeFromEmbedded(
            from the indexed on-chain event before returning; a missing id must never be presented
            as a completed subscription because the mirror and merchant fulfillment need it. */
         for (let attempt = 0; attempt < 5 && !subId; attempt++) {
-            subId = await findActiveOnChainSubscriptionId(walletAddress, merchant);
+            subId = await findActiveOnChainSubscriptionIdOrNull(walletAddress, merchant);
             if (!subId) await new Promise((resolve) => setTimeout(resolve, 2000));
         }
     }

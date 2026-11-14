@@ -200,6 +200,10 @@ export async function sendAllowanceLowDm(params: {
     /* The cycle this warning belongs to, so a subscriber is warned once per cycle rather than
        on every keeper pass while the runway stays low. */
     nextBillingDate: Date;
+    /* True for wallets SubScript custodies: the keeper renews their approval itself, so the
+       message must not send them looking for a button. False (the default) for connected wallets,
+       which have to sign the approval from the dashboard. */
+    renewsAutomatically?: boolean;
 }): Promise<LifecycleDmResult> {
     const merchantName = await resolveMerchantName(params.merchantAddress);
     const amount = formatUsdcFromMicros(params.amountUsdcMicros);
@@ -221,8 +225,10 @@ export async function sendAllowanceLowDm(params: {
             cycles <= 0
                 ? `The spending authorization for this ${amount} USDC subscription has run out.`
                 : `The spending authorization for this ${amount} USDC subscription covers ${cycles} more renewal${cycles === 1 ? "" : "s"}.`,
-            "This is not your balance. It's the approval you signed when you subscribed, which covers about a year of renewals and then needs renewing.",
-            "Adding USDC will not extend it — re-authorize from your dashboard to keep renewals running.",
+            "This isn't your balance. It's the spending approval you gave when you subscribed, which covers about a year of renewals.",
+            params.renewsAutomatically
+                ? "We renew it for you at your next renewal, so there's nothing you need to do."
+                : "Adding USDC won't extend it. Tap Renew authorization below, or in this conversation on your dashboard, and approve it in your wallet.",
         ],
     });
 }

@@ -1,8 +1,10 @@
 name: Keepers
 
 # External scheduler for the SubScript keepers that are NOT in vercel.json.
-# Vercel Hobby only allows 2 daily crons (customer-billing + vault-draw live in
-# vercel.json); the jobs below are driven from here instead. See docs/external-crons.md.
+# Vercel Hobby crons run at most once a day, so anything that has to run more often lives here.
+# vercel.json keeps only vault-draw. customer-billing moved here to run hourly: as a daily Vercel
+# cron it broke the "renews within 6 hours of expiry" promise by up to 18 hours.
+# See docs/external-crons.md.
 #
 # Setup (one-time):
 #   - Repo secret  KEEPER_SECRET     = the same value as the Vercel env KEEPER_SECRET
@@ -24,6 +26,8 @@ on:
     # - cron: "*/5 * * * *"
     - cron: "*/5 * * * *"
     - cron: "*/15 * * * *"
+    # Hourly customer-subscription renewals, period-end cancellations and revocation retries.
+    - cron: "7 * * * *"
     - cron: "0 2 * * *"
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
@@ -75,6 +79,21 @@ jobs:
         run: |
           curl -fsS --retry 3 --retry-delay 5 --max-time 60 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/cron/reconcile" \
+            -H "Authorization: Bearer ${SECRET}"
+
+  customer-billing:
+    # Hourly, off the top of the hour so it doesn't queue behind every other scheduled workflow.
+    # The route takes an advisory lock, so a delayed run that overlaps the next one just skips.
+    if: github.event_name == 'schedule' && github.event.schedule == '7 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: cron/customer-billing
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 300 --http1.1 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/cron/customer-billing" \
             -H "Authorization: Bearer ${SECRET}"
 
   premium-billing:
@@ -157,8 +176,8 @@ jobs:
 
   payment-reminders:
     # Renewal reminders, introductory-price-ending notices, and sponsored-access-ending notices.
-    # This route had no scheduler at all: vercel.json is full (Hobby allows 2 crons, spent on
-    # customer-billing + vault-draw), and it was never added here — so RENEWAL_UPCOMING and
+    # This route had no scheduler at all: it wasn't in vercel.json (whose Hobby crons are daily-only)
+    # and it was never added here — so RENEWAL_UPCOMING and
     # TRIAL_ENDING had never once fired in production despite both being fully implemented.
     if: github.event_name == 'schedule' && github.event.schedule == '40 8 * * *'
     runs-on: ubuntu-latest
@@ -214,6 +233,7 @@ jobs:
           BASE="${BASE:-https://www.subscriptonarc.com}"
           for path in \
             /api/cron/reconcile \
+            /api/cron/customer-billing \
             /api/cron/billing \
             /api/internal/payroll \
             /api/internal/billing \

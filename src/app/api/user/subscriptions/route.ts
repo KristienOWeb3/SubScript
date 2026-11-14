@@ -6,11 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { resolveMerchantDisplayName } from "@/lib/merchants/identity";
 import {
-    findActiveOnChainSubscriptionId,
+    findActiveOnChainSubscriptionIdOrNull,
     getSubscriptionOnChain,
     getSubscriptionPaidThrough,
-    getIntroductoryTermsOnChain,
 } from "@/lib/subscriptions/onchain";
+import { recoveredPromotionTerms } from "@/lib/subscriptions/recoveredTerms";
 import { onActiveContract } from "@/lib/subscriptions/contractBinding";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 
@@ -23,16 +23,27 @@ import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 async function reconcileMerchantSubscription(subscriber: string, merchantAddress: string) {
     const merchant = merchantAddress.toLowerCase();
     const existing = await prisma.subscription.findFirst({
-        where: { ...onActiveContract(), subscriber, merchantAddress: merchant, kind: "CUSTOMER", status: "ACTIVE" },
+        /* cancel_at_period_end rows don't count: a resume whose mirror write failed leaves the
+           old row ACTIVE-but-cancel-scheduled, and that is exactly the gap this heal exists for. */
+        where: { ...onActiveContract(), subscriber, merchantAddress: merchant, kind: "CUSTOMER", status: "ACTIVE", cancelAtPeriodEnd: false },
         select: { subscriptionId: true },
     });
     if (existing) return;
 
-    const onChainId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+    const onChainId = await findActiveOnChainSubscriptionIdOrNull(subscriber, merchant);
     if (!onChainId) return;
     const onChain = await getSubscriptionOnChain(onChainId);
     if (!onChain || !onChain.isActive) return;
-    const intro = await getIntroductoryTermsOnChain(onChainId);
+    /* A resume bridge (createSubscriptionWithDeferredFirstPayment) carries $0 introductory terms
+       for one cycle on-chain. Read raw, this heal stored a resumed subscription as a $0 promotion,
+       and every renewal webhook after it reported a trial that never existed.
+       recoveredPromotionTerms tells the two apart by the earlier row's paid-through date. */
+    const intro = await recoveredPromotionTerms({
+        subscriber,
+        merchant,
+        subscriptionId: onChainId,
+        onChainNextPaymentSeconds: onChain.nextPayment,
+    });
     const matchingPlans = await prisma.merchantPlan.findMany({
         where: {
             merchantAddress: merchant,

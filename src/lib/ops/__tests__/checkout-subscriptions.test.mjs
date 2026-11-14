@@ -282,7 +282,7 @@ test("subscription checkout binds OTP correctly and cannot false-succeed after b
     assert.match(route, /RECONCILIATION_PENDING/);
     assert.match(route, /if \(!subId\)/);
     assert.match(route, /status: "active"/);
-    assert.match(onchain, /findActiveOnChainSubscriptionId\(walletAddress, merchant\)/);
+    assert.match(onchain, /findActiveOnChainSubscriptionId(?:OrNull)?\(walletAddress, merchant\)/);
     assert.doesNotMatch(mirror, /subscription create failed/);
 });
 
