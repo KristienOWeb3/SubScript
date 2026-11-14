@@ -183,7 +183,7 @@ export default function Navbar() {
                     {/* Logo - Icon + Text */}
                     <Link href="/" className="flex items-center gap-2.5 group" aria-label="SubScript Home">
                         <Image
-                            src="/logo-colored.png"
+                            src="/logo-colored.svg"
                             alt="SubScript logo"
                             width={32}
                             height={32}
@@ -280,7 +280,7 @@ export default function Navbar() {
                             {/* Logo */}
                             <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileMenuOpen(false)} aria-label="SubScript Home">
                                 <Image
-                                    src="/logo-colored.png"
+                                    src="/logo-colored.svg"
                                     alt="SubScript logo"
                                     width={32}
                                     height={32}

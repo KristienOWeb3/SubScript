@@ -228,7 +228,7 @@ export default function DashboardHeader({
                         <div className="flex items-center flex-shrink-0">
                             <Link href="/" className="flex items-center">
                                 <Image 
-                                    src="/logo-colored.png" 
+                                    src="/logo-colored.svg" 
                                     alt="SubScript Logo" 
                                     width={28}
                                     height={28}
@@ -313,7 +313,7 @@ export default function DashboardHeader({
                         {/* Logo */}
                         <Link href="/" className="flex items-center gap-2.5 group flex-shrink-0">
                             <Image 
-                                src="/logo-colored.png" 
+                                src="/logo-colored.svg" 
                                 alt="SubScript Logo" 
                                 width={32}
                                 height={32}

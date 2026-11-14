@@ -66,7 +66,7 @@ export default function FulfillmentPolicy() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/" className="inline-flex items-center gap-2.5 group">
             <img
-              src="/logo-colored.png"
+              src="/logo-colored.svg"
               alt="SubScript Logo"
               className="w-8 h-8 rounded-lg object-contain shadow-xs group-hover:scale-105 transition-transform"
             />

@@ -43,7 +43,7 @@ function getSourceIcon(source: string) {
     switch (source?.toUpperCase()) {
         case "ADMIN":
         case "SYSTEM":
-            return <img src="/logo-colored.png" alt="SubScript" className="h-4 w-4 rounded-sm object-contain" />;
+            return <img src="/logo-colored.svg" alt="SubScript" className="h-4 w-4 rounded-sm object-contain" />;
         case "SECURITY":
             return <ShieldAlert className="h-4 w-4 text-amber-400" />;
         case "BRIDGE":

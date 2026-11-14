@@ -29,7 +29,7 @@ export default function DocsShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="inline-flex items-center gap-2.5 group">
             <img
-              src="/logo-colored.png"
+              src="/logo-colored.svg"
               alt="SubScript Logo"
               className="h-8 w-8 rounded-lg object-contain shadow-xs group-hover:scale-105 transition-transform"
             />
