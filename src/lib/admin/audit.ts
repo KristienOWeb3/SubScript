@@ -54,6 +54,7 @@ export const ADMIN_ACTIONS = [
     "EMERGENCY_STOP_SET",
     "PAYMENTS_KILL_SWITCH_SET",
     "WITHDRAWALS_KILL_SWITCH_SET",
+    "USAGE_VAULTS_KILL_SWITCH_SET",
     "ADMIN_REFUND_ISSUE",
     /* Account & merchant level actions */
     "SESSION_REVOKE",

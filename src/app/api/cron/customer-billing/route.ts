@@ -6,18 +6,21 @@
  * when on-chain Chainlink Automation is not registered.
  *
  * Safety model (this moves real USDC, so it is deliberately conservative):
- *   - Auth: KEEPER_SECRET bearer, same as the other keeper crons. Trigger it externally on a
- *     schedule (e.g. hourly/daily) exactly like `cron/billing`.
+ *   - Auth: KEEPER_SECRET bearer, same as the other keeper crons. Runs HOURLY from
+ *     .github/workflows/keepers.yml. It used to be a daily Vercel cron, which made the
+ *     "renews within 6 hours of expiry" promise false by up to 18 hours.
  *   - Double-charge is impossible: the on-chain contract gates every charge by sequence
  *     (`isSequenceExecuted` / `isPaymentDue`). We only `executePayment` when BOTH our mirror says
  *     due (`next_billing_date <= now`) AND the chain says `isPaymentDue`, and we never reuse a
  *     sequence. Balance + allowance are checked first so we don't waste gas on a guaranteed revert.
  *   - `next_billing_date` is DB-derived by a trigger from `last_settlement_timestamp +
  *     billing_interval_seconds`, so on success we only stamp `last_settlement_timestamp = now`.
- *   - Every `subscriptions` read AND write is scoped to `activeSubscriptionContract()`. The table is
+ *   - Runs one pass per billable contract (`billableSubscriptionContracts()`: the active PSA plus any
+ *     LEGACY_SUBSCRIPTION_CONTRACTS still holding live subscriptions after a redeploy), and every
+ *     `subscriptions` read AND write in a pass is scoped to that pass's `billingContract`. The table is
  *     keyed (contract_address, subscription_id) because the PSA is immutable: each redeploy restarts
  *     nextSubscriptionId at 1, so an id only means something against the contract that minted it,
- *     and every on-chain read here goes to STANDARD_CONTRACT_ADDRESS — the ACTIVE deployment.
+ *     and every on-chain read and charge in a pass goes to that same contract.
  *     Unscoped, a row from an abandoned deployment has its id looked up on the active contract and
  *     billed against a stranger's terms; when the id is absent there entirely the struct reads
  *     zeroed, the zero-address subscriber has no custody row, and this keeper reports a false
@@ -34,7 +37,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { projectRunway } from "@/lib/subscriptions/allowanceRunway";
@@ -45,10 +48,11 @@ import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { decideHaltedRenewal } from "@/lib/accountHalt";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { sendAllowanceLowDm } from "@/lib/dms/lifecycle";
+import { extendAllowanceForCustodial, type ExtensionOutcome } from "@/lib/subscriptions/allowanceLifecycle";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
-import { activeSubscriptionContract } from "@/lib/subscriptions/contractBinding";
+import { billableSubscriptionContracts } from "@/lib/subscriptions/contractBinding";
 import { withPgClient } from "@/lib/serverPg";
 
 export const maxDuration = 300;
@@ -66,6 +70,32 @@ const STANDARD_ABI = [
    Merchants can tune this per-account (merchants.dunning_max_failures, 1–10) — configurable
    dunning; this constant is only the fallback when no merchant row/config exists. */
 const DEFAULT_MAX_RENEWAL_FAILURES = 4;
+
+/* Renew a custodial subscriber's spending approval when fewer than this many full-price renewals
+   remain on it. Two, so the renewal after this one still has headroom if the extension fails and
+   has to be retried on the next pass. */
+const AUTO_EXTEND_BELOW_CYCLES = 2;
+
+/* Best-effort: a failed extension leaves the existing approval untouched, and the caller decides
+   what to tell the subscriber from the outcome. */
+async function extendCustodialAllowance(
+    subscriber: string,
+    amountMicros: bigint,
+    periodSeconds: bigint,
+    subId: number,
+    billingContract: string,
+): Promise<ExtensionOutcome> {
+    await ensureSponsoredGas({
+        wallet: subscriber.toLowerCase(),
+        action: "billing_renewal",
+        requestKey: `allowance-extend:${billingContract}:${subId}:${new Date().toISOString().slice(0, 10)}`,
+    }).catch(() => { /* best-effort; the approval may still go through on existing gas */ });
+    const outcome = await extendAllowanceForCustodial({ subscriber, amountMicros, periodSeconds, spender: billingContract });
+    if (!outcome.extended && outcome.reason === "failed") {
+        console.error(`[customer-billing] allowance extension failed for sub ${subId}:`, outcome.error);
+    }
+    return outcome;
+}
 
 function lifecycleBinding(sub: any) {
     return {
@@ -158,6 +188,7 @@ async function mailRenewalReceipt(args: {
     merchantAddress: string;
     chargeAmount: bigint;
     txHash: string | null;
+    billingContract: string;
 }) {
     await sendSettlementReceipts({
         kind: "subscription_renewal",
@@ -166,7 +197,7 @@ async function mailRenewalReceipt(args: {
         /* The repair pass can prove the charge executed on-chain without knowing which
            transaction did it, so key on (subscription, sequence) instead. The contract executes a
            sequence exactly once, which makes that pair as un-repeatable as a hash. */
-        settlementRef: `customer-renewal:${args.subId}:${args.sequenceId}`,
+        settlementRef: `customer-renewal:${args.billingContract}:${args.subId}:${args.sequenceId}`,
         payerAddress: args.subscriber,
         payeeAddress: args.merchantAddress,
         /* Read by both the customer and the merchant, so it carries the subscription id and
@@ -234,158 +265,444 @@ export async function POST(request: Request) {
         }
         const { provider } = await getRpcProviderForWrite();
         const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
-        const standardContract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, adminWallet);
         const usdcContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ERC20_ABI, adminWallet);
-
-        /* 4. Due CUSTOMER subs: active, not flagged to cancel, and past their derived next billing. */
-        const { data: dueSubs, error: dueError } = await supabase
-            .from("subscriptions")
-            .select("*")
-            .eq("contract_address", activeSubscriptionContract())
-            .eq("kind", "CUSTOMER")
-            .eq("status", "ACTIVE")
-            .eq("cancel_at_period_end", false)
-            .lte("next_billing_date", new Date().toISOString());
-
-        if (dueError) {
-            return NextResponse.json({ error: `Database error: ${dueError.message}` }, { status: 500 });
-        }
-
         const results: any[] = [];
-        const dunningConfig = await loadDunningConfig(
-            supabase,
-            [...new Set((dueSubs || []).map((s: any) => String(s.merchant_address).toLowerCase()))],
-        );
+        const cancelResults: any[] = [];
 
-        for (const sub of dueSubs || []) {
-            const subId = Number(sub.subscription_id);
-            const merchantAddress: string = sub.merchant_address;
-            const maxRenewalFailures = dunningConfig.get(String(merchantAddress).toLowerCase()) ?? DEFAULT_MAX_RENEWAL_FAILURES;
-            let claimedSequenceId: number | null = null;
-            let billingClaimId: string | null = null;
+        /* One pass per billable contract: the active PSA, then every legacy PSA that still holds
+           live subscriptions. A subscription is only ever read, charged or cancelled on the
+           contract that minted it, and every query and write below is scoped to that contract. */
+        for (const billingContract of billableSubscriptionContracts()) {
+        const standardContract = new ethers.Contract(billingContract, STANDARD_ABI, adminWallet);
 
-            const releaseBillingClaim = async () => {
-                if (claimedSequenceId === null || billingClaimId === null) return false;
-                const { data, error } = await supabase.rpc("release_subscription_billing", {
-                    p_contract_address: activeSubscriptionContract(),
-                    p_subscription_id: subId,
-                    p_sequence_id: claimedSequenceId,
-                    p_claim_id: billingClaimId,
-                });
-                if (error) throw new Error(`Failed to release customer billing claim: ${error.message}`);
-                return data === true;
-            };
-            const completeBillingClaim = async (txHash: string | null) => {
-                if (claimedSequenceId === null || billingClaimId === null) return false;
-                const { data, error } = await supabase.rpc("complete_subscription_billing", {
-                    p_contract_address: activeSubscriptionContract(),
-                    p_subscription_id: subId,
-                    p_sequence_id: claimedSequenceId,
-                    p_claim_id: billingClaimId,
-                    p_tx_hash: txHash,
-                });
-                if (error) throw new Error(`Failed to complete customer billing claim: ${error.message}`);
-                return data === true;
-            };
+            /* 4. Due CUSTOMER subs: active, not flagged to cancel, and past their derived next billing. */
+            const { data: dueSubs, error: dueError } = await supabase
+                .from("subscriptions")
+                .select("*")
+                .eq("contract_address", billingContract)
+                .eq("kind", "CUSTOMER")
+                .eq("status", "ACTIVE")
+                .eq("cancel_at_period_end", false)
+                .lte("next_billing_date", new Date().toISOString());
 
-            try {
-                /* Authoritative on-chain state. */
-                const onChain = await standardContract.subscriptions(subId);
-                const subscriber: string = onChain[0];
-                const amountOnChain: bigint = BigInt(onChain[2]);
-                const isActiveOnChain: boolean = onChain[5];
+            if (dueError) {
+                return NextResponse.json({ error: `Database error: ${dueError.message}` }, { status: 500 });
+            }
 
-                /* Cancelled directly on-chain -> reflect it in the mirror and notify, then stop. */
-                if (!isActiveOnChain) {
-                    await supabase
-                        .from("subscriptions")
-                        .update({ status: "CANCELED", updated_at: new Date().toISOString() })
-                        .eq("contract_address", activeSubscriptionContract())
-                        .eq("subscription_id", subId);
-                    await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
-                        subscriptionId: subId,
-                        status: "canceled",
-                        amountUsdcMicros: amountOnChain,
-                        subscriber,
-                        merchantAddress,
-                        ...lifecycleBinding(sub),
-                        reason: "Canceled on-chain",
-                    }), `customer-canceled:${subId}:on-chain`);
-                    results.push({ subId, subscriber, action: "CANCELLED_ON_CHAIN", success: true });
-                    continue;
-                }
+            const dunningConfig = await loadDunningConfig(
+                supabase,
+                [...new Set((dueSubs || []).map((s: any) => String(s.merchant_address).toLowerCase()))],
+            );
 
-                /* Bill only the LATEST due sequence — never back-charge lapsed periods. Walking up
-                   from the lowest unexecuted sequence would re-charge every period missed during an
-                   outage or funding gap. due(seq) = nextPayment + (seq - 1) * period, so the newest
-                   due sequence is floor((now - nextPayment) / period) + 1; earlier gaps stay
-                   unexecuted. */
-                const periodOnChain: bigint = BigInt(onChain[3]);
-                const nextPaymentOnChain: bigint = BigInt(onChain[4]);
-                const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
-                if (nowSeconds < nextPaymentOnChain || periodOnChain <= BigInt(0)) {
-                    results.push({ subId, subscriber, action: "NOT_DUE_ON_CHAIN", success: false });
-                    continue;
-                }
-                const sequenceId = Number((nowSeconds - nextPaymentOnChain) / periodOnChain) + 1;
+            for (const sub of dueSubs || []) {
+                const subId = Number(sub.subscription_id);
+                const merchantAddress: string = sub.merchant_address;
+                const maxRenewalFailures = dunningConfig.get(String(merchantAddress).toLowerCase()) ?? DEFAULT_MAX_RENEWAL_FAILURES;
+                let claimedSequenceId: number | null = null;
+                let billingClaimId: string | null = null;
 
-                /* What THIS sequence charges. Introductory-priced subscriptions bill a lower
-                   (possibly zero) amount for their first cycles; the contract derives it from
-                   the sequence number. Fall back to the flat amount if the deployed contract
-                   predates chargeAmountFor. */
-                let chargeAmount: bigint = amountOnChain;
+                const releaseBillingClaim = async () => {
+                    if (claimedSequenceId === null || billingClaimId === null) return false;
+                    const { data, error } = await supabase.rpc("release_subscription_billing", {
+                        p_contract_address: billingContract,
+                        p_subscription_id: subId,
+                        p_sequence_id: claimedSequenceId,
+                        p_claim_id: billingClaimId,
+                    });
+                    if (error) throw new Error(`Failed to release customer billing claim: ${error.message}`);
+                    return data === true;
+                };
+                const completeBillingClaim = async (txHash: string | null) => {
+                    if (claimedSequenceId === null || billingClaimId === null) return false;
+                    const { data, error } = await supabase.rpc("complete_subscription_billing", {
+                        p_contract_address: billingContract,
+                        p_subscription_id: subId,
+                        p_sequence_id: claimedSequenceId,
+                        p_claim_id: billingClaimId,
+                        p_tx_hash: txHash,
+                    });
+                    if (error) throw new Error(`Failed to complete customer billing claim: ${error.message}`);
+                    return data === true;
+                };
+
                 try {
-                    chargeAmount = BigInt(await standardContract.chargeAmountFor(subId, sequenceId));
-                } catch {
-                    /* pre-promotions contract deployment */
-                }
-                /* Pricing metadata for merchant webhooks, from the immutable snapshot taken at
-                   subscribe time (never from the editable promotion row). */
-                const introCyclesSnapshot = Number(sub.intro_cycles || 0);
-                const pricingBlock = introCyclesSnapshot > 0 && sub.intro_amount_usdc != null
-                    ? {
-                        ...pricingPhaseFor({
-                            sequenceId,
-                            regularAmountUsdc: amountOnChain,
-                            introAmountUsdc: BigInt(sub.intro_amount_usdc),
-                            introCycles: introCyclesSnapshot,
-                        }),
-                        regularAmountUsdcMicros: amountOnChain,
+                    /* Authoritative on-chain state. */
+                    const onChain = await standardContract.subscriptions(subId);
+                    const subscriber: string = onChain[0];
+                    const amountOnChain: bigint = BigInt(onChain[2]);
+                    const isActiveOnChain: boolean = onChain[5];
+
+                    /* Cancelled directly on-chain -> reflect it in the mirror and notify, then stop. */
+                    if (!isActiveOnChain) {
+                        await supabase
+                            .from("subscriptions")
+                            .update({ status: "CANCELED", updated_at: new Date().toISOString() })
+                            .eq("contract_address", billingContract)
+                            .eq("subscription_id", subId);
+                        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                            subscriptionId: subId,
+                            status: "canceled",
+                            amountUsdcMicros: amountOnChain,
+                            subscriber,
+                            merchantAddress,
+                            ...lifecycleBinding(sub),
+                            reason: "Canceled on-chain",
+                        }), `customer-canceled:${billingContract}:${subId}:on-chain`);
+                        results.push({ subId, subscriber, action: "CANCELLED_ON_CHAIN", success: true });
+                        continue;
                     }
-                    : null;
 
-                const settlementTimestampIso = new Date(
-                    Number((nextPaymentOnChain + BigInt(sequenceId - 1) * periodOnChain) * BigInt(1000)),
-                ).toISOString();
-                const requestedClaimId = crypto.randomUUID();
-                const { data: claimed, error: claimError } = await supabase.rpc("claim_subscription_billing", {
-                    p_contract_address: activeSubscriptionContract(),
-                    p_subscription_id: subId,
-                    p_sequence_id: sequenceId,
-                    p_claim_id: requestedClaimId,
-                    p_lease_seconds: 600,
-                });
-                if (claimError) throw new Error(`Failed to claim customer billing sequence: ${claimError.message}`);
-                if (!claimed) {
-                    results.push({ subId, subscriber, action: "BILLING_SEQUENCE_ALREADY_CLAIMED", success: true });
-                    continue;
-                }
-                claimedSequenceId = sequenceId;
-                billingClaimId = requestedClaimId;
-                const { data: persistedClaim, error: persistedClaimError } = await supabase
-                    .from("subscription_billing_claims")
-                    .select("status,tx_hash")
-                    .eq("contract_address", activeSubscriptionContract())
-                    .eq("subscription_id", subId)
-                    .eq("sequence_id", sequenceId)
-                    .eq("claim_id", requestedClaimId)
-                    .maybeSingle();
-                if (persistedClaimError || !persistedClaim) {
-                    throw new Error(`Failed to load customer billing claim: ${persistedClaimError?.message || "claim missing"}`);
-                }
+                    /* Bill only the LATEST due sequence — never back-charge lapsed periods. Walking up
+                       from the lowest unexecuted sequence would re-charge every period missed during an
+                       outage or funding gap. due(seq) = nextPayment + (seq - 1) * period, so the newest
+                       due sequence is floor((now - nextPayment) / period) + 1; earlier gaps stay
+                       unexecuted. */
+                    const periodOnChain: bigint = BigInt(onChain[3]);
+                    const nextPaymentOnChain: bigint = BigInt(onChain[4]);
+                    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+                    if (nowSeconds < nextPaymentOnChain || periodOnChain <= BigInt(0)) {
+                        results.push({ subId, subscriber, action: "NOT_DUE_ON_CHAIN", success: false });
+                        continue;
+                    }
+                    const sequenceId = Number((nowSeconds - nextPaymentOnChain) / periodOnChain) + 1;
 
-                if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
-                    const settlementTxHash = persistedClaim.status === "CHAIN_CONFIRMED" ? persistedClaim.tx_hash : null;
+                    /* What THIS sequence charges. Introductory-priced subscriptions bill a lower
+                       (possibly zero) amount for their first cycles; the contract derives it from
+                       the sequence number. Fall back to the flat amount if the deployed contract
+                       predates chargeAmountFor. */
+                    let chargeAmount: bigint = amountOnChain;
+                    try {
+                        chargeAmount = BigInt(await standardContract.chargeAmountFor(subId, sequenceId));
+                    } catch {
+                        /* pre-promotions contract deployment */
+                    }
+                    /* Pricing metadata for merchant webhooks, from the immutable snapshot taken at
+                       subscribe time (never from the editable promotion row). */
+                    const introCyclesSnapshot = Number(sub.intro_cycles || 0);
+                    const pricingBlock = introCyclesSnapshot > 0 && sub.intro_amount_usdc != null
+                        ? {
+                            ...pricingPhaseFor({
+                                sequenceId,
+                                regularAmountUsdc: amountOnChain,
+                                introAmountUsdc: BigInt(sub.intro_amount_usdc),
+                                introCycles: introCyclesSnapshot,
+                            }),
+                            regularAmountUsdcMicros: amountOnChain,
+                        }
+                        : null;
+
+                    const settlementTimestampIso = new Date(
+                        Number((nextPaymentOnChain + BigInt(sequenceId - 1) * periodOnChain) * BigInt(1000)),
+                    ).toISOString();
+                    const requestedClaimId = crypto.randomUUID();
+                    const { data: claimed, error: claimError } = await supabase.rpc("claim_subscription_billing", {
+                        p_contract_address: billingContract,
+                        p_subscription_id: subId,
+                        p_sequence_id: sequenceId,
+                        p_claim_id: requestedClaimId,
+                        p_lease_seconds: 600,
+                    });
+                    if (claimError) throw new Error(`Failed to claim customer billing sequence: ${claimError.message}`);
+                    if (!claimed) {
+                        results.push({ subId, subscriber, action: "BILLING_SEQUENCE_ALREADY_CLAIMED", success: true });
+                        continue;
+                    }
+                    claimedSequenceId = sequenceId;
+                    billingClaimId = requestedClaimId;
+                    const { data: persistedClaim, error: persistedClaimError } = await supabase
+                        .from("subscription_billing_claims")
+                        .select("status,tx_hash")
+                        .eq("contract_address", billingContract)
+                        .eq("subscription_id", subId)
+                        .eq("sequence_id", sequenceId)
+                        .eq("claim_id", requestedClaimId)
+                        .maybeSingle();
+                    if (persistedClaimError || !persistedClaim) {
+                        throw new Error(`Failed to load customer billing claim: ${persistedClaimError?.message || "claim missing"}`);
+                    }
+
+                    if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
+                        const settlementTxHash = persistedClaim.status === "CHAIN_CONFIRMED" ? persistedClaim.tx_hash : null;
+                        const { data: mirrored, error: mirrorError } = await supabase
+                            .from("subscriptions")
+                            .update({
+                                status: "ACTIVE",
+                                downgrade_failures: 0,
+                                last_settlement_timestamp: settlementTimestampIso,
+                                updated_at: new Date().toISOString(),
+                            })
+                            .eq("contract_address", billingContract)
+                            .eq("subscription_id", subId)
+                            .select("subscription_id")
+                            .maybeSingle();
+                        if (mirrorError || !mirrored) throw new Error(`Customer renewal repair failed: ${mirrorError?.message || "subscription missing"}`);
+                        await mailRenewalReceipt({
+                        billingContract,
+                            subId,
+                            sequenceId,
+                            subscriber,
+                            merchantAddress,
+                            chargeAmount,
+                            txHash: settlementTxHash,
+                        });
+                        await createBillingDm({
+                            supabase,
+                            senderAddress: merchantAddress,
+                            receiverAddress: subscriber,
+                            messageType: "DEBIT_SUCCESS",
+                            amountUsdc: chargeAmount,
+                            title: "Subscription renewed",
+                            description: `Your subscription was renewed successfully.\nAmount: ${Number(chargeAmount) / 1_000_000} USDC\nSubscription ID: ${subId}`,
+                            txHash: settlementTxHash,
+                            dedupeKey: `customer-renewal:${billingContract}:${subId}:${sequenceId}`,
+                        });
+                        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
+                            subscriptionId: subId,
+                            status: "active",
+                            amountUsdcMicros: chargeAmount,
+                            subscriber,
+                            merchantAddress,
+                            txHash: settlementTxHash,
+                            ...lifecycleBinding(sub),
+                            pricing: pricingBlock,
+                        }), `customer-renewed:${billingContract}:${subId}:${sequenceId}:${settlementTxHash || "chain-confirmed"}`);
+                        if (!await completeBillingClaim(settlementTxHash)) throw new Error("Customer renewal repair claim completion failed");
+                        results.push({ subId, subscriber, action: "ALREADY_SETTLED_ON_CHAIN_REPAIRED", success: true, txHash: settlementTxHash });
+                        continue;
+                    }
+
+                    /* The chain is the source of truth for "not too early". */
+                    const isDueOnChain = await standardContract.isPaymentDue(subId, sequenceId);
+                    if (!isDueOnChain) {
+                        await releaseBillingClaim();
+                        results.push({ subId, subscriber, action: "NOT_DUE_ON_CHAIN", success: false });
+                        continue;
+                    }
+
+                    /* The subscriber's own hold on outbound money. Checked after the due test and before
+                       any balance or allowance read, so a held account costs no chain calls.
+
+                       A hold does NOT automatically void this charge. min_commitment_until is the
+                       commitment window snapshotted at subscribe time and capped at one billing period by
+                       constraint, so a renewal inside it is money the subscriber already promised and it
+                       settles as normal. Outside that window there is nothing holding the charge open, so
+                       it is skipped and the merchant is told rather than left to infer a silent
+                       non-payment. See the Merchant Protection note in src/lib/accountHalt.ts.
+
+                       Deliberately does NOT touch status or downgrade_failures. A hold is not a funding
+                       failure and it is reversible, so dunning must not start counting and the row must
+                       stay chargeable: the next pass after the hold lifts settles normally. */
+                    const haltDecision = await decideHaltedRenewal({
+                        subscriberAddress: subscriber,
+                        minCommitmentUntil: sub.min_commitment_until ? new Date(sub.min_commitment_until) : null,
+                    });
+                    if (haltDecision.halted && haltDecision.action === "break") {
+                        await releaseBillingClaim();
+                        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
+                            subscriptionId: subId,
+                            status: "past_due",
+                            amountUsdcMicros: chargeAmount,
+                            subscriber,
+                            merchantAddress,
+                            reason: "The subscriber put their account on hold, so this renewal wasn't charged.",
+                            ...lifecycleBinding(sub),
+                        }), `customer-hold-skipped:${billingContract}:${subId}:${sequenceId}`);
+                        results.push({ subId, subscriber, action: "SUBSCRIBER_ON_HOLD", success: false });
+                        continue;
+                    }
+                    if (haltDecision.halted) {
+                        console.log(
+                            `[customer-billing] sub ${subId}: subscriber on hold but inside its commitment window `
+                            + `until ${haltDecision.commitmentUntil.toISOString()} — charging`,
+                        );
+                    }
+
+                    /* Fail fast (no gas) if the subscriber can't pay THIS sequence's charge. A
+                       zero-charge cycle (free-trial period) always "pays": executing it advances
+                       the schedule without moving funds, so an unfunded wallet can't stall a
+                       trial and get surprise-billed a burst later. */
+                    const balance: bigint = chargeAmount > BigInt(0) ? BigInt(await usdcContract.balanceOf(subscriber)) : BigInt(0);
+                    let allowance: bigint = chargeAmount > BigInt(0) ? BigInt(await usdcContract.allowance(subscriber, billingContract)) : BigInt(0);
+                    /* An exhausted authorization on a wallet SubScript custodies is ours to renew: the
+                       subscriber agreed to this amount and cadence when they subscribed, and
+                       extendAllowanceForCustodial re-approves the same one-year horizon, never more.
+                       Done before the shortfall check so a healthy plan doesn't fail at cycle 13. */
+                    let allowanceExtension: ExtensionOutcome | null = null;
+                    if (chargeAmount > BigInt(0) && allowance < chargeAmount) {
+                        allowanceExtension = await extendCustodialAllowance(subscriber, amountOnChain, periodOnChain, subId, billingContract);
+                        if (allowanceExtension.extended) {
+                            allowance = BigInt(await usdcContract.allowance(subscriber, billingContract));
+                        }
+                    }
+                    if (chargeAmount > BigInt(0) && (balance < chargeAmount || allowance < chargeAmount)) {
+                        const failures = Number(sub.downgrade_failures || 0);
+                        const newFailures = failures + 1;
+
+                        /* Balance-short and allowance-short are different failures with different
+                           remedies, and the combined "insufficient USDC balance or allowance" told a
+                           fully-funded subscriber to add funds that could not help. The allowance is
+                           the ERC-20 approval signed at subscribe time, sized for roughly a year of
+                           cycles and never renewed — so a healthy monthly plan hits this at about
+                           cycle 13 with a message pointing at the wrong cause. Name which one. */
+                        const balanceShort = balance < chargeAmount;
+                        const allowanceShort = allowance < chargeAmount;
+                        const shortfallReason = balanceShort && allowanceShort
+                            ? "Insufficient balance and expired authorization"
+                            : balanceShort
+                            ? "Insufficient USDC balance"
+                            : "Spending authorization exhausted";
+                        /* Who can fix the authorization decides what the message asks for. A custodial
+                           wallet's is renewed by SubScript (above, and again next pass if that failed),
+                           so asking that subscriber to "re-authorize" sent them looking for a button
+                           that didn't exist. A connected wallet has to sign the approval itself. */
+                        const custodialAuthorization = allowanceExtension?.extended === true
+                            || (allowanceExtension !== null && allowanceExtension.reason !== "external_wallet");
+                        const renewAuthorizationLine = custodialAuthorization
+                            ? "We couldn't renew it automatically this time. We'll try again on the next renewal attempt, and you don't need to do anything."
+                            : "Open your SubScript dashboard and tap Renew authorization in this conversation, then approve it in your wallet.";
+                        const shortfallLines = balanceShort && allowanceShort
+                            ? [
+                                "Reason: your USDC balance is too low and the spending approval for this subscription has run out.",
+                                custodialAuthorization
+                                    ? "Add USDC to keep your plan active. We'll renew the approval for you."
+                                    : "Add USDC, then open your SubScript dashboard and tap Renew authorization in this conversation.",
+                            ]
+                            : balanceShort
+                            ? [
+                                `Reason: not enough USDC. This renewal needs ${Number(chargeAmount) / 1_000_000} USDC.`,
+                                "Add USDC to keep your plan active. We'll retry automatically.",
+                            ]
+                            : [
+                                "Reason: the spending approval you gave when you subscribed has run out.",
+                                "This isn't your balance, so adding USDC won't fix it. The approval covers about a year of renewals.",
+                                renewAuthorizationLine,
+                            ];
+
+                        /* Notify once, on the first failure, to avoid a message every cron run. */
+                        if (failures === 0) {
+                            await createBillingDm({
+                                supabase,
+                                senderAddress: merchantAddress,
+                                receiverAddress: subscriber,
+                                /* An exhausted authorization is not a funding problem, so it gets the
+                                   dedicated type — the customer's next action differs entirely. */
+                                messageType: allowanceShort && !balanceShort ? "ALLOWANCE_LOW" : "EXPIRY_WARNING",
+                                amountUsdc: chargeAmount,
+                                title: allowanceShort && !balanceShort
+                                    ? "Subscription authorization has run out"
+                                    : "Subscription renewal needs attention",
+                                description: [
+                                    "SubScript could not renew your subscription.",
+                                    ...shortfallLines,
+                                ].join("\n"),
+                                dedupeKey: `customer-renewal-shortfall:${billingContract}:${subId}:${sequenceId}`,
+                            }).catch((e: any) => console.error("[customer-billing] warning DM failed:", e));
+                            await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
+                                subscriptionId: subId,
+                                status: "past_due",
+                                amountUsdcMicros: chargeAmount,
+                                subscriber,
+                                merchantAddress,
+                                ...lifecycleBinding(sub),
+                                reason: shortfallReason,
+                                pricing: pricingBlock,
+                            }), `customer-payment-failed:${billingContract}:${subId}:${newFailures}`);
+                        }
+
+                        if (newFailures >= maxRenewalFailures) {
+                            /* Zombie kill: repeated failed renewals mean the subscriber has effectively
+                               abandoned the plan. Rather than leaving a live authorization that could
+                               surprise-charge them later (the exact "zombie billing" SubScript exists to
+                               prevent), revoke it on-chain for server-held wallets, mark it stopped so
+                               the keeper stops attempting, and tell the user. External wallets can't be
+                               revoked for the user, but marking it stopped still ends all charge attempts. */
+                            let revocationTxHash: string | null = null;
+                            try {
+                                await ensureSponsoredGas({
+                                    wallet: subscriber.toLowerCase(),
+                                    action: "billing_renewal",
+                                    requestKey: `cancel-zombie:${subId}`,
+                                }).catch(() => { /* best-effort */ });
+                                revocationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId), billingContract);
+                            } catch (killErr: any) {
+                                console.warn(`[customer-billing] zombie on-chain revoke skipped for sub ${subId}:`, killErr?.message || killErr);
+                            }
+
+                            const revokedOnChain = Boolean(revocationTxHash);
+                            const { error: zombieStateError } = await supabase
+                                .from("subscriptions")
+                                .update({
+                                    status: revokedOnChain ? "CANCELED" : "PAST_DUE",
+                                    downgrade_failures: newFailures,
+                                    revocation_pending: !revokedOnChain,
+                                    ...(revocationTxHash ? { revocation_tx_hash: revocationTxHash.toLowerCase() } : {}),
+                                    updated_at: new Date().toISOString(),
+                                })
+                                .eq("contract_address", billingContract)
+                                .eq("subscription_id", subId);
+                            if (zombieStateError) {
+                                throw new Error(`Failed to persist zombie revocation state: ${zombieStateError.message}`);
+                            }
+
+                            await createBillingDm({
+                                supabase,
+                                senderAddress: merchantAddress,
+                                receiverAddress: subscriber,
+                                messageType: "EXPIRY_WARNING",
+                                amountUsdc: amountOnChain,
+                                title: "Subscription stopped",
+                                description: [
+                                    "We stopped this subscription after repeated failed renewals so it can never keep trying to charge you.",
+                                    revokedOnChain
+                                        ? "Its on-chain authorization has been revoked."
+                                        : "Cancel it from your wallet to fully revoke the authorization.",
+                                    "Re-subscribe anytime you're ready.",
+                                ].join("\n"),
+                            }).catch((e: any) => console.error("[customer-billing] zombie-kill DM failed:", e));
+
+                            if (revokedOnChain) {
+                                await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                                    subscriptionId: subId,
+                                    status: "canceled",
+                                    amountUsdcMicros: amountOnChain,
+                                    subscriber,
+                                    merchantAddress,
+                                    ...lifecycleBinding(sub),
+                                    reason: "Stopped after repeated failed renewals (zombie kill)",
+                                }), `customer-canceled:${billingContract}:${subId}:zombie-kill`);
+                            }
+                            results.push({ subId, subscriber, action: "ZOMBIE_KILLED", success: false, failuresCount: newFailures, revokedOnChain });
+                        } else {
+                            /* Keep ACTIVE and retry next run (cheap — only view calls until funded). */
+                            await supabase
+                                .from("subscriptions")
+                                .update({ downgrade_failures: newFailures, updated_at: new Date().toISOString() })
+                                .eq("contract_address", billingContract)
+                                .eq("subscription_id", subId);
+                            results.push({ subId, subscriber, action: "RETRY_SCHEDULED", success: false, failuresCount: newFailures });
+                        }
+                        await releaseBillingClaim();
+                        continue;
+                    }
+
+                    /* Charge. */
+                    const tx = await standardContract.executePayment(subId, sequenceId);
+                    const receipt = await tx.wait();
+                    if (receipt.status !== 1) {
+                        throw new Error("Payment execution transaction reverted");
+                    }
+                    const { data: recorded, error: recordError } = await supabase.rpc("record_subscription_billing_chain_confirmation", {
+                        p_contract_address: billingContract,
+                        p_subscription_id: subId,
+                        p_sequence_id: sequenceId,
+                        p_claim_id: requestedClaimId,
+                        p_tx_hash: tx.hash,
+                    });
+                    if (recordError || recorded !== true) {
+                        throw new Error(`Failed to persist customer chain confirmation: ${recordError?.message || "claim ownership changed"}`);
+                    }
+
+                    /* Stamp settlement; the trigger derives the next billing date. Reset failures. */
                     const { data: mirrored, error: mirrorError } = await supabase
                         .from("subscriptions")
                         .update({
@@ -394,19 +711,22 @@ export async function POST(request: Request) {
                             last_settlement_timestamp: settlementTimestampIso,
                             updated_at: new Date().toISOString(),
                         })
-                        .eq("contract_address", activeSubscriptionContract())
+                        .eq("contract_address", billingContract)
                         .eq("subscription_id", subId)
                         .select("subscription_id")
                         .maybeSingle();
-                    if (mirrorError || !mirrored) throw new Error(`Customer renewal repair failed: ${mirrorError?.message || "subscription missing"}`);
+                    if (mirrorError || !mirrored) throw new Error(`Customer renewal mirror failed: ${mirrorError?.message || "subscription missing"}`);
+
                     await mailRenewalReceipt({
+                        billingContract,
                         subId,
                         sequenceId,
                         subscriber,
                         merchantAddress,
                         chargeAmount,
-                        txHash: settlementTxHash,
+                        txHash: tx.hash,
                     });
+
                     await createBillingDm({
                         supabase,
                         senderAddress: merchantAddress,
@@ -414,536 +734,360 @@ export async function POST(request: Request) {
                         messageType: "DEBIT_SUCCESS",
                         amountUsdc: chargeAmount,
                         title: "Subscription renewed",
-                        description: `Your subscription was renewed successfully.\nAmount: ${Number(chargeAmount) / 1_000_000} USDC\nSubscription ID: ${subId}`,
-                        txHash: settlementTxHash,
-                        dedupeKey: `customer-renewal:${subId}:${sequenceId}`,
+                        description: [
+                            "Your subscription was renewed successfully.",
+                            `Amount: ${Number(chargeAmount) / 1_000_000} USDC`,
+                            ...(pricingBlock && pricingBlock.phase === "introductory"
+                                ? [pricingBlock.introductoryCyclesRemaining > 0
+                                    ? `Introductory price — ${pricingBlock.introductoryCyclesRemaining} discounted cycle(s) remain before the regular price of ${Number(amountOnChain) / 1_000_000} USDC.`
+                                    : `This was your last discounted cycle — your next renewal will be at the regular price of ${Number(amountOnChain) / 1_000_000} USDC. Cancel anytime before then from your dashboard.`]
+                                : []),
+                            `Subscription ID: ${subId}`,
+                        ].join("\n"),
+                        txHash: tx.hash,
+                        dedupeKey: `customer-renewal:${billingContract}:${subId}:${sequenceId}`,
                     });
+
                     await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
                         subscriptionId: subId,
                         status: "active",
                         amountUsdcMicros: chargeAmount,
                         subscriber,
                         merchantAddress,
-                        txHash: settlementTxHash,
+                        txHash: tx.hash,
                         ...lifecycleBinding(sub),
                         pricing: pricingBlock,
-                    }), `customer-renewed:${subId}:${sequenceId}:${settlementTxHash || "chain-confirmed"}`);
-                    if (!await completeBillingClaim(settlementTxHash)) throw new Error("Customer renewal repair claim completion failed");
-                    results.push({ subId, subscriber, action: "ALREADY_SETTLED_ON_CHAIN_REPAIRED", success: true, txHash: settlementTxHash });
-                    continue;
-                }
+                    }), `customer-renewed:${billingContract}:${subId}:${sequenceId}:${tx.hash.toLowerCase()}`);
 
-                /* The chain is the source of truth for "not too early". */
-                const isDueOnChain = await standardContract.isPaymentDue(subId, sequenceId);
-                if (!isDueOnChain) {
-                    await releaseBillingClaim();
-                    results.push({ subId, subscriber, action: "NOT_DUE_ON_CHAIN", success: false });
-                    continue;
-                }
+                    /* Project the remaining authorization runway on the way out of a SUCCESSFUL
+                       renewal, and warn while the customer can still act.
 
-                /* The subscriber's own hold on outbound money. Checked after the due test and before
-                   any balance or allowance read, so a held account costs no chain calls.
+                       This is the point the allowance arithmetic existed for and was never wired to.
+                       The allowance is finite and consumed one cycle at a time; without this, the
+                       first signal a subscriber gets is the renewal that fails at roughly cycle 13,
+                       reported as a funding problem. Reading it here costs one eth_call on a path
+                       that has already spent a transaction, and the warning lands a cycle or two
+                       before the wall rather than after it.
 
-                   A hold does NOT automatically void this charge. min_commitment_until is the
-                   commitment window snapshotted at subscribe time and capped at one billing period by
-                   constraint, so a renewal inside it is money the subscriber already promised and it
-                   settles as normal. Outside that window there is nothing holding the charge open, so
-                   it is skipped and the merchant is told rather than left to infer a silent
-                   non-payment. See the Merchant Protection note in src/lib/accountHalt.ts.
+                       Deliberately after completeBillingClaim's inputs are settled but before it
+                       runs, so a failure in projection cannot strand the claim: everything below is
+                       wrapped and swallowed. */
+                    try {
+                        /* Re-read post-charge: the allowance we validated above was pre-charge, and
+                           this renewal just consumed chargeAmount of it. Projecting from the stale
+                           figure would overstate the runway by exactly one cycle — the one cycle
+                           that matters at the boundary. */
+                        const remainingAllowance: bigint = BigInt(
+                            await usdcContract.allowance(subscriber, billingContract),
+                        );
+                        /* Project against the REGULAR amount, not this cycle's charge. An
+                           introductory cycle charges less (sometimes zero), so using chargeAmount
+                           would report a long runway right up to the first full-price renewal. */
+                        let runway = projectRunway(remainingAllowance, amountOnChain);
 
-                   Deliberately does NOT touch status or downgrade_failures. A hold is not a funding
-                   failure and it is reversible, so dunning must not start counting and the row must
-                   stay chargeable: the next pass after the hold lifts settles normally. */
-                const haltDecision = await decideHaltedRenewal({
-                    subscriberAddress: subscriber,
-                    minCommitmentUntil: sub.min_commitment_until ? new Date(sub.min_commitment_until) : null,
-                });
-                if (haltDecision.halted && haltDecision.action === "break") {
-                    await releaseBillingClaim();
-                    await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
-                        subscriptionId: subId,
-                        status: "past_due",
-                        amountUsdcMicros: chargeAmount,
-                        subscriber,
-                        merchantAddress,
-                        reason: "The subscriber put their account on hold, so this renewal wasn't charged.",
-                        ...lifecycleBinding(sub),
-                    }), `customer-hold-skipped:${subId}:${sequenceId}`);
-                    results.push({ subId, subscriber, action: "SUBSCRIBER_ON_HOLD", success: false });
-                    continue;
-                }
-                if (haltDecision.halted) {
-                    console.log(
-                        `[customer-billing] sub ${subId}: subscriber on hold but inside its commitment window `
-                        + `until ${haltDecision.commitmentUntil.toISOString()} — charging`,
-                    );
-                }
+                        /* Fewer than two renewals left: renew a custodial wallet's approval now, at
+                           renewal, rather than waiting for the charge that fails. A connected wallet
+                           can't be renewed for the subscriber, so it falls through to the warning. */
+                        let canAutoRenew = false;
+                        if (runway.cyclesRemaining !== null && runway.cyclesRemaining < AUTO_EXTEND_BELOW_CYCLES) {
+                            const extension = await extendCustodialAllowance(subscriber, amountOnChain, periodOnChain, subId, billingContract);
+                            canAutoRenew = extension.extended || extension.reason !== "external_wallet";
+                            if (extension.extended) {
+                                runway = projectRunway(
+                                    BigInt(await usdcContract.allowance(subscriber, billingContract)),
+                                    amountOnChain,
+                                );
+                            }
+                        }
 
-                /* Fail fast (no gas) if the subscriber can't pay THIS sequence's charge. A
-                   zero-charge cycle (free-trial period) always "pays": executing it advances
-                   the schedule without moving funds, so an unfunded wallet can't stall a
-                   trial and get surprise-billed a burst later. */
-                const balance: bigint = chargeAmount > BigInt(0) ? BigInt(await usdcContract.balanceOf(subscriber)) : BigInt(0);
-                const allowance: bigint = chargeAmount > BigInt(0) ? BigInt(await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS)) : BigInt(0);
-                if (chargeAmount > BigInt(0) && (balance < chargeAmount || allowance < chargeAmount)) {
-                    const failures = Number(sub.downgrade_failures || 0);
-                    const newFailures = failures + 1;
+                        if (runway.isLow && runway.cyclesRemaining !== null) {
+                            const nextBillingIso = new Date(
+                                Number((nextPaymentOnChain + BigInt(sequenceId) * periodOnChain) * BigInt(1000)),
+                            );
+                            const warned = await sendAllowanceLowDm({
+                                merchantAddress,
+                                subscriberAddress: subscriber,
+                                subscriptionId: subId,
+                                amountUsdcMicros: amountOnChain,
+                                allowanceUsdcMicros: remainingAllowance,
+                                cyclesRemaining: runway.cyclesRemaining,
+                                nextBillingDate: nextBillingIso,
+                                renewsAutomatically: canAutoRenew,
+                            });
 
-                    /* Balance-short and allowance-short are different failures with different
-                       remedies, and the combined "insufficient USDC balance or allowance" told a
-                       fully-funded subscriber to add funds that could not help. The allowance is
-                       the ERC-20 approval signed at subscribe time, sized for roughly a year of
-                       cycles and never renewed — so a healthy monthly plan hits this at about
-                       cycle 13 with a message pointing at the wrong cause. Name which one. */
-                    const balanceShort = balance < chargeAmount;
-                    const allowanceShort = allowance < chargeAmount;
-                    const shortfallReason = balanceShort && allowanceShort
-                        ? "Insufficient balance and expired authorization"
-                        : balanceShort
-                        ? "Insufficient USDC balance"
-                        : "Spending authorization exhausted";
-                    const shortfallLines = balanceShort && allowanceShort
-                        ? [
-                            "Reason: your USDC balance is too low AND your spending authorization has run out.",
-                            "Both need fixing: add USDC, then re-authorize the subscription from your dashboard.",
-                        ]
-                        : balanceShort
-                        ? [
-                            `Reason: insufficient USDC balance — this renewal needs ${Number(chargeAmount) / 1_000_000} USDC.`,
-                            "Add USDC to keep your plan active — we'll retry automatically.",
-                        ]
-                        : [
-                            "Reason: the spending authorization you signed when you subscribed has run out.",
-                            "This is not your balance — adding USDC will not fix it. That approval covers about a year of renewals and now needs renewing.",
-                            "Re-authorize this subscription from your dashboard to resume renewals.",
-                        ];
-
-                    /* Notify once, on the first failure, to avoid a message every cron run. */
-                    if (failures === 0) {
-                        await createBillingDm({
-                            supabase,
-                            senderAddress: merchantAddress,
-                            receiverAddress: subscriber,
-                            /* An exhausted authorization is not a funding problem, so it gets the
-                               dedicated type — the customer's next action differs entirely. */
-                            messageType: allowanceShort && !balanceShort ? "ALLOWANCE_LOW" : "EXPIRY_WARNING",
-                            amountUsdc: chargeAmount,
-                            title: allowanceShort && !balanceShort
-                                ? "Subscription authorization has run out"
-                                : "Subscription renewal needs attention",
-                            description: [
-                                "SubScript could not renew your subscription.",
-                                ...shortfallLines,
-                            ].join("\n"),
-                            dedupeKey: `customer-renewal-shortfall:${subId}:${sequenceId}`,
-                        }).catch((e: any) => console.error("[customer-billing] warning DM failed:", e));
-                        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
-                            subscriptionId: subId,
-                            status: "past_due",
-                            amountUsdcMicros: chargeAmount,
-                            subscriber,
-                            merchantAddress,
-                            ...lifecycleBinding(sub),
-                            reason: shortfallReason,
-                            pricing: pricingBlock,
-                        }), `customer-payment-failed:${subId}:${newFailures}`);
+                            /* Only tell the merchant about a warning the customer actually received,
+                               so the event stream and the inbox agree. */
+                            if (warned.sent) {
+                                await recordMerchantEvent({
+                                    merchantAddress,
+                                    environment: "LIVE",
+                                    eventType: "subscription.allowance_low",
+                                    resourceType: "subscription",
+                                    resourceId: String(subId),
+                                    resourceVersion: sequenceId,
+                                    transitionKey: `allowance-low:${subId}:${sequenceId}`,
+                                    correlationId: `customer-billing:${subId}:${sequenceId}`,
+                                    data: {
+                                        subscription_id: String(subId),
+                                        status: "active",
+                                        amount_usdc_micros: amountOnChain.toString(),
+                                        currency: "USDC",
+                                        subscriber,
+                                        merchant_address: merchantAddress,
+                                        merchant_customer_id: null,
+                                        external_reference: sub.external_reference ?? null,
+                                        allowance_usdc_micros: remainingAllowance.toString(),
+                                        cycles_remaining: runway.cyclesRemaining,
+                                    },
+                                });
+                            }
+                        }
+                    } catch (runwayError: any) {
+                        console.error(
+                            `[customer-billing] allowance runway projection failed for sub ${subId}:`,
+                            runwayError?.message || runwayError,
+                        );
                     }
 
-                    if (newFailures >= maxRenewalFailures) {
-                        /* Zombie kill: repeated failed renewals mean the subscriber has effectively
-                           abandoned the plan. Rather than leaving a live authorization that could
-                           surprise-charge them later (the exact "zombie billing" SubScript exists to
-                           prevent), revoke it on-chain for server-held wallets, mark it stopped so
-                           the keeper stops attempting, and tell the user. External wallets can't be
-                           revoked for the user, but marking it stopped still ends all charge attempts. */
+                    if (!await completeBillingClaim(tx.hash)) throw new Error("Customer renewal claim completion failed");
+
+                    results.push({ subId, subscriber, action: "PAYMENT_EXECUTED", success: true, txHash: tx.hash });
+                } catch (err: any) {
+                    console.error(`[customer-billing] requestId: ${requestId}, sub ${subId} failed:`, err);
+                    results.push({ subId, action: "EXECUTION_FAILED", success: false, error: err?.message || "Unknown error" });
+                }
+            }
+
+            /* Deferred cancellations: subs the user cancelled "at period end" whose paid period has now
+               elapsed. Perform the on-chain cancel (server-signed from the subscriber's embedded wallet)
+               so access ends exactly when their paid days run out. */
+
+            /* Revocation retry: cancellations whose immediate on-chain revoke did not confirm.
+               These rows are chargeable on-chain regardless of local status (executePayment is
+               permissionless), so they are retried on EVERY run — independent of next_billing_date
+               and of status (ACTIVE, PAST_DUE or already CANCELED locally) — until the chain
+               reports inactive or an operator resolves them. */
+            const revocationClaimId = crypto.randomUUID();
+            const { data: pendingRevocations, error: pendingRevocationError } = await supabase.rpc(
+                "claim_pending_subscription_revocations",
+                {
+                    p_contract_address: billingContract,
+                    p_claim_id: revocationClaimId,
+                    p_limit: 100,
+                    p_lease_seconds: 180,
+                },
+            );
+            if (pendingRevocationError) {
+                console.error("[customer-billing] revocation-retry query failed:", pendingRevocationError.message);
+            } else {
+                for (const sub of pendingRevocations || []) {
+                    const subId = Number(sub.subscription_id);
+                    try {
+                        const onChain = await standardContract.subscriptions(subId);
+                        const subscriber: string = onChain[0];
+                        const isActiveOnChain: boolean = onChain[5];
                         let revocationTxHash: string | null = null;
-                        try {
+                        if (isActiveOnChain) {
                             await ensureSponsoredGas({
                                 wallet: subscriber.toLowerCase(),
                                 action: "billing_renewal",
-                                requestKey: `cancel-zombie:${subId}`,
+                                requestKey: `cancel-revocation-retry:${billingContract}:${subId}`,
                             }).catch(() => { /* best-effort */ });
-                            revocationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId));
-                        } catch (killErr: any) {
-                            console.warn(`[customer-billing] zombie on-chain revoke skipped for sub ${subId}:`, killErr?.message || killErr);
+                            /* Throws for external wallets — those rows stay pending and visible. */
+                            revocationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId), billingContract);
+                        }
+                        const { data: completed, error: completeError } = await supabase.rpc(
+                            "complete_subscription_revocation_claim",
+                            {
+                                p_contract_address: billingContract,
+                                p_subscription_id: subId,
+                                p_claim_id: revocationClaimId,
+                                p_tx_hash: revocationTxHash?.toLowerCase() || null,
+                            },
+                        );
+                        if (completeError || completed !== true) {
+                            throw new Error(`Failed to complete revocation claim: ${completeError?.message || "claim ownership changed"}`);
+                        }
+                        cancelResults.push({ subId, action: "REVOCATION_COMPLETED", success: true, txHash: revocationTxHash });
+                    } catch (err: any) {
+                        /* Release the lease with bounded exponential backoff. revocation_pending stays
+                           true, so later eligible rows cannot be starved by this failure. */
+                        const { error: failClaimError } = await supabase.rpc(
+                            "fail_subscription_revocation_claim",
+                            {
+                                p_contract_address: billingContract,
+                                p_subscription_id: subId,
+                                p_claim_id: revocationClaimId,
+                                p_error: String(err?.message || err).slice(0, 500),
+                            },
+                        );
+                        if (failClaimError) {
+                            console.error(`[ALERT] revocation claim release for sub ${subId} failed:`, failClaimError.message);
+                        }
+                        console.error(`[customer-billing] revocation retry for sub ${subId} failed:`, err?.message || err);
+                        cancelResults.push({ subId, action: "REVOCATION_RETRY_FAILED", success: false, error: err?.message || "Unknown error" });
+                    }
+                }
+            }
+
+            const { data: dueCancels, error: dueCancelError } = await supabase
+                .from("subscriptions")
+                .select("subscription_id, merchant_address, beneficiary_address, external_reference, source_checkout_id")
+                .eq("contract_address", billingContract)
+                .eq("kind", "CUSTOMER")
+                .in("status", ["ACTIVE", "PAST_DUE"])
+                .eq("cancel_at_period_end", true)
+                .lte("next_billing_date", new Date().toISOString());
+
+            if (dueCancelError) {
+                console.error("[customer-billing] due-cancel query failed:", dueCancelError.message);
+            } else {
+                for (const sub of dueCancels || []) {
+                    const subId = Number(sub.subscription_id);
+                    let cancellationTxHash: string | null = null;
+                    try {
+                        const onChain = await standardContract.subscriptions(subId);
+                        const subscriber: string = onChain[0];
+                        const amount: bigint = BigInt(onChain[2]);
+                        const isActiveOnChain: boolean = onChain[5];
+
+                        if (isActiveOnChain) {
+                            const { data: custodyWallet, error: custodyError } = await supabase
+                                .from("user_embedded_wallets")
+                                .select("circle_wallet_id, provider")
+                                .eq("wallet_address", subscriber.toLowerCase())
+                                .maybeSingle();
+
+                            if (custodyError) {
+                                throw new Error(`Failed to read cancellation custody: ${custodyError.message}`);
+                            }
+
+                            const hasEmbeddedCustody = Boolean(
+                                custodyWallet?.circle_wallet_id && custodyWallet?.provider !== "external_wallet"
+                            );
+
+                            if (hasEmbeddedCustody) {
+                                await ensureSponsoredGas({
+                                    wallet: subscriber.toLowerCase(),
+                                    action: "billing_renewal",
+                                    requestKey: `cancel-period-end:${subId}`,
+                                }).catch(() => { /* best-effort */ });
+                                cancellationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId), billingContract);
+                            }
                         }
 
-                        const revokedOnChain = Boolean(revocationTxHash);
-                        const { error: zombieStateError } = await supabase
+                        const stillPendingOnChain = isActiveOnChain && !cancellationTxHash;
+                        const { error: cancelStateError } = await supabase
                             .from("subscriptions")
-                            .update({
-                                status: revokedOnChain ? "CANCELED" : "PAST_DUE",
-                                downgrade_failures: newFailures,
-                                revocation_pending: !revokedOnChain,
-                                ...(revocationTxHash ? { revocation_tx_hash: revocationTxHash.toLowerCase() } : {}),
+                            .update(stillPendingOnChain ? {
+                                status: "CANCELED",
+                                revocation_pending: true,
+                                updated_at: new Date().toISOString(),
+                            } : {
+                                status: "CANCELED",
+                                revocation_pending: false,
+                                ...(cancellationTxHash ? { revocation_tx_hash: cancellationTxHash.toLowerCase() } : {}),
                                 updated_at: new Date().toISOString(),
                             })
-                            .eq("contract_address", activeSubscriptionContract())
+                            .eq("contract_address", billingContract)
                             .eq("subscription_id", subId);
-                        if (zombieStateError) {
-                            throw new Error(`Failed to persist zombie revocation state: ${zombieStateError.message}`);
+                        if (cancelStateError) {
+                            throw new Error(`Failed to persist period-end cancellation: ${cancelStateError.message}`);
                         }
 
-                        await createBillingDm({
-                            supabase,
-                            senderAddress: merchantAddress,
-                            receiverAddress: subscriber,
-                            messageType: "EXPIRY_WARNING",
-                            amountUsdc: amountOnChain,
-                            title: "Subscription stopped",
-                            description: [
-                                "We stopped this subscription after repeated failed renewals so it can never keep trying to charge you.",
-                                revokedOnChain
-                                    ? "Its on-chain authorization has been revoked."
-                                    : "Cancel it from your wallet to fully revoke the authorization.",
-                                "Re-subscribe anytime you're ready.",
-                            ].join("\n"),
-                        }).catch((e: any) => console.error("[customer-billing] zombie-kill DM failed:", e));
+                        await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
+                            subscriptionId: subId,
+                            status: "canceled",
+                            amountUsdcMicros: amount,
+                            subscriber,
+                            merchantAddress: sub.merchant_address,
+                            ...lifecycleBinding(sub),
+                            reason: "Canceled at period end",
+                        }), `customer-canceled:${billingContract}:${subId}:period-end`);
 
-                        if (revokedOnChain) {
-                            await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                        cancelResults.push({ subId, action: "CANCELED_AT_PERIOD_END", success: true });
+                    } catch (err: any) {
+                        /* Keep the subscription ACTIVE with cancel_at_period_end set so the next run
+                           retries. Reporting CANCELED while authorization remains active on-chain can
+                           hide a chargeable subscription from both the user and operations. */
+                        const { error: pendingStateError } = await supabase
+                            .from("subscriptions")
+                            .update({
+                                revocation_pending: true,
+                                updated_at: new Date().toISOString(),
+                            })
+                            .eq("contract_address", billingContract)
+                            .eq("subscription_id", subId);
+                        if (pendingStateError) {
+                            console.error(`[ALERT] failed to persist pending period-end revocation for sub ${subId}:`, pendingStateError.message);
+                        }
+                        console.error(`[customer-billing] period-end cancel for sub ${subId} failed:`, err?.message || err);
+                        cancelResults.push({ subId, action: "CANCEL_AT_PERIOD_END_FAILED", success: false, error: err?.message || "Unknown error" });
+                    }
+                }
+            }
+
+            /* PAST_DUE revisit. The zombie kill parks a row here when it could not revoke the
+               authorization itself, and nothing ever looked at it again: the row blocked the subscriber
+               from subscribing to that merchant forever, even after the authorization was gone. Each run
+               now settles it against the chain. Inactive means it is over, so close it and tell the
+               merchant. Still active means it is chargeable, so queue it for the revocation retry above
+               (which revokes server-held wallets and leaves connected-wallet ones visible as pending). */
+            const { data: pastDueSubs, error: pastDueError } = await supabase
+                .from("subscriptions")
+                .select("subscription_id, merchant_address, beneficiary_address, external_reference, source_checkout_id, revocation_pending")
+                .eq("contract_address", billingContract)
+                .eq("kind", "CUSTOMER")
+                .eq("status", "PAST_DUE")
+                .limit(200);
+            if (pastDueError) {
+                console.error("[customer-billing] past-due query failed:", pastDueError.message);
+            } else {
+                for (const sub of pastDueSubs || []) {
+                    const subId = Number(sub.subscription_id);
+                    try {
+                        const onChain = await standardContract.subscriptions(subId);
+                        const subscriber: string = onChain[0];
+                        const amount: bigint = BigInt(onChain[2]);
+                        const isActiveOnChain: boolean = onChain[5];
+                        if (isActiveOnChain) {
+                            if (!sub.revocation_pending) {
+                                const { error: queueError } = await supabase
+                                    .from("subscriptions")
+                                    .update({ revocation_pending: true, updated_at: new Date().toISOString() })
+                                    .eq("contract_address", billingContract)
+                                    .eq("subscription_id", subId)
+                                    .eq("status", "PAST_DUE");
+                                if (queueError) throw new Error(`Failed to queue past-due revocation: ${queueError.message}`);
+                            }
+                            cancelResults.push({ subId, action: "PAST_DUE_REVOCATION_QUEUED", success: true });
+                            continue;
+                        }
+                        const { data: closed, error: closeError } = await supabase
+                            .from("subscriptions")
+                            .update({ status: "CANCELED", revocation_pending: false, updated_at: new Date().toISOString() })
+                            .eq("contract_address", billingContract)
+                            .eq("subscription_id", subId)
+                            .eq("status", "PAST_DUE")
+                            .select("subscription_id")
+                            .maybeSingle();
+                        if (closeError) throw new Error(`Failed to close past-due subscription: ${closeError.message}`);
+                        if (closed) {
+                            await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                                 subscriptionId: subId,
                                 status: "canceled",
-                                amountUsdcMicros: amountOnChain,
+                                amountUsdcMicros: amount,
                                 subscriber,
-                                merchantAddress,
+                                merchantAddress: sub.merchant_address,
                                 ...lifecycleBinding(sub),
-                                reason: "Stopped after repeated failed renewals (zombie kill)",
-                            }), `customer-canceled:${subId}:zombie-kill`);
+                                reason: "Stopped after repeated failed renewals",
+                            }), `customer-canceled:${billingContract}:${subId}:past-due-closed`);
                         }
-                        results.push({ subId, subscriber, action: "ZOMBIE_KILLED", success: false, failuresCount: newFailures, revokedOnChain });
-                    } else {
-                        /* Keep ACTIVE and retry next run (cheap — only view calls until funded). */
-                        await supabase
-                            .from("subscriptions")
-                            .update({ downgrade_failures: newFailures, updated_at: new Date().toISOString() })
-                            .eq("contract_address", activeSubscriptionContract())
-                            .eq("subscription_id", subId);
-                        results.push({ subId, subscriber, action: "RETRY_SCHEDULED", success: false, failuresCount: newFailures });
+                        cancelResults.push({ subId, action: "PAST_DUE_CLOSED", success: true });
+                    } catch (err: any) {
+                        console.error(`[customer-billing] past-due revisit for sub ${subId} failed:`, err?.message || err);
+                        cancelResults.push({ subId, action: "PAST_DUE_REVISIT_FAILED", success: false, error: err?.message || "Unknown error" });
                     }
-                    await releaseBillingClaim();
-                    continue;
-                }
-
-                /* Charge. */
-                const tx = await standardContract.executePayment(subId, sequenceId);
-                const receipt = await tx.wait();
-                if (receipt.status !== 1) {
-                    throw new Error("Payment execution transaction reverted");
-                }
-                const { data: recorded, error: recordError } = await supabase.rpc("record_subscription_billing_chain_confirmation", {
-                    p_contract_address: activeSubscriptionContract(),
-                    p_subscription_id: subId,
-                    p_sequence_id: sequenceId,
-                    p_claim_id: requestedClaimId,
-                    p_tx_hash: tx.hash,
-                });
-                if (recordError || recorded !== true) {
-                    throw new Error(`Failed to persist customer chain confirmation: ${recordError?.message || "claim ownership changed"}`);
-                }
-
-                /* Stamp settlement; the trigger derives the next billing date. Reset failures. */
-                const { data: mirrored, error: mirrorError } = await supabase
-                    .from("subscriptions")
-                    .update({
-                        status: "ACTIVE",
-                        downgrade_failures: 0,
-                        last_settlement_timestamp: settlementTimestampIso,
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq("contract_address", activeSubscriptionContract())
-                    .eq("subscription_id", subId)
-                    .select("subscription_id")
-                    .maybeSingle();
-                if (mirrorError || !mirrored) throw new Error(`Customer renewal mirror failed: ${mirrorError?.message || "subscription missing"}`);
-
-                await mailRenewalReceipt({
-                    subId,
-                    sequenceId,
-                    subscriber,
-                    merchantAddress,
-                    chargeAmount,
-                    txHash: tx.hash,
-                });
-
-                await createBillingDm({
-                    supabase,
-                    senderAddress: merchantAddress,
-                    receiverAddress: subscriber,
-                    messageType: "DEBIT_SUCCESS",
-                    amountUsdc: chargeAmount,
-                    title: "Subscription renewed",
-                    description: [
-                        "Your subscription was renewed successfully.",
-                        `Amount: ${Number(chargeAmount) / 1_000_000} USDC`,
-                        ...(pricingBlock && pricingBlock.phase === "introductory"
-                            ? [pricingBlock.introductoryCyclesRemaining > 0
-                                ? `Introductory price — ${pricingBlock.introductoryCyclesRemaining} discounted cycle(s) remain before the regular price of ${Number(amountOnChain) / 1_000_000} USDC.`
-                                : `This was your last discounted cycle — your next renewal will be at the regular price of ${Number(amountOnChain) / 1_000_000} USDC. Cancel anytime before then from your dashboard.`]
-                            : []),
-                        `Subscription ID: ${subId}`,
-                    ].join("\n"),
-                    txHash: tx.hash,
-                    dedupeKey: `customer-renewal:${subId}:${sequenceId}`,
-                });
-
-                await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
-                    subscriptionId: subId,
-                    status: "active",
-                    amountUsdcMicros: chargeAmount,
-                    subscriber,
-                    merchantAddress,
-                    txHash: tx.hash,
-                    ...lifecycleBinding(sub),
-                    pricing: pricingBlock,
-                }), `customer-renewed:${subId}:${sequenceId}:${tx.hash.toLowerCase()}`);
-
-                /* Project the remaining authorization runway on the way out of a SUCCESSFUL
-                   renewal, and warn while the customer can still act.
-
-                   This is the point the allowance arithmetic existed for and was never wired to.
-                   The allowance is finite and consumed one cycle at a time; without this, the
-                   first signal a subscriber gets is the renewal that fails at roughly cycle 13,
-                   reported as a funding problem. Reading it here costs one eth_call on a path
-                   that has already spent a transaction, and the warning lands a cycle or two
-                   before the wall rather than after it.
-
-                   Deliberately after completeBillingClaim's inputs are settled but before it
-                   runs, so a failure in projection cannot strand the claim: everything below is
-                   wrapped and swallowed. */
-                try {
-                    /* Re-read post-charge: the allowance we validated above was pre-charge, and
-                       this renewal just consumed chargeAmount of it. Projecting from the stale
-                       figure would overstate the runway by exactly one cycle — the one cycle
-                       that matters at the boundary. */
-                    const remainingAllowance: bigint = BigInt(
-                        await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS),
-                    );
-                    /* Project against the REGULAR amount, not this cycle's charge. An
-                       introductory cycle charges less (sometimes zero), so using chargeAmount
-                       would report a long runway right up to the first full-price renewal. */
-                    const runway = projectRunway(remainingAllowance, amountOnChain);
-
-                    if (runway.isLow && runway.cyclesRemaining !== null) {
-                        const nextBillingIso = new Date(
-                            Number((nextPaymentOnChain + BigInt(sequenceId) * periodOnChain) * BigInt(1000)),
-                        );
-                        const warned = await sendAllowanceLowDm({
-                            merchantAddress,
-                            subscriberAddress: subscriber,
-                            subscriptionId: subId,
-                            amountUsdcMicros: amountOnChain,
-                            allowanceUsdcMicros: remainingAllowance,
-                            cyclesRemaining: runway.cyclesRemaining,
-                            nextBillingDate: nextBillingIso,
-                        });
-
-                        /* Only tell the merchant about a warning the customer actually received,
-                           so the event stream and the inbox agree. */
-                        if (warned.sent) {
-                            await recordMerchantEvent({
-                                merchantAddress,
-                                environment: "LIVE",
-                                eventType: "subscription.allowance_low",
-                                resourceType: "subscription",
-                                resourceId: String(subId),
-                                resourceVersion: sequenceId,
-                                transitionKey: `allowance-low:${subId}:${sequenceId}`,
-                                correlationId: `customer-billing:${subId}:${sequenceId}`,
-                                data: {
-                                    subscription_id: String(subId),
-                                    status: "active",
-                                    amount_usdc_micros: amountOnChain.toString(),
-                                    currency: "USDC",
-                                    subscriber,
-                                    merchant_address: merchantAddress,
-                                    merchant_customer_id: null,
-                                    external_reference: sub.external_reference ?? null,
-                                    allowance_usdc_micros: remainingAllowance.toString(),
-                                    cycles_remaining: runway.cyclesRemaining,
-                                },
-                            });
-                        }
-                    }
-                } catch (runwayError: any) {
-                    console.error(
-                        `[customer-billing] allowance runway projection failed for sub ${subId}:`,
-                        runwayError?.message || runwayError,
-                    );
-                }
-
-                if (!await completeBillingClaim(tx.hash)) throw new Error("Customer renewal claim completion failed");
-
-                results.push({ subId, subscriber, action: "PAYMENT_EXECUTED", success: true, txHash: tx.hash });
-            } catch (err: any) {
-                console.error(`[customer-billing] requestId: ${requestId}, sub ${subId} failed:`, err);
-                results.push({ subId, action: "EXECUTION_FAILED", success: false, error: err?.message || "Unknown error" });
-            }
-        }
-
-        /* Deferred cancellations: subs the user cancelled "at period end" whose paid period has now
-           elapsed. Perform the on-chain cancel (server-signed from the subscriber's embedded wallet)
-           so access ends exactly when their paid days run out. */
-        const cancelResults: any[] = [];
-
-        /* Revocation retry: cancellations whose immediate on-chain revoke did not confirm.
-           These rows are chargeable on-chain regardless of local status (executePayment is
-           permissionless), so they are retried on EVERY run — independent of next_billing_date
-           and of status (ACTIVE, PAST_DUE or already CANCELED locally) — until the chain
-           reports inactive or an operator resolves them. */
-        const revocationClaimId = crypto.randomUUID();
-        const { data: pendingRevocations, error: pendingRevocationError } = await supabase.rpc(
-            "claim_pending_subscription_revocations",
-            {
-                p_claim_id: revocationClaimId,
-                p_limit: 100,
-                p_lease_seconds: 180,
-            },
-        );
-        if (pendingRevocationError) {
-            console.error("[customer-billing] revocation-retry query failed:", pendingRevocationError.message);
-        } else {
-            for (const sub of pendingRevocations || []) {
-                const subId = Number(sub.subscription_id);
-                try {
-                    const onChain = await standardContract.subscriptions(subId);
-                    const subscriber: string = onChain[0];
-                    const isActiveOnChain: boolean = onChain[5];
-                    let revocationTxHash: string | null = null;
-                    if (isActiveOnChain) {
-                        await ensureSponsoredGas({
-                            wallet: subscriber.toLowerCase(),
-                            action: "billing_renewal",
-                            requestKey: `cancel-revocation-retry:${subId}`,
-                        }).catch(() => { /* best-effort */ });
-                        /* Throws for external wallets — those rows stay pending and visible. */
-                        revocationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId));
-                    }
-                    const { data: completed, error: completeError } = await supabase.rpc(
-                        "complete_subscription_revocation_claim",
-                        {
-                            p_subscription_id: subId,
-                            p_claim_id: revocationClaimId,
-                            p_tx_hash: revocationTxHash?.toLowerCase() || null,
-                        },
-                    );
-                    if (completeError || completed !== true) {
-                        throw new Error(`Failed to complete revocation claim: ${completeError?.message || "claim ownership changed"}`);
-                    }
-                    cancelResults.push({ subId, action: "REVOCATION_COMPLETED", success: true, txHash: revocationTxHash });
-                } catch (err: any) {
-                    /* Release the lease with bounded exponential backoff. revocation_pending stays
-                       true, so later eligible rows cannot be starved by this failure. */
-                    const { error: failClaimError } = await supabase.rpc(
-                        "fail_subscription_revocation_claim",
-                        {
-                            p_subscription_id: subId,
-                            p_claim_id: revocationClaimId,
-                            p_error: String(err?.message || err).slice(0, 500),
-                        },
-                    );
-                    if (failClaimError) {
-                        console.error(`[ALERT] revocation claim release for sub ${subId} failed:`, failClaimError.message);
-                    }
-                    console.error(`[customer-billing] revocation retry for sub ${subId} failed:`, err?.message || err);
-                    cancelResults.push({ subId, action: "REVOCATION_RETRY_FAILED", success: false, error: err?.message || "Unknown error" });
-                }
-            }
-        }
-
-        const { data: dueCancels, error: dueCancelError } = await supabase
-            .from("subscriptions")
-            .select("subscription_id, merchant_address, beneficiary_address, external_reference, source_checkout_id")
-            .eq("contract_address", activeSubscriptionContract())
-            .eq("kind", "CUSTOMER")
-            .in("status", ["ACTIVE", "PAST_DUE"])
-            .eq("cancel_at_period_end", true)
-            .lte("next_billing_date", new Date().toISOString());
-
-        if (dueCancelError) {
-            console.error("[customer-billing] due-cancel query failed:", dueCancelError.message);
-        } else {
-            for (const sub of dueCancels || []) {
-                const subId = Number(sub.subscription_id);
-                let cancellationTxHash: string | null = null;
-                try {
-                    const onChain = await standardContract.subscriptions(subId);
-                    const subscriber: string = onChain[0];
-                    const amount: bigint = BigInt(onChain[2]);
-                    const isActiveOnChain: boolean = onChain[5];
-
-                    if (isActiveOnChain) {
-                        const { data: custodyWallet, error: custodyError } = await supabase
-                            .from("user_embedded_wallets")
-                            .select("circle_wallet_id, provider")
-                            .eq("wallet_address", subscriber.toLowerCase())
-                            .maybeSingle();
-
-                        if (custodyError) {
-                            throw new Error(`Failed to read cancellation custody: ${custodyError.message}`);
-                        }
-
-                        const hasEmbeddedCustody = Boolean(
-                            custodyWallet?.circle_wallet_id && custodyWallet?.provider !== "external_wallet"
-                        );
-
-                        if (hasEmbeddedCustody) {
-                            await ensureSponsoredGas({
-                                wallet: subscriber.toLowerCase(),
-                                action: "billing_renewal",
-                                requestKey: `cancel-period-end:${subId}`,
-                            }).catch(() => { /* best-effort */ });
-                            cancellationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId));
-                        }
-                    }
-
-                    const stillPendingOnChain = isActiveOnChain && !cancellationTxHash;
-                    const { error: cancelStateError } = await supabase
-                        .from("subscriptions")
-                        .update(stillPendingOnChain ? {
-                            status: "CANCELED",
-                            revocation_pending: true,
-                            updated_at: new Date().toISOString(),
-                        } : {
-                            status: "CANCELED",
-                            revocation_pending: false,
-                            ...(cancellationTxHash ? { revocation_tx_hash: cancellationTxHash.toLowerCase() } : {}),
-                            updated_at: new Date().toISOString(),
-                        })
-                        .eq("contract_address", activeSubscriptionContract())
-                        .eq("subscription_id", subId);
-                    if (cancelStateError) {
-                        throw new Error(`Failed to persist period-end cancellation: ${cancelStateError.message}`);
-                    }
-
-                    await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
-                        subscriptionId: subId,
-                        status: "canceled",
-                        amountUsdcMicros: amount,
-                        subscriber,
-                        merchantAddress: sub.merchant_address,
-                        ...lifecycleBinding(sub),
-                        reason: "Canceled at period end",
-                    }), `customer-canceled:${subId}:period-end`);
-
-                    cancelResults.push({ subId, action: "CANCELED_AT_PERIOD_END", success: true });
-                } catch (err: any) {
-                    /* Keep the subscription ACTIVE with cancel_at_period_end set so the next run
-                       retries. Reporting CANCELED while authorization remains active on-chain can
-                       hide a chargeable subscription from both the user and operations. */
-                    const { error: pendingStateError } = await supabase
-                        .from("subscriptions")
-                        .update({
-                            revocation_pending: true,
-                            updated_at: new Date().toISOString(),
-                        })
-                        .eq("contract_address", activeSubscriptionContract())
-                        .eq("subscription_id", subId);
-                    if (pendingStateError) {
-                        console.error(`[ALERT] failed to persist pending period-end revocation for sub ${subId}:`, pendingStateError.message);
-                    }
-                    console.error(`[customer-billing] period-end cancel for sub ${subId} failed:`, err?.message || err);
-                    cancelResults.push({ subId, action: "CANCEL_AT_PERIOD_END_FAILED", success: false, error: err?.message || "Unknown error" });
                 }
             }
         }

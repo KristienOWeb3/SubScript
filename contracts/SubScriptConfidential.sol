@@ -80,11 +80,10 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
 
     constructor(
         address _paymentToken,
-        address _stableFXRouter,
         address _treasury,
         address _initialOwner
     )
-        SubScriptPSA(_paymentToken, _stableFXRouter, _treasury)
+        SubScriptPSA(_paymentToken, _treasury)
         Ownable(_initialOwner)
     {}
 

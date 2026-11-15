@@ -20,21 +20,20 @@
  */
 import { ethers } from "ethers";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
-import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
-import { activeSubscriptionContract } from "@/lib/subscriptions/contractBinding";
+import { billableSubscriptionContracts } from "@/lib/subscriptions/contractBinding";
 import { preservesScheduledEntitlement } from "./entitlement";
 
-/* Every query below is scoped with `.eq("contract_address", activeSubscriptionContract())`.
+/* Every query below is scoped with `.eq("contract_address", billingContract)`, one pass per billable contract.
  *
  * `subscriptions` is keyed (contract_address, subscription_id) because the PSA is immutable: each
  * redeploy restarts nextSubscriptionId at 1 and re-mints ids that already exist. So an id is only
  * meaningful against the contract that minted it, and this file compares every row it reads to
- * on-chain state read from STANDARD_CONTRACT_ADDRESS — the ACTIVE deployment.
+ * on-chain state read from that same contract.
  *
  * Unscoped, a row from an abandoned deployment gets its id looked up on the active contract, which
  * answers about a different subscription (or none). The zero-subscriber guard below catches the
@@ -60,9 +59,29 @@ type DriftResult = {
     detail?: string;
 };
 
+/* Heals every billable contract: the active PSA and any legacy PSA still holding live
+   subscriptions after a redeploy. The active contract keeps most of the read budget; each
+   legacy contract gets an equal share of a quarter of it, so the old book is still swept. */
 export async function healSubscriptionDrift(
     supabase: any,
     limit = 60,
+): Promise<{ checked: number; healed: DriftResult[]; errors: number }> {
+    const [active, ...legacy] = billableSubscriptionContracts();
+    const legacyBudget = legacy.length ? Math.max(4, Math.floor(limit / 4 / legacy.length)) : 0;
+    const total = { checked: 0, healed: [] as DriftResult[], errors: 0 };
+    for (const [contract, budget] of [[active, limit - legacyBudget * legacy.length], ...legacy.map((c) => [c, legacyBudget])] as Array<[string, number]>) {
+        const result = await healSubscriptionDriftOn(supabase, Math.max(1, budget), contract);
+        total.checked += result.checked;
+        total.healed.push(...result.healed);
+        total.errors += result.errors;
+    }
+    return total;
+}
+
+async function healSubscriptionDriftOn(
+    supabase: any,
+    limit: number,
+    billingContract: string,
 ): Promise<{ checked: number; healed: DriftResult[]; errors: number }> {
     const healed: DriftResult[] = [];
     let checked = 0;
@@ -77,7 +96,7 @@ export async function healSubscriptionDrift(
     const { data: liveSubs, error: liveErr } = await supabase
         .from("subscriptions")
         .select("subscription_id, merchant_address, status, cancel_at_period_end, next_billing_date, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, last_settlement_timestamp, updated_at")
-        .eq("contract_address", activeSubscriptionContract())
+        .eq("contract_address", billingContract)
         .in("status", ["ACTIVE", "PAST_DUE"])
         .order("updated_at", { ascending: true })
         .limit(liveBudget);
@@ -87,7 +106,7 @@ export async function healSubscriptionDrift(
     const { data: cancelledSubs, error: cancErr } = await supabase
         .from("subscriptions")
         .select("subscription_id, merchant_address, status, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, updated_at")
-        .eq("contract_address", activeSubscriptionContract())
+        .eq("contract_address", billingContract)
         .eq("status", "CANCELED")
         .gte("updated_at", fourteenDaysAgo)
         .order("updated_at", { ascending: true })
@@ -100,7 +119,7 @@ export async function healSubscriptionDrift(
         checked++;
         try {
             const { result: onChain } = await executeWithRpcFallback(async (provider) => {
-                const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, provider);
+                const contract = new ethers.Contract(billingContract, STANDARD_ABI, provider);
                 return await contract.subscriptions(subId);
             });
             const subscriber: string = String(onChain[0]).toLowerCase();
@@ -116,7 +135,7 @@ export async function healSubscriptionDrift(
                 if (preservesScheduledEntitlement(sub)) {
                     await supabase.from("subscriptions")
                         .update({ updated_at: new Date().toISOString() })
-                        .eq("contract_address", activeSubscriptionContract())
+                        .eq("contract_address", billingContract)
                         .eq("subscription_id", subId);
                     continue;
                 }
@@ -124,7 +143,7 @@ export async function healSubscriptionDrift(
                 await supabase
                     .from("subscriptions")
                     .update({ status: "CANCELED", updated_at: new Date().toISOString() })
-                    .eq("contract_address", activeSubscriptionContract())
+                    .eq("contract_address", billingContract)
                     .eq("subscription_id", subId);
                 await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                     subscriptionId: subId,
@@ -149,7 +168,7 @@ export async function healSubscriptionDrift(
                         action: "drift_heal",
                         requestKey: `drift-revoke:${subId}`,
                     }).catch(() => { /* best-effort */ });
-                    const txHash = await cancelFromEmbedded(subscriber, BigInt(subId));
+                    const txHash = await cancelFromEmbedded(subscriber, BigInt(subId), billingContract);
                     healed.push({ subId, action: "REVOKED_STALE_AUTHORIZATION", detail: txHash });
                 } catch (revokeErr: any) {
                     const { data: walletRow } = await supabase
@@ -183,7 +202,7 @@ export async function healSubscriptionDrift(
                 await supabase
                     .from("subscriptions")
                     .update({ updated_at: new Date().toISOString() })
-                    .eq("contract_address", activeSubscriptionContract())
+                    .eq("contract_address", billingContract)
                     .eq("subscription_id", subId);
                 continue;
             }
@@ -199,7 +218,7 @@ export async function healSubscriptionDrift(
                     const lastSettlement = sub.last_settlement_timestamp ? new Date(sub.last_settlement_timestamp) : null;
                     const dbThinksUnpaid = !lastSettlement || lastSettlement < dueTime;
                     const { result: isExecuted } = await executeWithRpcFallback(async (provider) => {
-                        const contractInstance = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, provider);
+                        const contractInstance = new ethers.Contract(billingContract, STANDARD_ABI, provider);
                         return await contractInstance.isSequenceExecuted(subId, latestDueSeq);
                     });
                     if (dbThinksUnpaid && isExecuted) {
@@ -211,7 +230,7 @@ export async function healSubscriptionDrift(
                                 last_settlement_timestamp: dueTime.toISOString(),
                                 updated_at: new Date().toISOString(),
                             })
-                            .eq("contract_address", activeSubscriptionContract())
+                            .eq("contract_address", billingContract)
                             .eq("subscription_id", subId);
                         healed.push({ subId, action: "HEALED_SETTLEMENT_TIMESTAMP", detail: dueTime.toISOString() });
                         continue;
@@ -222,7 +241,7 @@ export async function healSubscriptionDrift(
                 await supabase
                     .from("subscriptions")
                     .update({ updated_at: new Date().toISOString() })
-                    .eq("contract_address", activeSubscriptionContract())
+                    .eq("contract_address", billingContract)
                     .eq("subscription_id", subId);
             }
         } catch (err: any) {

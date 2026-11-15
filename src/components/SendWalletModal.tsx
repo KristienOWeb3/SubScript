@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Wallet, Send, Loader2, ShieldCheck, CheckCircle2, QrCode } from "@/components/icons";
+import { X, Wallet, Send, Loader2, CheckCircle2, QrCode } from "@/components/icons";
 import { ethers } from "ethers";
 import QrScannerModal from "@/components/QrScannerModal";
 import { parseScannedAddress } from "@/lib/qr/scanTargets";
@@ -68,13 +68,36 @@ export default function SendWalletModal({
         return cleaned;
     };
 
+    /* Outbound sends are user-paid under the gas-payer policy (`transferUsdc` / `wallet_send` →
+       USER_PAID_PEER_TRANSACTION in @/lib/sponsor/policy): the server recovers the Arc network fee
+       from the sender and rejects a send whose amount + fee exceeds the balance. Fetch the same
+       estimate the server charges with so the form, MAX and the server all agree. */
+    const [networkFeeUsdc, setNetworkFeeUsdc] = useState<number | null>(null);
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+        fetch("/api/user/wallet/estimate-fee?recipients=1", { credentials: "include" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+                const fee = Number(d?.feeUsdc);
+                if (!cancelled && Number.isFinite(fee) && fee > 0) setNetworkFeeUsdc(fee);
+            })
+            .catch(() => { /* fall back to the cap below; the server still charges the real fee */ });
+        return () => { cancelled = true; };
+    }, [isOpen]);
+    /* Until the estimate lands, reserve the estimator's 0.05 USDC cap so MAX never overshoots. */
+    const feeReserve = networkFeeUsdc ?? 0.05;
+    /* Round down to whole cents: a little headroom if gas ticks up between MAX and confirm. */
+    const maxSendable = Math.max(0, Math.floor((walletBalance - feeReserve) * 100) / 100);
+
     const numAmount = parseFloat(amount) || 0;
     const isValidAddress = Boolean(recipientAddress && recipientAddress.startsWith("0x") && recipientAddress.length === 42 && ethers.isAddress(recipientAddress));
-    const isValidAmount = numAmount > 0 && numAmount <= walletBalance;
+    const exceedsWithFee = numAmount > 0 && numAmount + feeReserve > walletBalance + 1e-9;
+    const isValidAmount = numAmount > 0 && !exceedsWithFee;
     const canSubmit = isValidAddress && isValidAmount && !isSending;
 
     const handleMaxClick = () => {
-        setAmount(walletBalance.toString());
+        setAmount(maxSendable > 0 ? maxSendable.toFixed(2) : "0");
         setErrorMsg(null);
     };
 
@@ -92,8 +115,8 @@ export default function SendWalletModal({
             return;
         }
 
-        if (numAmount > walletBalance) {
-            setErrorMsg("Amount exceeds your available USDC balance.");
+        if (exceedsWithFee) {
+            setErrorMsg(`That's more than you can send once the network fee is taken. You can send up to ${maxSendable.toFixed(2)} USDC.`);
             return;
         }
 
@@ -139,11 +162,13 @@ export default function SendWalletModal({
                     {/* Header */}
                     <div className="flex items-center justify-between pb-4 border-b border-black/10">
                         <div className="flex items-center gap-2.5">
-                            <div className="p-2 rounded-xl bg-[#082824] text-white">
-                                <Send className="w-4 h-4" />
+                            {/* Inline colours on purpose: the merchant dialog scope repaints `text-white`
+                                to black, which left a dark icon on this dark tile. */}
+                            <div className="p-2 rounded-xl" style={{ backgroundColor: "#082824" }}>
+                                <Send className="w-4 h-4" style={{ color: "#00d2b4" }} aria-hidden="true" />
                             </div>
                             <div>
-                                <h3 id="send-usdc-title" className="text-base font-bold text-[#082824]">Send Out USDC</h3>
+                                <h3 id="send-usdc-title" className="text-base font-bold text-[#082824]">Send out USDC</h3>
                                 <p className="text-xs text-black/50">Transfer funds from your connected wallet</p>
                             </div>
                         </div>
@@ -269,11 +294,29 @@ export default function SendWalletModal({
                                 </div>
                             </div>
 
-                            {/* Gas Sponsorship Info */}
-                            <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-800 dark:text-emerald-300">
-                                <ShieldCheck className="w-4 h-4 shrink-0" />
-                                <span>Network gas fees are sponsored by SubScript on Arc.</span>
+                            {/* Network fee (user-paid; see gas-payer policy) */}
+                            <div className="p-3 rounded-xl bg-black/[0.03] border border-black/10 text-[11px] text-black/70 space-y-1">
+                                <div className="flex items-center justify-between">
+                                    <span>Arc network fee</span>
+                                    <span className="font-mono font-semibold text-[#082824]">
+                                        {networkFeeUsdc !== null ? `~${networkFeeUsdc} USDC` : "Checking…"}
+                                    </span>
+                                </div>
+                                {numAmount > 0 && (
+                                    <div className="flex items-center justify-between">
+                                        <span>Total from your balance</span>
+                                        <span className="font-mono font-semibold text-[#082824]">
+                                            ~{(numAmount + feeReserve).toFixed(networkFeeUsdc !== null ? 5 : 2)} USDC
+                                        </span>
+                                    </div>
+                                )}
+                                <p className="text-black/50">The fee comes out of your balance. The recipient gets the full amount.</p>
                             </div>
+                            {exceedsWithFee && !errorMsg && (
+                                <p className="text-[11px] font-medium text-red-600">
+                                    Not enough to cover the fee too. You can send up to {maxSendable.toFixed(2)} USDC.
+                                </p>
+                            )}
 
                             {/* Error Message */}
                             {errorMsg && (

@@ -38,14 +38,20 @@ test("the reservation reports the attempt's ACTUAL state instead of mapping ever
        moved with no receipt, ledger row, or merchant webhook. */
     const fn = liveDefinition("reserve_payment_link_checkout_attempt");
     assert.ok(fn, "some migration defines the reservation");
-    assert.equal(fn.file, "20260717000000_checkout_attempt_state_machine.sql");
+    assert.equal(fn.file, "20261114170000_late_bind_released_checkout_attempts.sql");
 
     assert.doesNotMatch(
         fn.body,
         /CASE WHEN v_attempt\.status = 'SETTLED' THEN 'SETTLED' ELSE 'RESERVED' END/,
         "the state-collapsing CASE must not return",
     );
-    assert.match(fn.body, /IF v_attempt\.status IN \('RELEASED', 'FAILED_TERMINAL'\) THEN\s*\n\s*RETURN jsonb_build_object\('outcome', 'RELEASED'\);/);
+    /* FAILED_TERMINAL is refused first. RELEASED is refused only after the bound-hash check, so a
+       late-bound attempt resumes its payment instead of telling the browser to pay again. */
+    assert.match(fn.body, /IF v_attempt\.status = 'FAILED_TERMINAL' THEN\s*\n\s*RETURN jsonb_build_object\('outcome', 'RELEASED'\);/);
+    const boundCheck = fn.body.indexOf("IF v_attempt.status = 'SUBMITTED' OR v_attempt.tx_hash IS NOT NULL THEN");
+    const releasedCheck = fn.body.indexOf("IF v_attempt.status = 'RELEASED' THEN");
+    assert.ok(boundCheck !== -1 && releasedCheck !== -1 && boundCheck < releasedCheck,
+        "a bound hash is reported as SUBMITTED before RELEASED is considered");
     assert.match(fn.body, /'outcome', 'SUBMITTED'/);
     assert.match(fn.body, /'outcome', 'SETTLED'/);
 
@@ -103,8 +109,10 @@ test("FAILED_TERMINAL exists and capacity is released exactly once", () => {
 
 test("the durable settlement claim refuses both terminal states and conflicting hashes", () => {
     const claim = liveDefinition("claim_payment_link_settlement_durable");
-    assert.equal(claim.file, "20260717000000_checkout_attempt_state_machine.sql");
-    assert.match(claim.body, /IF v_attempt\.status IN \('RELEASED', 'FAILED_TERMINAL'\) THEN/);
+    assert.equal(claim.file, "20261114170000_late_bind_released_checkout_attempts.sql");
+    /* FAILED_TERMINAL is a proven failure and stays refused. RELEASED is no longer refused: a hold
+       reaped while its payment was in flight late-binds (see checkout-late-binding.test.mjs). */
+    assert.match(claim.body, /IF v_attempt\.status = 'FAILED_TERMINAL' THEN\s*\n\s*RETURN jsonb_build_object\('outcome', 'LINK_UNAVAILABLE'\);/);
     /* Once an attempt is bound to a hash, a different hash is rejected... */
     assert.match(claim.body, /v_attempt\.tx_hash IS NOT NULL AND lower\(v_attempt\.tx_hash\) IS DISTINCT FROM lower\(p_tx_hash\)/);
     /* ...and the same hash returns the existing result idempotently. */
@@ -130,8 +138,8 @@ test("the attempt route surfaces terminal and submitted states with distinct cod
     assert.match(postBody, /const payer = await authenticatedPayer\(request\);/);
     /* Read-only resume endpoint: SUBMITTED/SETTLED expose the hash, terminal states expose nothing. */
     assert.match(attemptRoute, /export async function GET/);
-    assert.match(attemptRoute, /data\.status === "SUBMITTED" \|\| data\.status === "SETTLED" \? data\.tx_hash : null/);
-    assert.match(attemptRoute, /data\.status === "RELEASED" \|\| data\.status === "FAILED_TERMINAL"/);
+    assert.match(attemptRoute, /data\.status === "SUBMITTED" \|\| data\.status === "SETTLED" \|\| lateBound \? data\.tx_hash : null/);
+    assert.match(attemptRoute, /\(data\.status === "RELEASED" && !lateBound\) \|\| data\.status === "FAILED_TERMINAL"/);
 });
 
 test("the embedded pay route never signs a second custody transfer for a bound attempt", () => {

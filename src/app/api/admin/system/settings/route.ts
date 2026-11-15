@@ -33,6 +33,7 @@ const AUDIT_ACTION_BY_FIELD: Record<keyof SystemSettingsPatch, AdminAction> = {
     checkoutEnabled: "PAYMENTS_KILL_SWITCH_SET",
     reconciliationEnabled: "PLATFORM_FLAGS_SET",
     sponsorEmergencyStop: "EMERGENCY_STOP_SET",
+    usageVaultsEnabled: "USAGE_VAULTS_KILL_SWITCH_SET",
 };
 
 const EDITABLE_FIELDS = Object.keys(AUDIT_ACTION_BY_FIELD) as Array<keyof SystemSettingsPatch>;
@@ -57,6 +58,8 @@ export async function GET(request: Request) {
                 reconciliationEnabled: "Pauses the payment reconciliation worker.",
                 sponsorEmergencyStop:
                     "Stops sponsored gas platform-wide. SPONSOR_EMERGENCY_STOP in the environment also forces this on.",
+                usageVaultsEnabled:
+                    "Off: the keeper draws no usage from any vault, merchants can't report usage, and users can't open or top up vaults. Withdraw, cancel and reclaim keep working.",
             },
         });
     } catch (error) {

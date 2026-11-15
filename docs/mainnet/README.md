@@ -207,6 +207,45 @@ This section details every manual action you as an operator must perform yoursel
 
 ---
 
+### 3.1 PSA v3 cutover runbook (subscription contract redeploy)
+
+Run this on testnet first, then on mainnet with the **same bytecode**. The PSA can't be upgraded in place, so a redeploy creates a new contract, and existing subscriptions have to be moved onto it. Code support is in `src/lib/subscriptions/contractBinding.ts` (legacy allowlist), `src/lib/subscriptions/contractMigration.ts` (migration job) and `POST /api/internal/subscription-migration`.
+
+**Before you start**
+- [ ] PR with PSA v3 and the payments hardening is merged and deployed. Its migrations apply on build.
+- [ ] Contract owner is the Safe multisig, not `0x59e6…`. On mainnet, set each role explicitly (see the open blocker in §2).
+- [ ] Gas sponsor wallet funded for about 3 transactions per custodial subscriber to migrate, plus normal traffic.
+
+**1. Deploy v3 (operator, owner key)**
+- [ ] `npx hardhat run scripts/deploy-standard.js --network <arcTestnet|arcMainnet>` (USDC-only constructor: `paymentToken, treasury`).
+- [ ] Verify on the explorer, and confirm that `supportsDeferredSubscriptions()` and `supportsReplaceSubscriptions()` both return `true`.
+
+**2. Point the app at it (one release)**
+- [ ] Vercel: set `NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS=<new>`, and set `LEGACY_SUBSCRIPTION_CONTRACTS=<old>` (add to it, never replace, if older generations are still live).
+- [ ] In the **same** release, add a migration that moves the column DEFAULT (`activate_premium_merchant` inserts without naming the column):
+  ```sql
+  ALTER TABLE public.subscriptions ALTER COLUMN contract_address SET DEFAULT '<new address, lowercase>';
+  ```
+- [ ] Mainnet only: per-environment chain defaults (`payment_links.settlement_chain_id`, `api_keys.settlement_chain_id`, `chain_id` in init) → `5042`.
+- [ ] Deploy. Run `tsx --test src/lib/subscriptions/__tests__/keeper-contract-scoping.test.mjs`.
+- [ ] Trigger `cron/customer-billing` once and confirm the response covers both contracts. Old subscriptions must still renew.
+
+**3. Migrate subscriptions (operator)**
+- [ ] Dry run:
+  ```bash
+  curl -X POST $BASE/api/internal/subscription-migration -H "Authorization: Bearer $KEEPER_SECRET" -d '{"dryRun":true,"limit":200}'
+  ```
+  Review `WOULD_MIGRATE` and each `SKIPPED` reason.
+- [ ] Real run in batches with `"dryRun":false`. Each subscription gets its replacement created on v3 (nothing charged, first charge at the old paid-through date), then the old one is cancelled. If that cancel fails, the replacement is rolled back.
+- [ ] Any `FAILED` row has a reconciliation event. Check the admin reconciliation queue before the next batch.
+- [ ] Re-run daily. `IN_PROMOTION` and `RENEWS_TOO_SOON` rows become eligible later.
+- [ ] `EXTERNAL_WALLET` rows can't be signed for. They keep billing on the legacy contract, and the subscriber moves by cancelling and then resuming, which mints on v3.
+
+**4. Retire the old contract**
+- [ ] When the job reports nothing left and no ACTIVE rows remain on it, remove it from `LEGACY_SUBSCRIPTION_CONTRACTS`.
+
+**Rollback:** before step 3, revert `NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS` and the DEFAULT migration. After step 3, don't roll back the address. Migrated subscriptions live on v3, so keep both contracts billable instead.
+
 ## 4. 12-Domain Security, Invariants & Compliance Audit Checklist
 
 ### Domain 1: Smart Contracts & Formal Invariants
@@ -461,6 +500,35 @@ node scripts/verify-mainnet-readiness.mjs --json
 > 3. Keep updates concise, factual, and strictly focused on actionable operational facts.
 
 ### 9.2 Live Progress Log
+
+PSA v3 cutover tooling (2026-11-15, branch `kristien/psa-v3-migration`):
+- The keeper (`cron/customer-billing`) now runs one pass per billable contract. So does the drift healer. Every read, write, charge and cancel in a pass is scoped to that pass's `billingContract`.
+- `LEGACY_SUBSCRIPTION_CONTRACTS` sets the billable contracts, so old subscriptions keep renewing after the address switch.
+- Cancel and resume resolve the caller's own row contract (`rowContract.ts`). Resume of a legacy row mints on v3.
+- New `POST /api/internal/subscription-migration` runs `contractMigration.ts`. Dry run is the default. It creates on v3 with a deferred first charge, cancels the old one, and rolls back on failure.
+- It skips external wallets, promos, renewals within 1h, and cancelled subscriptions.
+- The runbook is §3.1. Tests: `contract-migration.test.mjs`.
+
+Plan changes on PSA v3 (2026-11-14, branch `kristien/one-time-pay-hardening`). These need the v3 contract deployed. Until then the routes return 503 `CONTRACT_UPGRADE_REQUIRED` before signing anything.
+- Upgrades now go through a single atomic `replaceSubscription` (`replaceFromEmbedded` / `verifyExternalReplaceTx` in `src/lib/subscriptions/onchain.ts`). The old cancel-then-create path is gone. On a provider error, the old sub's on-chain `isActive` decides: still active means retryable (the attempt is marked FAILED and can be reclaimed), otherwise the route recovers.
+- New `/api/user/subscription/downgrade` (GET preview, POST). It does a replace with `chargeNow=0, firstPaymentAt=paidThrough` for cheaper plans or interval switches at an equal or lower rate.
+- `/api/user/subscription/change` returns 410.
+- Upgrade credit is now priced on value actually paid: `chargeAmountFor(current sequence)` plus carried credit for sequence 0 (`creditBasisFor` / `creditBasisForRow`). Before this, list-price credit let trial and intro subscribers drain merchants.
+- Migration `20261114190000_subscription_carried_credit.sql` adds `subscriptions.carried_credit_usdc_micros` and `carried_credit_since`. They're written by upgrade, downgrade and resume.
+- The checkout page offers "switch at next renewal" for custodial users. External-wallet plan changes are supported server-side (`requiresWalletSignature` with exact args), but the page has no wallet-signing UI yet. It refuses external wallets today, subscribe included.
+Tests: `plan-change-credit.test.mjs`. 889/889 across the app suites, and `tsc` is clean.
+
+One-time checkout hardening (2026-11-14, branch `kristien/one-time-pay-hardening`). Before this, a payment could move on-chain while settlement refused it, leaving it unrecorded. The trigger was a hold reaped (`reserve_payment_link_checkout_attempt`, 600s) before `/verify` landed: expired session, the 10/min IP limit, a closed tab, a wallet that threw after broadcasting, or a Circle timeout. The fixes:
+- Migration `20261114170000_late_bind_released_checkout_attempts.sql`. `claim_payment_link_settlement_durable` now late-binds a RELEASED attempt with no hash. It retakes capacity even past `max_uses`, then sets new columns `over_capacity` and `late_bound_at`. FAILED_TERMINAL stays refused. The reservation resumes any attempt with a bound hash before reporting RELEASED. It also adds table `chain_scan_cursors`.
+- `cron/reconcile` runs `sweepOrphanedCheckoutPayments` (`src/lib/payments/orphanedCheckoutSweeper.ts`) before the job drain. It walks Router `DepositWithMemo` logs in 9k-block chunks from the cursor (head minus 3) and claims deposits whose memo matches an unbound merchant attempt. Peer requests aren't covered, because they have no memo.
+- Custodial pay: a 30-minute `embedded-pay-outcome-pending:<link>:<payer>` marker after an ambiguous custody failure blocks a second charge under a fresh attempt. Holds are released on refusals that happen before anything is signed.
+- Merchants now get one `payment.succeeded` (`evt_payment_<id>` from finalize). The worker's canonical copy is still recorded but not fanned out (`recordMerchantEvent({ fanOut: false })`).
+- Pay page: no release after an ambiguous wallet send, share links drop `?attempt=`, the stream ends with a `pending` event, and post-payment copy never invites a second payment.
+**Deploy order:** apply the migration before the app deploy, because the app treats `lateBound` and `ATTEMPT_FOREIGN` as optional. Tests: `src/lib/ops/__tests__/checkout-late-binding.test.mjs`. 711/711 across the ops, payments, paymentLinks, subscriptions, email and lib suites, and `tsc` is clean. Not yet exercised against a live chain.
+
+SubScriptPSA v3 contract work done, not deployed (2026-11-14): `contracts/SubScriptPSA.sol` is now USDC-only. The constructor is `(paymentToken, treasury)`, with no `stableFXRouter`, no `IStableFX` import and no 5/6-arg FX `createSubscription` overloads. Every create path reverts `UnsupportedToken` unless both tokens equal `paymentToken`. `maxPaymentAmount` is kept and always equals `amount`. New `replaceSubscription(oldId, newAmount, newPeriod, chargeNow, firstPaymentAt, introCycles)` (subscriber-only, old sub must be active) cancels and creates in one tx. It emits `SubscriptionCancelled` and then `SubscriptionReplaced(oldId, newId, chargeNow, firstPaymentAt)`, and the new sub keeps the old merchant and token. Upgrade: `chargeNow > 0` and `firstPaymentAt == 0`. `introCycles` is 0 when `chargeNow == newAmount`, otherwise 1..36 cycles billed at `chargeNow`. Deferred: `chargeNow == 0` and `introCycles == 0`. `firstPaymentAt` must be after `block.timestamp` and no later than the old sub's `paidThrough`. For the upgrade path the event's `firstPaymentAt` is the new `nextPayment`. Capability flag: `supportsReplaceSubscriptions()`. `SubScriptConfidential` constructor is now `(paymentToken, treasury, initialOwner)`. `deploy-standard*.js`, `deploy-mainnet.js` and `deploy-confidential.js` were updated and assert both capability flags after deploy. Verification: 107/107 Hardhat (new `test/SubScriptReplace.test.js`), plus the Foundry invariant `SubScriptPSAReplaceInvariants` (never two active subs per subscriber+merchant via replace). Lines 214 and 552 (FX wording, mainnet deploy checkbox) stay as they are until the v3 redeploy (Phase 5).
+
+Subscription lifecycle dead ends closed (2026-11-14, payments hardening phase 3, uncommitted to main until merged): subscribing again inside a paid, canceled period answers `RESUME_INSTEAD` with a Resume button on `/subscribe/[planId]`; subscribe failures are classified (definitive revert = `FAILED_TERMINAL`, user-fixable = `FAILED_RETRYABLE` with a nonce-suffixed idempotency key, in-flight = `SUBMISSION_UNKNOWN`); `PAST_DUE` rows are closed when the chain shows them inactive (subscribe route and a new keeper pass); the DB duplicate guard is scoped to the active contract and `findActiveOnChainSubscriptionId` now fails closed on RPC errors and at the 1,000-id scan cap; resume takes the revocation row lease before clearing flags and records `SUBSCRIPTION_RESUME_MIRROR` reconciliation on a failed mirror write; recovery paths no longer store a resume bridge's $0/1-cycle terms as a promotion; the keeper auto-extends custodial allowances under 2 cycles and connected wallets get a dashboard **Renew authorization** action. **Ops:** `customer-billing` moved from the daily Vercel cron to hourly GitHub Actions (`7 * * * *`); `vercel.json` now holds only `vault-draw`. **DB:** migration `20261114163712_contract_scoped_revocation_claims.sql` drops and recreates the three revocation RPCs with `p_contract_address` (old unscoped signatures removed, so the keeper and migration must ship together) and adds `FAILED_RETRYABLE` to `subscription_attempts.status`. **Blocker unchanged:** resume of an already-revoked authorization still returns 503 until the PSA with `createSubscriptionWithDeferredFirstPayment` is deployed.
 
 Stale testnet claims removed and guarded (2026-11-11): `/llms.txt`, `/llms-full.txt`, the policy mirrors under `public/mirrors/` (terms, refunds, support, home, fulfillment), the agent skill `SKILL.md`, the README, the support FAQ and the KYC panel/API still said SubScript was a testnet beta with valueless USDC. The fulfillment mirror also gave the wrong mainnet chain id (`5042001`; the real one is `5042`). All now say Arc Mainnet, chain id 5042, and keep the `sk_test_` sandbox wording. Real bugs found along the way: (1) `arcReconciliation()` defaulted to the testnet chain, so live `/api/intent` responses reported `chainId: 5042002`; it now defaults to the active chain and the intent route passes `settlementChainId`. (2) `SendSingleModal` built explorer links from `NEXT_PUBLIC_ARC_NETWORK`, which is never set, so mainnet sends linked to the testnet explorer; it now uses `explorerTxUrl()` from the network registry, as does `/dashboard/user/transactions` (which pointed at the dead `arcscan.app`). (3) `/pay/[id]` showed the "Arc Testnet Payment" banner when a link had no `settlement_chain_id`; the fallback is now the active chain. New `ACTIVE_NETWORK_NAME` in `src/lib/network/registry.ts` is the one place UI copy should get the network name from. **Guard:** `src/lib/ops/__tests__/network-claims.test.mjs` (runs in `npm run test:security`, so in the Quality workflow; also `npm run test:network-claims`) fails CI if public copy mentions testnet without an allowlisted reason, or if any page, component, API route or email claims the product is pre-mainnet. **RPC fallbacks (same day):** eight server call sites (keeper trigger, receipts index, DMs, contract health, kafka consumer, payments RPC failover, subscription and vault reads) used `ARC_RPC_PRIMARY || RPC_URL || "https://rpc.testnet.arc.network"`, so a mainnet deployment missing those two vars read (and keepers wrote) against testnet. They now call `resolveArcRpcUrl()` in `src/lib/network/registry.ts`: `ARC_RPC_PRIMARY` > `RPC_URL` > `ARC_RPC_URL` > `NEXT_PUBLIC_ARC_RPC_PRIMARY` (gate-required) > the active chain's public RPC. `resolveArcWsUrl()` returns null on mainnet without `WS_RPC_URL` (consumer polls over HTTP). `validateMainnetConfiguration()` now marks `ARC_RPC_PRIMARY`, `RPC_URL`, `ARC_RPC_URL` or `WS_RPC_URL` malformed if they contain `testnet`, so `assertFinancialNetworkReady()` blocks financial routes on that misconfig. Not made required: `NEXT_PUBLIC_ARC_RPC_PRIMARY` already is. `rotate-proxy-owner`, `transfer-contract-ownership` and `deploy-standard-ethers` exit with an error in mainnet mode without an RPC. Unused `rpcUrl` removed from `/api/cron/customer-billing`. Covered by `network-registry.test.mjs` and `rpc-fallback.test.mjs`.
 

@@ -22,6 +22,7 @@ import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { isCommitId } from "@/lib/commitId";
 import { HALTED_ACCOUNT_SQL } from "@/lib/accountHalt";
 import { resolveVaultCommitForMerchant } from "@/lib/vaultCommitSharing";
+import { areUsageVaultsEnabled } from "@/lib/platform/systemSettings";
 
 type VaultUsageRow = {
     id: string;
@@ -494,6 +495,16 @@ export async function POST(request: Request) {
         }
 
         const merchantAddress = apiKeyRecord.walletAddress.toLowerCase();
+
+        /* Admin breaker. Checked after the key is authenticated so the pause isn't disclosed to
+           anonymous callers. 503 with a stable code tells the merchant's integration to retry
+           later rather than treat the report as rejected for good. */
+        if (!await areUsageVaultsEnabled({ cached: true })) {
+            return NextResponse.json({
+                error: "Usage reporting is paused by SubScript. Retry later; nothing was recorded.",
+                code: "USAGE_VAULTS_PAUSED",
+            }, { status: 503, headers: { "Retry-After": "300" } });
+        }
 
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {

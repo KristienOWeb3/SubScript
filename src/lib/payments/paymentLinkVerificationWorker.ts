@@ -673,6 +673,12 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
                 resourceVersion: 1,
                 correlationId: job.id,
                 transitionKey: `payment-succeeded:${paymentId}:${job.tx_hash}`,
+                /* Recorded for the merchant event log only. finalize_payment_link_settlement already
+                   enqueued this event as `evt_payment_<paymentId>`, in the settlement transaction and
+                   with the richer payload integrators read. Fanning this copy out too sent merchants
+                   two payment.succeeded webhooks with different ids, so anyone deduplicating by event
+                   id fulfilled the order twice. */
+                fanOut: false,
                 chainId: settlementChainId,
                 data: {
                     payment_id: paymentId,

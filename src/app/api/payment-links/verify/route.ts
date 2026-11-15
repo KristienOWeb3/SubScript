@@ -313,15 +313,24 @@ export async function POST(request: Request) {
                 { status: 409 },
             );
         }
+        /* Both refusals reach a payer who has, by definition, already sent a transaction. The copy
+           must never invite a second payment. A released hold is no longer refused (it late-binds),
+           so LINK_UNAVAILABLE now means a proven failed attempt or a simulation-only link. */
         if (claimResult?.outcome === "LINK_UNAVAILABLE") {
             return NextResponse.json(
-                { error: "Payment link is inactive, expired, or at its usage limit" },
+                {
+                    error: "We couldn't match this transaction to the checkout. Please don't pay again. If money left your wallet, contact support with your transaction hash and we'll sort it out.",
+                    code: "PAYMENT_NOT_MATCHED",
+                },
                 { status: 409 },
             );
         }
         if (claimResult?.outcome === "ATTEMPT_NOT_FOUND") {
             return NextResponse.json(
-                { error: "Checkout attempt reservation was not found. Start a new payment attempt." },
+                {
+                    error: "We've got your transaction but couldn't find the checkout it belongs to. Please don't pay again. If it went through, we'll match it automatically within about 15 minutes and email your receipt.",
+                    code: "ATTEMPT_NOT_FOUND",
+                },
                 { status: 409 },
             );
         }

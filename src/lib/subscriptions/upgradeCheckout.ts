@@ -71,6 +71,74 @@ export type UpgradeCheckoutRefusal = {
     upgradeableAt: Date | null;
 };
 
+/**
+ * What the subscriber actually paid for the billing window they are in now.
+ *
+ * Credit is priced on this, never on the plan's list price. A free-trial or intro-price subscriber
+ * who upgrades on day one would otherwise be credited for a period they never paid for, and the
+ * merchant would lose the difference.
+ *
+ * - `valueMicros`: cash the chain charged for the current sequence (chargeAmountFor), plus, for
+ *   sequence 0 only, the unused value carried in from the authorization this one replaced.
+ * - `windowSeconds`: length of that window. A full period for sequence 1 onwards. For sequence 0,
+ *   from when the value was carried in (or one period before the first nextPayment for an
+ *   ordinary create) to paid-through. A deferred window from a resume or downgrade can be shorter
+ *   or longer than the plan period.
+ */
+export type CreditBasis = { valueMicros: bigint; windowSeconds: bigint };
+
+/**
+ * Which billing sequence pays for the window ending at `paidThrough`.
+ *
+ * The PSA charges sequence 0 at creation for [created, nextPayment). Sequence s >= 1 is charged at
+ * nextPayment + (s - 1) * period and extends paid-through to nextPayment + s * period. So paid-through
+ * equal to nextPayment means the subscriber is still inside sequence 0.
+ */
+export function currentSequenceFor(nextPaymentSeconds: bigint, paidThroughSeconds: bigint, periodSeconds: bigint): bigint {
+    if (periodSeconds <= BigInt(0) || paidThroughSeconds <= nextPaymentSeconds) return BigInt(0);
+    return (paidThroughSeconds - nextPaymentSeconds) / periodSeconds;
+}
+
+export function creditBasisFor({
+    sequence,
+    sequenceChargeMicros,
+    carriedCreditMicros,
+    carriedCreditSinceSeconds,
+    nextPaymentSeconds,
+    paidThroughSeconds,
+    periodSeconds,
+}: {
+    sequence: bigint;
+    /** chargeAmountFor(subId, sequence), read from the chain. */
+    sequenceChargeMicros: bigint;
+    carriedCreditMicros: bigint;
+    carriedCreditSinceSeconds: bigint | null;
+    nextPaymentSeconds: bigint;
+    paidThroughSeconds: bigint;
+    periodSeconds: bigint;
+}): CreditBasis {
+    if (sequence > BigInt(0)) {
+        return { valueMicros: sequenceChargeMicros, windowSeconds: periodSeconds };
+    }
+    const windowStart = carriedCreditMicros > BigInt(0) && carriedCreditSinceSeconds !== null
+        ? carriedCreditSinceSeconds
+        : nextPaymentSeconds - periodSeconds;
+    const windowSeconds = paidThroughSeconds - windowStart;
+    return {
+        valueMicros: sequenceChargeMicros + carriedCreditMicros,
+        windowSeconds: windowSeconds > BigInt(0) ? windowSeconds : periodSeconds,
+    };
+}
+
+/** Unused value of a window: value * remaining / window, with remaining clamped to [0, window]. */
+export function unusedWindowValueMicros(basis: CreditBasis, paidThroughSeconds: bigint, nowSeconds: bigint): bigint {
+    if (basis.windowSeconds <= BigInt(0) || basis.valueMicros <= BigInt(0)) return BigInt(0);
+    let remaining = paidThroughSeconds - nowSeconds;
+    if (remaining <= BigInt(0)) return BigInt(0);
+    if (remaining > basis.windowSeconds) remaining = basis.windowSeconds;
+    return (basis.valueMicros * remaining) / basis.windowSeconds;
+}
+
 function secondsBetween(from: Date, to: Date): number {
     return Math.floor((to.getTime() - from.getTime()) / 1000);
 }
@@ -90,6 +158,7 @@ export function upgradeCheckoutTerms({
     newAmountMicros,
     newPeriodSeconds,
     now,
+    creditBasis,
 }: {
     oldAmountMicros: bigint;
     oldPeriodSeconds: number | bigint;
@@ -97,6 +166,9 @@ export function upgradeCheckoutTerms({
     newAmountMicros: bigint;
     newPeriodSeconds: number | bigint;
     now: Date;
+    /** Value actually paid for the current window. Omitted only by legacy callers, which then
+        price on the list amount over one period (the old, merchant-unsafe behaviour). */
+    creditBasis?: CreditBasis | null;
 }): UpgradeCheckoutTerms | UpgradeCheckoutRefusal {
     const oldPeriod = BigInt(oldPeriodSeconds);
     const newPeriod = BigInt(newPeriodSeconds);
@@ -119,17 +191,22 @@ export function upgradeCheckoutTerms({
 
     /* Clamped at both ends: negative once the paid period has lapsed (no credit is owed), and capped
        at one period so a mis-set nextPayment far in the future cannot mint credit out of nothing. */
-    let remaining = BigInt(Math.max(0, secondsBetween(now, paidThroughAt)));
-    if (remaining > oldPeriod) remaining = oldPeriod;
+    /* The rate comparison above stays on the list terms (that is what decides "upgrade"). The
+       credit is priced on what was actually paid for the current window. */
+    const basisValue = creditBasis ? creditBasis.valueMicros : oldAmountMicros;
+    const basisWindow = creditBasis && creditBasis.windowSeconds > BigInt(0) ? creditBasis.windowSeconds : oldPeriod;
 
-    const unusedCreditMicros = (remaining * oldAmountMicros) / oldPeriod;
+    let remaining = BigInt(Math.max(0, secondsBetween(now, paidThroughAt)));
+    if (remaining > basisWindow) remaining = basisWindow;
+
+    const unusedCreditMicros = (remaining * basisValue) / basisWindow;
 
     if (unusedCreditMicros >= newAmountMicros) {
         /* Charging zero and pocketing the difference would silently take money from the subscriber,
            so refuse and say when the upgrade becomes priceable instead. Credit falls below the new
            price once `remaining < newAmount * oldPeriod / oldAmount`; the +1s clears the boundary
            that integer division leaves exactly equal. */
-        const breakEvenRemaining = (newAmountMicros * oldPeriod) / oldAmountMicros;
+        const breakEvenRemaining = (newAmountMicros * basisWindow) / basisValue;
         const upgradeableAt = new Date(
             (Math.floor(paidThroughAt.getTime() / 1000) - Number(breakEvenRemaining) + 1) * 1000,
         );

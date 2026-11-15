@@ -24,6 +24,7 @@ import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { isAccountHalted } from "@/lib/accountHalt";
 import { withPgClient } from "@/lib/serverPg";
+import { areUsageVaultsEnabled } from "@/lib/platform/systemSettings";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
@@ -385,6 +386,11 @@ async function runVaultTopUp(request: Request) {
         }
         if (!isAuthorized(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        /* Admin breaker: auto top-up commits new money into a vault, so it stops with the rest. */
+        if (!await areUsageVaultsEnabled()) {
+            return NextResponse.json({ success: true, skipped: "Usage-based vaults are paused by an admin" }, { status: 200 });
         }
 
         return await withPgClient(async (client) => {

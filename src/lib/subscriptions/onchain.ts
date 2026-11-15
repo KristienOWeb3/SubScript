@@ -14,6 +14,9 @@ const SUB_ABI = [
     "function createSubscriptionWithIntroductoryTerms(address merchant, uint256 amount, uint256 period, uint256 introductoryAmount, uint256 introductoryCycles) returns (uint256)",
     "function createSubscriptionWithDeferredFirstPayment(address merchant, uint256 amount, uint256 period, uint256 firstPayment) returns (uint256)",
     "function supportsDeferredSubscriptions() pure returns (bool)",
+    "function supportsReplaceSubscriptions() pure returns (bool)",
+    "function replaceSubscription(uint256 oldSubId, uint256 newAmount, uint256 newPeriod, uint256 chargeNow, uint256 firstPaymentAt, uint256 introCycles) returns (uint256)",
+    "event SubscriptionReplaced(uint256 indexed oldSubId, uint256 indexed newSubId, uint256 chargeNow, uint256 firstPaymentAt)",
     "function paidThrough(uint256) view returns (uint256)",
     "function executionBitmaps(uint256,uint256) view returns (uint256)",
     "function cancelSubscription(uint256 subId)",
@@ -46,9 +49,15 @@ export type OnChainSubscription = {
     isActive: boolean;
 };
 
-export async function getSubscriptionOnChain(subId: string | bigint): Promise<OnChainSubscription | null> {
+/* Every read and write below takes an optional contract so a subscription minted by an older PSA
+   (see legacySubscriptionContracts) is serviced on the contract that holds it. Omitted, it is the
+   active deployment. */
+export async function getSubscriptionOnChain(
+    subId: string | bigint,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
+): Promise<OnChainSubscription | null> {
     try {
-        const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+        const c = new ethers.Contract(contractAddress, SUB_ABI, readProvider());
         const s = await c.subscriptions(BigInt(subId));
         if (String(s.subscriber ?? s[0]).toLowerCase() === ethers.ZeroAddress) return null;
         return {
@@ -67,8 +76,9 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
 export async function getSubscriptionPaidThrough(
     subId: string | bigint,
     terms: OnChainSubscription,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
 ): Promise<bigint> {
-    const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+    const c = new ethers.Contract(contractAddress, SUB_ABI, readProvider());
     return readSubscriptionPaidThrough(c as unknown as Parameters<typeof readSubscriptionPaidThrough>[0],
         BigInt(subId), terms, BigInt(Math.floor(Date.now() / 1000)));
 }
@@ -83,14 +93,136 @@ export async function supportsDeferredSubscriptions(): Promise<boolean> {
     }
 }
 
+/* PSA v3 capability: atomic cancel-and-create for plan changes. Older deployments revert on the
+   probe, which reads as "not supported" so callers can fail closed. */
+export async function supportsReplaceSubscriptions(): Promise<boolean> {
+    const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+    try {
+        return Boolean(await c.supportsReplaceSubscriptions());
+    } catch (error) {
+        if ((error as { code?: string })?.code === "CALL_EXCEPTION") return false;
+        throw error;
+    }
+}
+
+/**
+ * Cash the chain charged (or will charge) for one billing sequence: the introductory amount while
+ * a promotion lasts (sequence 0 is the signup payment), the regular amount after. Deployments that
+ * predate chargeAmountFor had no introductory pricing, so they fall back to the flat amount. Any
+ * other read failure throws, because guessing a paid value would misprice credit.
+ */
+export async function readChargeAmountFor(
+    subId: string | bigint,
+    sequence: bigint,
+    fallbackAmount: bigint,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
+): Promise<bigint> {
+    const c = new ethers.Contract(contractAddress, SUB_ABI, readProvider());
+    try {
+        return BigInt(await c.chargeAmountFor(BigInt(subId), sequence));
+    } catch (error) {
+        if ((error as { code?: string })?.code !== "CALL_EXCEPTION") throw error;
+        return fallbackAmount;
+    }
+}
+
+export type ReplaceTerms = {
+    newAmount: bigint;
+    newPeriod: bigint;
+    /** > 0 charges now (upgrade). 0 defers the first charge to firstPaymentAt (downgrade). */
+    chargeNow: bigint;
+    firstPaymentAt: bigint;
+    introCycles: bigint;
+};
+
+/** Contract arguments for a replace, shared by the custodial signer and the external-wallet path. */
+export function replaceSubscriptionArgs(oldSubId: string | bigint, terms: ReplaceTerms) {
+    return [BigInt(oldSubId), terms.newAmount, terms.newPeriod, terms.chargeNow, terms.firstPaymentAt, terms.introCycles] as const;
+}
+
+function replacedSubIdFrom(receipt: ethers.TransactionReceipt | null, oldSubId: string | bigint): string | null {
+    const iface = new ethers.Interface(SUB_ABI);
+    for (const log of receipt?.logs || []) {
+        try {
+            if (log.address.toLowerCase() !== STANDARD_CONTRACT_ADDRESS.toLowerCase()) continue;
+            const parsed = iface.parseLog(log);
+            if (parsed?.name === "SubscriptionReplaced" && BigInt(parsed.args.oldSubId) === BigInt(oldSubId)) {
+                return parsed.args.newSubId.toString();
+            }
+        } catch {
+            /* not our event */
+        }
+    }
+    return null;
+}
+
+/**
+ * Atomically replace a subscription from the embedded wallet: the old authorization is cancelled
+ * and the new one created in ONE transaction, so there is no window where the subscriber holds
+ * neither (the cancel-then-create gap) or both.
+ */
+export async function replaceFromEmbedded(
+    walletAddress: string,
+    oldSubId: string | bigint,
+    terms: ReplaceTerms,
+    idempotencyKey: string,
+) {
+    const custody = await getWalletCustody(walletAddress);
+    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(terms.newAmount, terms.newPeriod));
+    const { txHash } = await custody.executeContract({
+        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        abi: SUB_ABI,
+        functionName: "replaceSubscription",
+        args: [...replaceSubscriptionArgs(oldSubId, terms)],
+        idempotencyKey,
+    });
+    const receipt = await fetchReceipt(txHash);
+    return { txHash, subId: replacedSubIdFrom(receipt, oldSubId) };
+}
+
+/**
+ * Verify an externally signed replaceSubscription. It must have succeeded, been sent by the
+ * subscriber to the standard contract, called replaceSubscription with exactly the quoted terms,
+ * and emitted SubscriptionReplaced for this old subscription.
+ */
+export async function verifyExternalReplaceTx(input: {
+    txHash: string;
+    subscriber: string;
+    oldSubId: string | bigint;
+    terms: ReplaceTerms;
+}): Promise<{ txHash: string; subId: string }> {
+    const provider = readProvider();
+    const [tx, receipt] = await Promise.all([
+        provider.getTransaction(input.txHash),
+        provider.getTransactionReceipt(input.txHash),
+    ]);
+    if (!tx || !receipt) throw new Error("Plan change transaction not found on-chain yet. Try again in a few seconds.");
+    if (receipt.status !== 1) throw new Error("Plan change transaction reverted on-chain.");
+    if ((tx.from || "").toLowerCase() !== input.subscriber.toLowerCase()) {
+        throw new Error("Transaction sender does not match your wallet.");
+    }
+    if (!tx.to || tx.to.toLowerCase() !== STANDARD_CONTRACT_ADDRESS.toLowerCase()) {
+        throw new Error("Transaction is not a SubScript plan change.");
+    }
+    const parsed = new ethers.Interface(SUB_ABI).parseTransaction({ data: tx.data, value: tx.value });
+    const expected = replaceSubscriptionArgs(input.oldSubId, input.terms);
+    if (parsed?.name !== "replaceSubscription" || expected.some((value, i) => BigInt(parsed.args[i]) !== value)) {
+        throw new Error("This transaction does not match the quoted plan change.");
+    }
+    const subId = replacedSubIdFrom(receipt, input.oldSubId);
+    if (!subId) throw new Error("The plan change did not emit the expected replacement event.");
+    return { txHash: input.txHash, subId };
+}
+
 /* Introductory terms recorded on-chain at creation (cycles = 0 => none). Used by the
    recovery paths to rebuild the subscription's promo snapshot from the authoritative
    source when the original request context is gone. Null on RPC error. */
 export async function getIntroductoryTermsOnChain(
     subId: string | bigint,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
 ): Promise<{ introAmountUsdc: bigint; introCycles: number } | null> {
     try {
-        const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+        const c = new ethers.Contract(contractAddress, SUB_ABI, readProvider());
         const terms = await c.introductoryTerms(BigInt(subId));
         const cycles = Number(terms.cycles ?? terms[1]);
         if (!Number.isFinite(cycles) || cycles <= 0) return null;
@@ -148,10 +280,40 @@ export async function getSignupChargeOnChain(
 /* Belt-and-suspenders for the double-subscribe guard. The DB advisory-lock + mirror check in
    the subscribe route only sees subscriptions we ourselves mirrored; a sub that exists on-chain
    but was never mirrored (e.g. legacy, or a failed mirror write) would slip past it. This scans
-   the chain directly — cheaply, via the `subscriber`+`merchant` indexed topics on
-   SubscriptionCreated, so it reads only this pair's own creations — and returns the id of the
-   first still-active one. Best-effort: any RPC error returns null so a transient failure never
-   blocks a legitimate subscribe (the DB guard already covers the normal path). */
+   the chain directly and returns the id of the first still-active one.
+
+   Fails CLOSED. It used to return null on any RPC error or when it hit the scan cap, and null
+   reads as "no active subscription" — so a flaky RPC was exactly the moment the guard waved a
+   second paid subscription through. It now throws ActiveSubscriptionScanUnavailableError
+   whenever it cannot prove the answer. Callers that only use it to recover a missing id (and
+   treat "none" as "keep reconciling") catch that error and carry on; the pre-charge guard in
+   the subscribe route lets it refuse the charge. */
+export class ActiveSubscriptionScanUnavailableError extends Error {
+    readonly code = "ACTIVE_SUBSCRIPTION_SCAN_UNAVAILABLE";
+    constructor(message: string) {
+        super(message);
+        this.name = "ActiveSubscriptionScanUnavailableError";
+    }
+}
+
+export function isActiveSubscriptionScanUnavailable(error: unknown): error is ActiveSubscriptionScanUnavailableError {
+    return (error as { code?: string } | null)?.code === "ACTIVE_SUBSCRIPTION_SCAN_UNAVAILABLE";
+}
+
+/* Recovery-path wrapper: "couldn't tell" collapses to "not found yet", which those paths already
+   handle by staying in RECONCILIATION_PENDING. Never use this as a guard before a charge. */
+export async function findActiveOnChainSubscriptionIdOrNull(
+    subscriber: string,
+    merchant: string,
+): Promise<string | null> {
+    try {
+        return await findActiveOnChainSubscriptionId(subscriber, merchant);
+    } catch (err) {
+        if (isActiveSubscriptionScanUnavailable(err)) return null;
+        throw err;
+    }
+}
+
 /* How many ids to walk back from the head of the counter before giving up.
    The PSA is redeployed rather than upgraded, so each deployment's id space starts at 1 and stays
    small. The cap only exists so a mature deployment cannot turn this into an unbounded scan; when it
@@ -180,41 +342,53 @@ const MAX_SUBSCRIPTION_ID_SCAN = 1_000;
 export async function findActiveOnChainSubscriptionId(
     subscriber: string,
     merchant: string,
+    contract: { nextSubscriptionId(): Promise<unknown>; subscriptions(id: bigint): Promise<any> } =
+        new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider()) as any,
 ): Promise<string | null> {
+    const sub = subscriber.toLowerCase();
+    const merch = merchant.toLowerCase();
+
+    let highest: bigint;
     try {
-        const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
-        const sub = subscriber.toLowerCase();
-        const merch = merchant.toLowerCase();
-
-        const nextId = BigInt(await contract.nextSubscriptionId());
-        const highest = nextId - BigInt(1);
-        const floor = highest > BigInt(MAX_SUBSCRIPTION_ID_SCAN)
-            ? highest - BigInt(MAX_SUBSCRIPTION_ID_SCAN) + BigInt(1)
-            : BigInt(1);
-
-        for (let id = highest; id >= floor; id--) {
-            const s = await contract.subscriptions(id).catch(() => null);
-            if (!s) continue;
-            if (
-                Boolean(s[5])
-                && String(s[0]).toLowerCase() === sub
-                && String(s[1]).toLowerCase() === merch
-            ) {
-                return id.toString();
-            }
-        }
-
-        if (floor > BigInt(1)) {
-            console.warn(
-                `[onchain] active-sub scan stopped at id ${floor} of ${highest} without a match for `
-                + `${sub}/${merch} — raise MAX_SUBSCRIPTION_ID_SCAN if this deployment has outgrown it.`,
-            );
-        }
-        return null;
+        highest = BigInt(await contract.nextSubscriptionId() as bigint) - BigInt(1);
     } catch (err) {
         console.error("[onchain] active-sub scan failed:", err instanceof Error ? err.message : err);
-        return null;
+        throw new ActiveSubscriptionScanUnavailableError("Could not read the subscription counter on-chain.");
     }
+    const floor = highest > BigInt(MAX_SUBSCRIPTION_ID_SCAN)
+        ? highest - BigInt(MAX_SUBSCRIPTION_ID_SCAN) + BigInt(1)
+        : BigInt(1);
+
+    for (let id = highest; id >= floor; id--) {
+        let s: any;
+        try {
+            s = await contract.subscriptions(id);
+        } catch (err) {
+            /* A skipped id could be the live one, so one failed read makes the whole answer unknown. */
+            console.error(`[onchain] active-sub scan failed at id ${id}:`, err instanceof Error ? err.message : err);
+            throw new ActiveSubscriptionScanUnavailableError(`Could not read subscription ${id} on-chain.`);
+        }
+        if (
+            Boolean(s[5])
+            && String(s[0]).toLowerCase() === sub
+            && String(s[1]).toLowerCase() === merch
+        ) {
+            return id.toString();
+        }
+    }
+
+    if (floor > BigInt(1)) {
+        /* Ids below the floor were never read. A live subscription could be among them, so this is
+           "don't know", not "none". */
+        console.warn(
+            `[onchain] active-sub scan stopped at id ${floor} of ${highest} without a match for `
+            + `${sub}/${merch} — raise MAX_SUBSCRIPTION_ID_SCAN if this deployment has outgrown it.`,
+        );
+        throw new ActiveSubscriptionScanUnavailableError(
+            `Scanned ${MAX_SUBSCRIPTION_ID_SCAN} subscription ids without reaching the start of the contract.`,
+        );
+    }
+    return null;
 }
 
 /* How many billing cycles of allowance to authorize up front. createSubscription only
@@ -311,7 +485,7 @@ export async function subscribeFromEmbedded(
            from the indexed on-chain event before returning; a missing id must never be presented
            as a completed subscription because the mirror and merchant fulfillment need it. */
         for (let attempt = 0; attempt < 5 && !subId; attempt++) {
-            subId = await findActiveOnChainSubscriptionId(walletAddress, merchant);
+            subId = await findActiveOnChainSubscriptionIdOrNull(walletAddress, merchant);
             if (!subId) await new Promise((resolve) => setTimeout(resolve, 2000));
         }
     }
@@ -390,17 +564,21 @@ export async function verifyExternalDeferredSubscriptionTx(input: {
     return verified;
 }
 
-export async function cancelFromEmbedded(walletAddress: string, subId: string | bigint) {
+export async function cancelFromEmbedded(
+    walletAddress: string,
+    subId: string | bigint,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
+) {
     const custody = await getWalletCustody(walletAddress);
     const { txHash } = await custody.executeContract({
-        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        contractAddress,
         abi: SUB_ABI,
         functionName: "cancelSubscription",
         args: [BigInt(subId)],
         /* Idempotent by subId: cancelling the same sub twice is a no-op, so a retried cancel
            after a timed-out response must not submit a second transaction. Shared with the
            execute-tx cancel path via the custody helper so both derive the identical key. */
-        idempotencyKey: cancelSubscriptionIdempotencyKey(STANDARD_CONTRACT_ADDRESS, subId),
+        idempotencyKey: cancelSubscriptionIdempotencyKey(contractAddress, subId),
     });
     return txHash;
 }

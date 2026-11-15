@@ -11,6 +11,7 @@ function fixture({secret='test-cron-secret',emailStatus=200,primaryFailure=false
   'next/server':{NextResponse:{json:(body,options)=>Response.json(body,options)},after:callback=>callbacks.push(callback)},
   '@supabase/supabase-js':{createClient:()=>({})},
   '@/lib/payments/paymentLinkVerificationWorker':{processPaymentLinkVerificationJobs:async()=>{effects.primaryCalls++;return {success:!primaryFailure};}},
+  '@/lib/payments/orphanedCheckoutSweeper':{sweepOrphanedCheckoutPayments:async()=>({recovered:[],skipped:[],errors:[]})},
   '@/lib/subscriptions/driftHealer':{healSubscriptionDrift:async()=>({success:true})},
   '@/lib/webhookOutbox':{deliverPendingWebhookOutboxEvents:async()=>({success:true})},
   '@/lib/payments/reconciliationRetry':{processPaymentReconciliationEvents:async()=>({success:true})},

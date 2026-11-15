@@ -2,7 +2,7 @@
  *
  * Why this script: the older scripts/deploy-standard.js references a non-existent
  * "SubScript" contract with a 1-arg constructor. The live contract is SubScriptPSA
- * (constructor: paymentToken, stableFXRouter), and SubScriptConfidential EXTENDS it —
+ * (v3 constructor: paymentToken, treasury), and SubScriptConfidential EXTENDS it —
  * so it has the subscription functions (createSubscription, the 2-arg executePayment,
  * isSequenceExecuted, cancelSubscription) AND registerViewKey/executeBatchPayout.
  *
@@ -10,7 +10,7 @@
  * CONFIDENTIAL_CONTRACT_ADDRESS at it, fixing both contract-health gaps at once.
  *
  * Env: PRIVATE_KEY (owner/deployer), RPC_URL (Arc testnet),
- *      STABLEFX_ROUTER_ADDRESS (required), USDC_ADDRESS (optional, defaults to native).
+ *      USDC_ADDRESS (optional, defaults to native). v3 is USDC-only: no FX router.
  *
  *   npx hardhat run scripts/deploy-confidential.js --network arcTestnet
  */
@@ -22,13 +22,9 @@ async function main() {
     console.log("Balance:", hre.ethers.formatEther(await hre.ethers.provider.getBalance(deployer.address)));
 
     const paymentToken = process.env.USDC_ADDRESS || "0x3600000000000000000000000000000000000000";
-    const stableFXRouter = process.env.STABLEFX_ROUTER_ADDRESS;
     const initialOwner = process.env.CONTRACT_OWNER_ADDRESS || deployer.address;
     const treasury = process.env.TREASURY_ADDRESS || initialOwner;
 
-    if (!stableFXRouter) {
-        throw new Error("STABLEFX_ROUTER_ADDRESS is required (the IStableFX router the contract settles through).");
-    }
     if (!hre.ethers.isAddress(treasury) || treasury === hre.ethers.ZeroAddress) {
         throw new Error("TREASURY_ADDRESS must be a valid non-zero address.");
     }
@@ -44,13 +40,12 @@ async function main() {
 
     console.log("\n--- Deploying SubScriptConfidential ---");
     console.log("  paymentToken:  ", paymentToken);
-    console.log("  stableFXRouter:", stableFXRouter);
     console.log("  treasury:      ", treasury);
     console.log("  initialOwner:  ", initialOwner);
 
     const Factory = await hre.ethers.getContractFactory("SubScriptConfidential");
-    /* constructor(paymentToken, stableFXRouter, treasury, initialOwner) */
-    const contract = await Factory.deploy(paymentToken, stableFXRouter, treasury, initialOwner);
+    /* constructor(paymentToken, treasury, initialOwner) */
+    const contract = await Factory.deploy(paymentToken, treasury, initialOwner);
     await contract.waitForDeployment();
     const address = await contract.getAddress();
 

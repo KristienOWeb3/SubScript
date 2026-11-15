@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
+import nodeCrypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { resumeBridgeTerms } from "../resumeBridge.ts";
@@ -29,6 +30,7 @@ function routeStubs() {
         amountCapUsdc: "10000000", billingIntervalSeconds: month, plan: null };
     const noop = async () => {};
     const stubs = {
+        "node:crypto": { default: nodeCrypto, ...nodeCrypto },
         "next/server": { after: () => {}, NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } },
         "@/lib/auth": { getSessionWallet: async () => sub.subscriber },
         "@/lib/auth/walletCustody": { getWalletCustody: async () => ({}), isCustodialWallet: () => true },
@@ -52,12 +54,14 @@ function routeStubs() {
             subscribeFromEmbedded: async (...args) => { calls.creates.push(args); return { txHash: "0xcreated", subId: "2" }; },
         },
         "@/lib/sponsor/sponsorship": { requireSponsoredGas: async () => { calls.sponsorship++; } },
+        "@/lib/subscriptions/planChange": { creditBasisForRow: async () => ({ valueMicros: 0n, windowSeconds: 1n }), unusedWindowValueMicros: () => 0n },
         "@/lib/subscriptions/mirror": {
             mirrorSubscriptionCancelAtPeriodEnd: async (x) => { calls.mirror.push(x); return true; },
             mirrorSubscriptionCanceled: noop,
             mirrorSubscriptionCreated: async (x) => { calls.mirror.push(x); },
         },
-        "@/lib/subscriptions/contractBinding": { subscriptionKey: (id) => ({ id }), activeSubscriptionContract: () => "0xcontract" },
+        "@/lib/subscriptions/rowContract": { resolveSubscriberRowContract: async () => null },
+        "@/lib/subscriptions/contractBinding": { subscriptionKey: (id) => ({ id }), activeSubscriptionContract: () => "0xcontract", billableSubscriptionContracts: () => ["0xcontract"] },
         "@/lib/subscriptions/resumeBridge": { resumeBridgeTerms },
         "@/lib/dms/lifecycle": { sendReactivatedDm: noop, sendWinbackOfferDm: noop },
         "@/lib/subscriptions/webhookDelivery": { dispatchDurableSubscriptionWebhook: noop },
@@ -163,7 +167,8 @@ test("actual healer preserves scheduled access and emits cancellation only after
             "@/lib/subscriptions/webhookDelivery": { dispatchDurableSubscriptionWebhook: async (_, event) => events.push(event) },
             "@/lib/webhooks": { subscriptionWebhookData: (x) => x },
             "@/lib/dms/notifications": {},
-            "@/lib/subscriptions/contractBinding": { activeSubscriptionContract: () => "0xcontract" },
+            "@/lib/subscriptions/rowContract": { resolveSubscriberRowContract: async () => null },
+            "@/lib/subscriptions/contractBinding": { activeSubscriptionContract: () => "0xcontract", billableSubscriptionContracts: () => ["0xcontract"] },
             "./entitlement": { preservesScheduledEntitlement },
         };
         await load("src/lib/subscriptions/driftHealer.ts", stubs).healSubscriptionDrift({ from: query });

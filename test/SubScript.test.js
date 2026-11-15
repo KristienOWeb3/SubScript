@@ -15,15 +15,11 @@ describe("SubScript", function () {
     const MockUSDC = await ethers.getContractFactory("MockUSDC");
     const usdc = await MockUSDC.deploy();
 
-    /* Deploy MockStableFX */
-    const MockStableFX = await ethers.getContractFactory("MockStableFX");
-    const stableFX = await MockStableFX.deploy();
 
     /* Deploy SubScriptPSA */
     const SubScript = await ethers.getContractFactory("SubScriptPSA");
     const subScript = await SubScript.deploy(
       await usdc.getAddress(),
-      await stableFX.getAddress(),
       treasury.address
     );
 
@@ -39,7 +35,6 @@ describe("SubScript", function () {
 
     return {
       usdc,
-      stableFX,
       subScript,
       owner,
       subscriber,
@@ -70,7 +65,7 @@ describe("SubScript", function () {
     it("should revert if deployed with address(0)", async function () {
       const SubScript = await ethers.getContractFactory("SubScriptPSA");
       await expect(
-        SubScript.deploy(ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress)
+        SubScript.deploy(ethers.ZeroAddress, ethers.ZeroAddress)
       ).to.be.revertedWithCustomError(SubScript, "InvalidAddress");
     });
 
@@ -542,112 +537,65 @@ describe("SubScript", function () {
     });
   });
 
-  /* STABLEFX MULTI-CURRENCY SWAPPING */
-  describe("StableFX Multi-Currency Swapping", function () {
-    it("should swap multi-currency subscriptions successfully on creation and execution", async function () {
-      const { subScript, usdc, stableFX, subscriber, merchant, keeper, treasury, AMOUNT, PERIOD, TEN_K } =
-        await loadFixture(deployFixture);
+  /* USDC-ONLY: CROSS-TOKEN (FX) SUBSCRIPTIONS ARE REJECTED */
+  describe("USDC-only settlement (FX removed)", function () {
+    const FX_5_ARG = "createSubscription(address,uint256,uint256,address,address)";
+    const FX_6_ARG = "createSubscription(address,uint256,uint256,address,address,uint256)";
 
-      /* Deploy MockEURC as settlementToken */
-      const MockEURC = await ethers.getContractFactory("MockUSDC"); /* reuse MockUSDC contract factory */
-      const eurc = await MockEURC.deploy();
-      const eurcAddress = await eurc.getAddress();
-      const usdcAddress = await usdc.getAddress();
-
-      /* Set rate on MockStableFX: 1.10 input per output (EURC to USDC) */
-      await stableFX.setRate(110);
-
-      /* Mint EURC to StableFX contract so it can payout the merchant */
-      await eurc.mint(await stableFX.getAddress(), TEN_K);
-
-      /* Approve SubScript for subscriber USDC */
-      await usdc.connect(subscriber).approve(await subScript.getAddress(), TEN_K);
-
-      const merchantEurcBefore = await eurc.balanceOf(merchant.address);
-      const treasuryEurcBefore = await eurc.balanceOf(treasury.address);
-      const subscriberUsdcBefore = await usdc.balanceOf(subscriber.address);
-      const fee = AMOUNT / 100n;
-
-      /* Create multi-currency subscription (merchant gets EURC, subscriber pays USDC).
-         maxPaymentAmount caps the USDC pulled: 20% headroom above the 15 EURC settlement covers the
-         1.10 FX rate (16.5 USDC needed). */
-      const maxPay = (AMOUNT * 120n) / 100n;
-      await subScript
-        .connect(subscriber)
-        ["createSubscription(address,uint256,uint256,address,address,uint256)"](
-          merchant.address, AMOUNT, PERIOD, eurcAddress, usdcAddress, maxPay
-        );
-
-      /* Verify first payment took place (swapped) */
-      const merchantEurcAfter = await eurc.balanceOf(merchant.address);
-      const treasuryEurcAfter = await eurc.balanceOf(treasury.address);
-      expect(merchantEurcAfter - merchantEurcBefore).to.equal(AMOUNT - fee);
-      expect(treasuryEurcAfter - treasuryEurcBefore).to.equal(fee);
-
-      /* Verify subscriber paid correct USDC amount (15 EURC * 1.10 = 16.50 USDC) */
-      const subscriberUsdcAfter = await usdc.balanceOf(subscriber.address);
-      const expectedUsdcSpent = (AMOUNT * 110n) / 100n;
-      expect(subscriberUsdcBefore - subscriberUsdcAfter).to.equal(expectedUsdcSpent);
-
-      /* Fast-forward and execute payment */
-      await time.increase(PERIOD + 1);
-
-      const subscriberUsdcBeforeExecution = await usdc.balanceOf(subscriber.address);
-      const merchantEurcBeforeExecution = await eurc.balanceOf(merchant.address);
-      const treasuryEurcBeforeExecution = await eurc.balanceOf(treasury.address);
-
-      await subScript.connect(keeper).executePayment(1, 1);
-
-      const subscriberUsdcAfterExecution = await usdc.balanceOf(subscriber.address);
-      const merchantEurcAfterExecution = await eurc.balanceOf(merchant.address);
-      const treasuryEurcAfterExecution = await eurc.balanceOf(treasury.address);
-
-      expect(merchantEurcAfterExecution - merchantEurcBeforeExecution).to.equal(AMOUNT - fee);
-      expect(treasuryEurcAfterExecution - treasuryEurcBeforeExecution).to.equal(fee);
-      expect(subscriberUsdcBeforeExecution - subscriberUsdcAfterExecution).to.equal(expectedUsdcSpent);
+    it("no longer exposes the cross-token createSubscription overloads", async function () {
+      const { subScript } = await loadFixture(deployFixture);
+      expect(subScript.interface.getFunction(FX_5_ARG)).to.equal(null);
+      expect(subScript.interface.getFunction(FX_6_ARG)).to.equal(null);
+      expect(subScript.interface.getFunction("stableFXRouter")).to.equal(null);
     });
 
-    it("reverts a cross-token swap that would pull more input than the subscriber approved", async function () {
-      const { subScript, usdc, stableFX, subscriber, merchant, AMOUNT, PERIOD, TEN_K } =
-        await loadFixture(deployFixture);
-      const MockEURC = await ethers.getContractFactory("MockUSDC");
-      const eurc = await MockEURC.deploy();
-      const eurcAddress = await eurc.getAddress();
-      const usdcAddress = await usdc.getAddress();
-
-      /* Router quotes 2.0x input (manipulated/adverse rate): 15 EURC -> 30 USDC. */
-      await stableFX.setRate(200);
-      await eurc.mint(await stableFX.getAddress(), TEN_K);
-      await usdc.connect(subscriber).approve(await subScript.getAddress(), TEN_K);
-
-      /* Subscriber only approved a 20% headroom cap (18 USDC), so the 30 USDC pull must revert
-         rather than silently draining their wallet. */
-      const maxPay = (AMOUNT * 120n) / 100n;
-      await expect(
-        subScript
-          .connect(subscriber)
-          ["createSubscription(address,uint256,uint256,address,address,uint256)"](
-            merchant.address, AMOUNT, PERIOD, eurcAddress, usdcAddress, maxPay
-          )
-      ).to.be.revertedWithCustomError(subScript, "ExcessiveSwapInput");
-    });
-
-    it("requires an explicit max for cross-token subscriptions", async function () {
+    it("rejects a raw cross-token create call and moves no funds", async function () {
       const { subScript, usdc, subscriber, merchant, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
-      const MockEURC = await ethers.getContractFactory("MockUSDC");
-      const eurc = await MockEURC.deploy();
-      const eurcAddress = await eurc.getAddress();
-      const usdcAddress = await usdc.getAddress();
+      const eurc = await (await ethers.getContractFactory("MockUSDC")).deploy();
+      const legacy = new ethers.Interface([`function ${FX_5_ARG}`, `function ${FX_6_ARG}`]);
+      const before = await usdc.balanceOf(subscriber.address);
 
-      /* The 5-arg overload has no cap, so cross-token creation must be rejected outright. */
-      await expect(
-        subScript
-          .connect(subscriber)
-          ["createSubscription(address,uint256,uint256,address,address)"](
-            merchant.address, AMOUNT, PERIOD, eurcAddress, usdcAddress
-          )
-      ).to.be.revertedWithCustomError(subScript, "MaxPaymentAmountRequired");
+      for (const data of [
+        legacy.encodeFunctionData(FX_5_ARG, [
+          merchant.address, AMOUNT, PERIOD, await eurc.getAddress(), await usdc.getAddress(),
+        ]),
+        legacy.encodeFunctionData(FX_6_ARG, [
+          merchant.address, AMOUNT, PERIOD, await eurc.getAddress(), await usdc.getAddress(), AMOUNT * 2n,
+        ]),
+      ]) {
+        await expect(
+          subscriber.sendTransaction({ to: await subScript.getAddress(), data })
+        ).to.be.reverted;
+      }
+
+      expect(await usdc.balanceOf(subscriber.address)).to.equal(before);
+      expect(await subScript.nextSubscriptionId()).to.equal(1n);
+    });
+
+    it("pins both token fields to USDC and the pull ceiling to the amount", async function () {
+      const { subScript, usdc, subscriber, merchant, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+      await subScript.connect(subscriber)["createSubscription(address,uint256,uint256)"](
+        merchant.address, AMOUNT, PERIOD
+      );
+      const sub = await subScript.subscriptions(1);
+      expect(sub.settlementToken).to.equal(await usdc.getAddress());
+      expect(sub.paymentToken).to.equal(await usdc.getAddress());
+      expect(sub.maxPaymentAmount).to.equal(AMOUNT);
+
+      /* modifySubscription keeps the ceiling equal to the new amount. */
+      await subScript.connect(subscriber).modifySubscription(1, AMOUNT * 2n, PERIOD);
+      expect((await subScript.subscriptions(1)).maxPaymentAmount).to.equal(AMOUNT * 2n);
+    });
+
+    it("refuses a zero treasury or token at deploy", async function () {
+      const { usdc, treasury } = await loadFixture(deployFixture);
+      const Factory = await ethers.getContractFactory("SubScriptPSA");
+      await expect(Factory.deploy(ethers.ZeroAddress, treasury.address))
+        .to.be.revertedWithCustomError(Factory, "InvalidAddress");
+      await expect(Factory.deploy(await usdc.getAddress(), ethers.ZeroAddress))
+        .to.be.revertedWithCustomError(Factory, "InvalidAddress");
     });
   });
 

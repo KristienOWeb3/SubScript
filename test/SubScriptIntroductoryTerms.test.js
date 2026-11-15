@@ -13,13 +13,10 @@ describe("SubScriptPSA introductory terms", function () {
     const MockUSDC = await ethers.getContractFactory("MockUSDC");
     const usdc = await MockUSDC.deploy();
 
-    const MockStableFX = await ethers.getContractFactory("MockStableFX");
-    const stableFX = await MockStableFX.deploy();
 
     const SubScript = await ethers.getContractFactory("SubScriptPSA");
     const subScript = await SubScript.deploy(
       await usdc.getAddress(),
-      await stableFX.getAddress(),
       treasury.address
     );
 

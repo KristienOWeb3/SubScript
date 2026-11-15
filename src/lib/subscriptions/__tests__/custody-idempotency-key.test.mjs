@@ -87,6 +87,6 @@ test("upgrade keeps a readable attempt key but sends Circle a UUID", () => {
     /* Persisted as what Circle was actually sent, which is what reconciliation matches on. */
     assert.match(route, /providerIdempotencyKey,/);
     assert.doesNotMatch(route, /providerIdempotencyKey: idempotencyKey/);
-    /* The mint must use the UUID, not the readable seed. */
-    assert.match(route, /newPeriodSeconds,\s*providerIdempotencyKey,/);
+    /* The replace must use the UUID, not the readable seed. */
+    assert.match(route, /replaceFromEmbedded\(\s*subscriber, fromSubscriptionId, replaceTerms, providerIdempotencyKey,/);
 });

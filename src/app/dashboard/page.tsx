@@ -332,22 +332,34 @@ export default function DashboardPage() {
 
             const headers: Record<string, string> = { "Content-Type": "application/json" };
             const FINANCIAL_ACTIONS = new Set(["transferUsdc", "withdraw"]);
+            const body = JSON.stringify({ action, args: serializedArgs });
+            /* The request id doubles as the transaction-PIN operation id, which the server binds to
+               the exact body. Key it by the body, not just the action: a retry of the SAME send reuses
+               it (safe dedupe), but editing the amount after a failure gets a fresh id instead of
+               "This operation is bound to a different request." */
+            const pendingKey = `${action}:${body}`;
             if (FINANCIAL_ACTIONS.has(action)) {
-                if (!pendingRequestIdsRef.current[action]) {
-                    pendingRequestIdsRef.current[action] = crypto.randomUUID();
+                if (!pendingRequestIdsRef.current[pendingKey]) {
+                    pendingRequestIdsRef.current[pendingKey] = crypto.randomUUID();
                 }
-                headers["x-request-id"] = pendingRequestIdsRef.current[action];
+                headers["x-request-id"] = pendingRequestIdsRef.current[pendingKey];
             }
             const res = await fetchWithTransactionPin("/api/execute-tx", {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ action, args: serializedArgs }),
+                body,
             });
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) {
+                /* A definite rejection (bad input, insufficient balance, ...) means nothing was
+                   submitted, so drop the id and let a corrected retry start clean. Keep it only when
+                   the outcome is ambiguous (5xx / in-progress) so a resend can't double-spend. */
+                if (res.status >= 400 && res.status < 500 && data?.code !== "TRANSACTION_OPERATION_IN_PROGRESS") {
+                    delete pendingRequestIdsRef.current[pendingKey];
+                }
                 throw new Error(data.error || "Server transaction execution failed");
             }
-            delete pendingRequestIdsRef.current[action];
+            delete pendingRequestIdsRef.current[pendingKey];
             return data.txHash as string;
         } else {
             if (!sessionWallet || getAccount(walletConfig).address?.toLowerCase() !== sessionWallet.toLowerCase()) {

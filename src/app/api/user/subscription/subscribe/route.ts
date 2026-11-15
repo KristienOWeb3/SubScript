@@ -17,12 +17,20 @@ import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import {
     subscribeFromEmbedded,
     findActiveOnChainSubscriptionId,
+    findActiveOnChainSubscriptionIdOrNull,
+    isActiveSubscriptionScanUnavailable,
     getSubscriptionOnChain,
-    getIntroductoryTermsOnChain,
     getSignupChargeOnChain,
     verifyExternalSubscriptionTx,
     horizonAllowance,
 } from "@/lib/subscriptions/onchain";
+import { recoveredPromotionTerms } from "@/lib/subscriptions/recoveredTerms";
+import {
+    classifySubscribeFailure,
+    nextSubscribeAttemptKey,
+    retryableSubscribeMessage,
+    SUBSCRIBE_ATTEMPT_NONCE_SEPARATOR,
+} from "@/lib/subscriptions/subscribeAttempts";
 import { ensureUsdcAllowance } from "@/lib/vault/onchain";
 import {
     findApplicablePromotion,
@@ -41,7 +49,7 @@ import { checkoutExpiresAt, isCheckoutExpired } from "@/lib/subscriptions/apiSub
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
-import { activeSubscriptionContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
+import { activeSubscriptionContract, onActiveContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
 import { haltGuard } from "@/lib/accountHalt";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 
@@ -124,6 +132,51 @@ async function deactivateConsumedApiPlan({
         },
         data: { active: false },
     });
+}
+
+/**
+ * Close PAST_DUE rows whose authorization the chain already shows inactive.
+ *
+ * PAST_DUE is where the keeper parks a subscription after repeated failed renewals when it could not
+ * revoke it itself. The guard below treats PAST_DUE like ACTIVE, and nothing ever moved those rows
+ * on, so a subscriber whose card-equivalent ran dry once could never subscribe to that merchant
+ * again. Once the chain says the old authorization is inactive, there is nothing left to protect:
+ * the row is history, and the new subscribe can go ahead.
+ *
+ * Only rows on the active contract are read; anything else means nothing against the chain we call.
+ * Returns false when the chain could not be read, so the caller refuses rather than guessing.
+ */
+async function closeLapsedPastDueRows(subscriber: string, merchant: string): Promise<boolean> {
+    const rows = await prisma.subscription.findMany({
+        where: { ...onActiveContract(), subscriber, merchantAddress: merchant, kind: "CUSTOMER", status: "PAST_DUE" },
+        select: { subscriptionId: true, contractAddress: true, amountCapUsdc: true, beneficiaryAddress: true, externalReference: true, sourceCheckoutId: true },
+    });
+    for (const row of rows) {
+        const onChain = await getSubscriptionOnChain(row.subscriptionId);
+        if (!onChain) return false;
+        if (onChain.isActive) continue;
+        const closed = await prisma.subscription.updateMany({
+            where: { contractAddress: row.contractAddress, subscriptionId: row.subscriptionId, status: "PAST_DUE" },
+            data: { status: "CANCELED", revocationPending: false, updatedAt: new Date() },
+        });
+        if (closed.count === 1) {
+            /* Same key the keeper's PAST_DUE pass uses, so whichever closes it first is the only one
+               the merchant hears from. */
+            await dispatchDurableSubscriptionWebhook(merchant, "subscription.canceled", subscriptionWebhookData({
+                subscriptionId: String(row.subscriptionId),
+                status: "canceled",
+                amountUsdcMicros: onChain.amount,
+                subscriber,
+                merchantAddress: merchant,
+                beneficiary: row.beneficiaryAddress,
+                externalReference: row.externalReference,
+                sourceCheckoutId: row.sourceCheckoutId,
+                reason: "Stopped after repeated failed renewals",
+            }), `customer-canceled:${row.contractAddress}:${row.subscriptionId}:past-due-closed`).catch((err: unknown) =>
+                console.error("[subscription/subscribe] past-due close webhook failed:", err));
+        }
+    }
+    return true;
 }
 
 async function handlePOST(request: Request) {
@@ -294,6 +347,13 @@ async function handlePOST(request: Request) {
            mirrored. The second request waits, then sees the first active subscription. */
         const requestFingerprint = crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex");
 
+        if (!await closeLapsedPastDueRows(subscriber, merchant)) {
+            return NextResponse.json({
+                error: "We couldn't check your earlier subscription with this merchant on-chain. Try again in a moment. Nothing was charged.",
+                code: "CHAIN_READ_FAILED",
+            }, { status: 503 });
+        }
+
         const result = await prisma.$transaction(async (tx) => {
             const lockAcquiredResult = await tx.$queryRaw<Array<{ acquired: boolean }>>`
                 SELECT pg_try_advisory_xact_lock(hashtextextended(${lockKey}, 0)) AS acquired
@@ -307,8 +367,12 @@ async function handlePOST(request: Request) {
                 return { status: "CHECKOUT_RECOVERY", attempt: null, appliedPromo: null };
             }
 
+            /* Scoped to the active contract. A row minted by an abandoned deployment is history: its id
+               means nothing against the PSA we would call, and counting it here blocked subscribers
+               whose old authorization no longer exists anywhere. */
             const existing = await tx.subscription.findFirst({
                 where: {
+                    ...onActiveContract(),
                     subscriber,
                     merchantAddress: merchant,
                     kind: "CUSTOMER",
@@ -320,6 +384,11 @@ async function handlePOST(request: Request) {
                 const remainingMs = existing.nextBillingDate
                     ? existing.nextBillingDate.getTime() - Date.now()
                     : 0;
+                if (existing.status === "PAST_DUE" && !existing.cancelAtPeriodEnd) {
+                    /* closeLapsedPastDueRows already retired every PAST_DUE row the chain shows
+                       inactive, so this one still holds a live authorization the keeper is revoking. */
+                    return { status: "PAST_DUE_ACTIVE", existing, attempt: null, appliedPromo: null };
+                }
                 if (existing.cancelAtPeriodEnd) {
                     /* Canceled, and its on-chain authorization was revoked at cancellation time. If
                        paid time remains this is a resume, not a subscribe: /api/user/subscription/
@@ -359,21 +428,29 @@ async function handlePOST(request: Request) {
             `;
             const generation = (generationResult?.[0]?.generation || BigInt(0)) + BigInt(1);
 
-            const idempotencyKey = checkoutSessionId
+            const baseIdempotencyKey = checkoutSessionId
                 ? `subscribe-checkout:${checkoutSessionId}`
                 : `subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`;
 
-            const existingAttempt = await tx.subscriptionAttempt.findUnique({
+            /* Every attempt under this key, including the nonce-suffixed retries. A retryable failure
+               (not enough USDC, a mined revert) gets a fresh key on the next try, so the custody
+               provider doesn't hand back the failed transaction forever. Anything that might still
+               be in flight keeps its key. See lib/subscriptions/subscribeAttempts. */
+            const priorAttempts = await tx.subscriptionAttempt.findMany({
                 where: {
-                    merchantAddress_idempotencyKey: {
-                        merchantAddress: merchant,
-                        idempotencyKey
-                    }
-                }
+                    merchantAddress: merchant,
+                    OR: [
+                        { idempotencyKey: baseIdempotencyKey },
+                        { idempotencyKey: { startsWith: `${baseIdempotencyKey}${SUBSCRIBE_ATTEMPT_NONCE_SEPARATOR}` } },
+                    ],
+                },
+                orderBy: { createdAt: "desc" },
             });
-            if (existingAttempt) {
-                return { status: "ATTEMPT_EXISTS", attempt: existingAttempt, appliedPromo: null };
+            const nextKey = nextSubscribeAttemptKey(baseIdempotencyKey, priorAttempts);
+            if (nextKey.reuse) {
+                return { status: "ATTEMPT_EXISTS", attempt: nextKey.reuse, appliedPromo: null };
             }
+            const idempotencyKey = nextKey.idempotencyKey!;
 
             let appliedPromo: { id: string; introductoryAmountUsdc: bigint; introductoryCycles: number } | null = null;
             if (!externalTxHash && !checkoutSessionId && merchantPlan) {
@@ -442,22 +519,38 @@ async function handlePOST(request: Request) {
             }, { status: 409 });
         }
 
+        if (result.status === "PAST_DUE_ACTIVE" && result.existing) {
+            return NextResponse.json({
+                error: "Your last renewals with this merchant didn't go through, so that subscription is paused. Cancel it from your dashboard, then subscribe again.",
+                code: "PAST_DUE_SUBSCRIPTION",
+                subscriptionId: String(result.existing.subscriptionId),
+            }, { status: 409 });
+        }
+
         if (result.status === "RESUME_INSTEAD" && result.existing) {
             /* Canceled with paid time still on the clock. Subscribing again here would mint a second
-               authorization and charge for a period the subscriber already owns, so point them at the
-               endpoint that restores it for free instead of doing it silently. */
+               authorization and charge for a period the subscriber already owns. For the same plan
+               that's a resume: the client offers a Resume button that calls the resume endpoint, which
+               restores it for free. A different plan is a plan change, not a resume, so it says so
+               instead of offering a button that would bring back the old plan. */
             const canceled = result.existing;
+            const samePlan = String(canceled.amountCapUsdc).split(".")[0] === plan.amountUsdc.toString()
+                && String(canceled.billingIntervalSeconds) === plan.periodSeconds.toString();
+            const accessUntil = canceled.nextBillingDate ? canceled.nextBillingDate.toISOString() : null;
             return NextResponse.json({
-                error: "This subscription is canceled but still active until the end of the period you paid for. Resume it to keep it — you won't be charged until the next billing date.",
+                error: samePlan
+                    ? "You already paid for this plan through the end of the current period. Resume it instead and you won't be charged until then."
+                    : "You canceled your plan with this merchant, but it runs until the end of the period you paid for. Resume it from your dashboard, or come back once it ends to start this plan.",
                 code: "RESUME_INSTEAD",
+                samePlan,
                 subscriptionId: String(canceled.subscriptionId),
                 resumeEndpoint: "/api/user/subscription/resume",
-                accessUntil: canceled.nextBillingDate ? canceled.nextBillingDate.toISOString() : null,
+                accessUntil,
             }, { status: 409 });
         }
 
         if (result.status === "CHECKOUT_RECOVERY") {
-            const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+            const recoveredId = await findActiveOnChainSubscriptionIdOrNull(subscriber, merchant);
             if (!recoveredId) {
                 await recordPaymentReconciliationRequired({
                     dedupeKey: `subscription-recovery:${checkoutSessionId}:${checkout!.verifiedTxHash!.toLowerCase()}`,
@@ -512,7 +605,7 @@ async function handlePOST(request: Request) {
                 externalReference,
                 sourceCheckoutId,
                 txHash: checkout!.verifiedTxHash,
-            }), `created:${recoveredId}:${checkout!.verifiedTxHash!.toLowerCase()}`);
+            }), `created:${activeSubscriptionContract()}:${recoveredId}:${checkout!.verifiedTxHash!.toLowerCase()}`);
             await createSubscriptionStartedDm({
                 merchantAddress: merchant,
                 subscriberAddress: subscriber,
@@ -538,6 +631,7 @@ async function handlePOST(request: Request) {
             if (attempt.status === "COMPLETED" || attempt.status === "CHAIN_CONFIRMED") {
                 const sub = await prisma.subscription.findFirst({
                     where: {
+                        ...onActiveContract(),
                         subscriber,
                         merchantAddress: merchant,
                         kind: "CUSTOMER",
@@ -547,17 +641,15 @@ async function handlePOST(request: Request) {
                     orderBy: { createdAt: "desc" }
                 });
                 if (sub) {
-                    /* The request that charged may have died before mailing. Only for a row on the
-                       live contract: the id means nothing against any other deployment. */
-                    if (sub.contractAddress === activeSubscriptionContract()) {
-                        await mailSignupReceipt({
-                            subId: String(sub.subscriptionId),
-                            txHash: attempt.txHash || sub.paymentTxHash,
-                            subscriber,
-                            merchant,
-                            planName: plan.name,
-                        });
-                    }
+                    /* The request that charged may have died before mailing. The read is scoped to
+                       the live contract, so the id is one the chain we read actually minted. */
+                    await mailSignupReceipt({
+                        subId: String(sub.subscriptionId),
+                        txHash: attempt.txHash || sub.paymentTxHash,
+                        subscriber,
+                        merchant,
+                        planName: plan.name,
+                    });
                     return NextResponse.json({
                         success: true,
                         txHash: attempt.txHash || sub.paymentTxHash,
@@ -565,13 +657,15 @@ async function handlePOST(request: Request) {
                         planName: plan.name,
                     });
                 }
-                const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+                const recoveredId = await findActiveOnChainSubscriptionIdOrNull(subscriber, merchant);
                 if (recoveredId) {
                     /* The promo terms come from the chain, not from appliedPromo: this branch is
                        reached from ATTEMPT_EXISTS, where appliedPromo is always null, so reading it
                        stamped every promo subscription with a 0-amount, 0-cycle snapshot — losing
-                       the real terms and the pricing block on every renewal webhook after it. */
-                    const recoveredIntro = await getIntroductoryTermsOnChain(recoveredId);
+                       the real terms and the pricing block on every renewal webhook after it.
+                       recoveredPromotionTerms also drops the $0 one-cycle terms a resume bridge
+                       carries, which are paid-for time rather than an offer. */
+                    const recoveredIntro = await recoveredPromotionTerms({ subscriber, merchant, subscriptionId: recoveredId });
                     await mirrorSubscriptionCreated({
                         subscriptionId: recoveredId,
                         merchantAddress: merchant,
@@ -659,12 +753,31 @@ async function handlePOST(request: Request) {
             }, { status: 202 });
         }
 
-        // Check if there is an active on-chain subscription already (safety scan before Circle call)
-        const onChainActiveId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+        /* Safety scan before the charge. Fails closed: if the chain can't tell us whether a live
+           subscription exists, we don't charge. The lease goes back so the next try can run. */
+        let onChainActiveId: string | null;
+        try {
+            onChainActiveId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+        } catch (scanError) {
+            if (!isActiveSubscriptionScanUnavailable(scanError)) throw scanError;
+            await prisma.subscriptionAttempt.updateMany({
+                where: { attemptId: attempt.attemptId, leaseToken },
+                data: { leaseExpiresAt: null, lastError: scanError.message },
+            }).catch(() => {});
+            return NextResponse.json({
+                error: "We couldn't confirm on-chain that you don't already have this subscription, so nothing was charged. Try again in a moment.",
+                code: "CHAIN_READ_FAILED",
+            }, { status: 503 });
+        }
         if (onChainActiveId && !externalTxHash) {
             const onChain = await getSubscriptionOnChain(onChainActiveId);
             if (onChain && onChain.amount === plan.amountUsdc && onChain.period === plan.periodSeconds) {
-                const recoveredIntro = await getIntroductoryTermsOnChain(onChainActiveId);
+                const recoveredIntro = await recoveredPromotionTerms({
+                    subscriber,
+                    merchant,
+                    subscriptionId: onChainActiveId,
+                    onChainNextPaymentSeconds: onChain.nextPayment,
+                });
                 await mirrorSubscriptionCreated({
                     subscriptionId: onChainActiveId,
                     merchantAddress: merchant,
@@ -708,7 +821,7 @@ async function handlePOST(request: Request) {
                     externalReference,
                     sourceCheckoutId,
                     txHash: checkout?.verifiedTxHash || null,
-                }), `reconciled-created:${onChainActiveId}:${sourceCheckoutId || plan.id}`);
+                }), `reconciled-created:${activeSubscriptionContract()}:${onChainActiveId}:${sourceCheckoutId || plan.id}`);
                 await mailSignupReceipt({
                     subId: onChainActiveId,
                     txHash: checkout?.verifiedTxHash || null,
@@ -802,15 +915,25 @@ async function handlePOST(request: Request) {
             }
         } catch (execError: any) {
             console.error("[subscription/subscribe] execution error:", execError);
-            const isTerminal = isTerminalCircleError(execError);
-            const nextStatus = isTerminal ? "FAILED_TERMINAL" : "SUBMISSION_UNKNOWN";
-            
+            /* Only a definitive rejection is terminal. A user-fixable failure (not enough USDC, a
+               mined revert, a sponsorship refusal) is FAILED_RETRYABLE, and the next try mints a new
+               idempotency key. Anything that might have reached the provider stays
+               SUBMISSION_UNKNOWN and keeps its key. */
+            const failureClass = classifySubscribeFailure(execError);
+            const nextStatus = failureClass === "TERMINAL"
+                ? "FAILED_TERMINAL"
+                : failureClass === "RETRYABLE" ? "FAILED_RETRYABLE" : "SUBMISSION_UNKNOWN";
+
             await prisma.subscriptionAttempt.update({
                 where: { attemptId: attempt.attemptId },
-                data: { status: nextStatus, lastError: execError.message || String(execError) }
+                data: {
+                    status: nextStatus,
+                    lastError: execError?.message || String(execError),
+                    ...(nextStatus === "SUBMISSION_UNKNOWN" ? {} : { leaseExpiresAt: null }),
+                }
             }).catch(() => {});
 
-            if (isTerminal) {
+            if (failureClass !== "UNKNOWN") {
                 if (attempt.promotionClaimId) {
                     await releasePromotionRedemption(attempt.promotionClaimId, subscriber).catch(() => {});
                 }
@@ -820,7 +943,17 @@ async function handlePOST(request: Request) {
                         data: { status: "PENDING" }
                     }).catch(() => {});
                 }
-                return NextResponse.json({ error: execError.message || "Failed to execute subscription transaction" }, { status: 400 });
+                if (failureClass === "RETRYABLE") {
+                    return NextResponse.json({
+                        error: retryableSubscribeMessage(execError),
+                        code: "SUBSCRIBE_RETRYABLE",
+                        retryable: true,
+                    }, { status: 402 });
+                }
+                return NextResponse.json({
+                    error: execError?.message || "Failed to execute subscription transaction",
+                    code: "ATTEMPT_FAILED_TERMINAL",
+                }, { status: 400 });
             } else {
                 return NextResponse.json({
                     error: "The transaction status is currently unknown. We are verifying the state on-chain. Please do not retry immediately.",
@@ -983,7 +1116,7 @@ async function handlePOST(request: Request) {
                     regularAmountUsdcMicros: plan.amountUsdc,
                 }
                 : null,
-        }), `created:${subId}:${txHash.toLowerCase()}`);
+        }), `created:${activeSubscriptionContract()}:${subId}:${txHash.toLowerCase()}`);
 
         return NextResponse.json({
             success: true,
@@ -1006,12 +1139,5 @@ async function handlePOST(request: Request) {
     }
 }
 
-function isTerminalCircleError(error: any): boolean {
-    const msg = (error?.message || "").toLowerCase();
-    if (msg.includes("timeout") || msg.includes("network") || msg.includes("econnreset") || msg.includes("etimedout") || msg.includes("504") || msg.includes("502")) {
-        return false;
-    }
-    return true;
-}
 
 export const POST = withTransactionPin({ action: "subscription-create", bind: financialPinContext }, handlePOST);

@@ -73,6 +73,25 @@ function isPendingCheckoutVerification(value: unknown): value is PendingCheckout
         && (candidate.receiptId === null || typeof candidate.receiptId === "string");
 }
 
+/* A wallet that throws during the payment send has not necessarily NOT broadcast. An RPC timeout
+   or a wallet bug can surface after the transaction already left. Only an explicit user rejection
+   proves nothing was sent, so that is the only case where releasing the hold is safe. */
+function isWalletRejection(error: unknown): boolean {
+    const err = error as { name?: string; code?: number; shortMessage?: string; message?: string; cause?: unknown } | null;
+    if (!err) return false;
+    if (err.name === "UserRejectedRequestError" || err.code === 4001) return true;
+    if (/user (rejected|denied)|rejected the request|request rejected|denied transaction/i.test(`${err.shortMessage ?? ""} ${err.message ?? ""}`)) {
+        return true;
+    }
+    return err.cause ? isWalletRejection(err.cause) : false;
+}
+
+/* How long a send with an unknown outcome blocks paying again from this browser. The reconcile
+   keeper scans the chain every 15 minutes and settles any payment that did go through, so after
+   this window the payer either has a receipt or can safely try again. */
+const AMBIGUOUS_SEND_HOLD_MS = 20 * 60 * 1000;
+const AMBIGUOUS_SEND_MESSAGE = "We couldn't tell whether your payment went through. Please don't pay again yet. If it did, we'll confirm it automatically within about 15 minutes and email your receipt. Check your wallet's activity for a sent transaction.";
+
 function formatCheckoutAddress(address: string) {
     return /^0x[a-fA-F0-9]{40}$/.test(address)
         ? `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -231,7 +250,19 @@ export default function PublicPayClient({
     const [shareOpen, setShareOpen] = useState(false);
     const [shareNotice, setShareNotice] = useState<string | null>(null);
 
-    const shareLink = checkoutUrl || (typeof window !== "undefined" ? window.location.href : "");
+    /* The share link must never carry ?attempt=. An attempt belongs to one payer, so a friend who
+       opened a link with someone else's attempt hit "belongs to a different payment" and was stuck. */
+    const shareLink = (() => {
+        const base = checkoutUrl || (typeof window !== "undefined" ? window.location.href : "");
+        if (!base) return base;
+        try {
+            const url = new URL(base);
+            url.searchParams.delete("attempt");
+            return url.toString();
+        } catch {
+            return base;
+        }
+    })();
 
     const handleCopyCheckoutLink = async () => {
         try {
@@ -338,9 +369,14 @@ export default function PublicPayClient({
         const url = new URL(window.location.href);
         const linkedAttempt = url.searchParams.get("attempt");
         const stored = sessionStorage.getItem(storageKey);
-        const attemptId = (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(linkedAttempt || "")
-            ? linkedAttempt
-            : stored) || crypto.randomUUID();
+        /* This tab's own attempt wins. The URL copy only restores an attempt when storage was lost
+           (a reload with storage denied). A link pasted from someone else must not replace the
+           attempt this payer already holds. */
+        const attemptId = stored
+            || (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(linkedAttempt || "")
+                ? linkedAttempt
+                : null)
+            || crypto.randomUUID();
         if (!stored) sessionStorage.setItem(storageKey, attemptId);
         setClientIntentId(attemptId);
         url.searchParams.set("attempt", attemptId);
@@ -598,7 +634,12 @@ export default function PublicPayClient({
     const markSettled = useCallback(() => {
         setIsSettled(true);
         setVerificationStatus(SETTLED_STATUS);
-    }, []);
+        try {
+            sessionStorage.removeItem(`subscript_ambiguous_send:${id}`);
+        } catch {
+            /* Nothing to clear when storage is denied. */
+        }
+    }, [id]);
 
     useEffect(() => {
         if (!mounted || !isPaymentSettled || !receiptId || shareableReceiptUrl) return;
@@ -948,8 +989,9 @@ export default function PublicPayClient({
             body: JSON.stringify({ attemptId }),
         });
         const data = await response.json().catch(() => ({}));
-        if (response.status === 409 && data.code === "ATTEMPT_RELEASED") {
-            /* Terminal attempt UUID: rotate once and reserve a fresh attempt in the same click. */
+        if (response.status === 409 && (data.code === "ATTEMPT_RELEASED" || data.code === "ATTEMPT_FOREIGN")) {
+            /* Terminal or someone else's attempt UUID: rotate once and reserve a fresh attempt in
+               the same click. A foreign one comes from a shared link that still carried ?attempt=. */
             const fresh = rotateAttemptId();
             if (!attemptOverride) return reserveCheckoutAttempt(payer, fresh);
             throw new Error("This checkout attempt expired. Please try again.");
@@ -1015,6 +1057,16 @@ export default function PublicPayClient({
             paymentSubmissionGuardRef.current = false;
             setVerificationError("Restoring this checkout's payment state. Please wait a moment.");
             return;
+        }
+        try {
+            const ambiguousAt = Number(sessionStorage.getItem(`subscript_ambiguous_send:${id}`) || 0);
+            if (ambiguousAt && Date.now() - ambiguousAt < AMBIGUOUS_SEND_HOLD_MS) {
+                paymentSubmissionGuardRef.current = false;
+                setVerificationError(AMBIGUOUS_SEND_MESSAGE);
+                return;
+            }
+        } catch {
+            /* Storage denied: the in-memory submission guard still blocks this page. */
         }
         setVerificationError(null);
         setVerificationStatus(null);
@@ -1195,6 +1247,7 @@ export default function PublicPayClient({
             }
         } else {
             /* Native Arc Network Payment Flow */
+            let paymentSendStarted = false;
             try {
                 const nextReceiptId = receiptId || checkoutReceiptId;
                 setReceiptId(nextReceiptId);
@@ -1202,6 +1255,7 @@ export default function PublicPayClient({
                 if (isUserRequest) {
                     setPaymentStep("sending");
                     setVerificationStatus("Sending USDC directly to the requester...");
+                    paymentSendStarted = true;
                     const hash = await writeContractAsync({
                         address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
                         abi: USDC_ERC20_ABI,
@@ -1262,6 +1316,7 @@ export default function PublicPayClient({
 
                     setPaymentStep("sending");
                     setVerificationStatus("Routing payment to merchant...");
+                    paymentSendStarted = true;
                     const hash = await writeContractAsync({
                         address: SUBSCRIPT_ROUTER_ADDRESS as `0x${string}`,
                         abi: ROUTER_DEPOSIT_ABI,
@@ -1291,6 +1346,22 @@ export default function PublicPayClient({
                 }
 
             } catch (err: any) {
+                if (paymentSendStarted && !paymentBroadcastRef.current && !isWalletRejection(err)) {
+                    /* The send may have broadcast. Releasing now would hand this attempt's capacity to
+                       someone else and, before late binding, strand the payment. Keep the hold (the
+                       server reaper returns it after 10 minutes if nothing arrives), keep this page
+                       from paying again, and let the reconcile sweep settle it if it did go through. */
+                    try {
+                        sessionStorage.setItem(`subscript_ambiguous_send:${id}`, String(Date.now()));
+                    } catch {
+                        /* The in-memory guard below still blocks a second send from this page. */
+                    }
+                    setVerificationError(AMBIGUOUS_SEND_MESSAGE);
+                    setIsPaying(false);
+                    setIsVerifying(false);
+                    setPaymentStep(null);
+                    return;
+                }
                 await releaseUnbroadcastAttempt(activeAttemptId);
                 if (!paymentBroadcastRef.current) paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "Payment transaction failed"));
@@ -1396,18 +1467,30 @@ export default function PublicPayClient({
                     }
                 });
 
+                /* The stream ran out of time before a final status. Settlement is still running
+                   server-side and the 3-second status poll keeps watching, so this is not an error. */
+                eventSource.addEventListener("pending", () => {
+                    settled = true;
+                    eventSource.close();
+                    paymentSubmissionGuardRef.current = true;
+                    verificationInFlightRef.current = null;
+                    setVerificationError(null);
+                    setVerificationStatus("Still confirming your payment. This page updates on its own, so there's no need to pay again."); setIsVerifying(false);
+                });
+
                 eventSource.onerror = (err) => {
                     if (settled) return;
                     console.error("EventSource connection error:", err);
                     eventSource.close();
+                    /* A dropped stream says nothing about the payment. The status poll is still
+                       running and will flip this page to settled, so keep the payer calm and blocked
+                       from paying again rather than showing an error. */
                     paymentSubmissionGuardRef.current = true;
                     verificationInFlightRef.current = null;
-                    setVerificationStatus(null);
-                    setVerificationError(friendlyError("Real-time stream disconnected. Continue verification for the submitted transaction."));
-                    setIsVerifying(false);
+                    setVerificationError(null);
+                    setVerificationStatus("Still confirming your payment. This page updates on its own, so there's no need to pay again."); setIsVerifying(false);
                     setIsPaying(false);
                     setIsEmbeddedPaying(false);
-                    setPaymentStep(null);
                 };
             } catch (err: any) {
                 paymentSubmissionGuardRef.current = true;
@@ -1597,6 +1680,16 @@ export default function PublicPayClient({
             setVerificationError("Restoring this checkout's payment state. Please wait a moment.");
             return;
         }
+        try {
+            const ambiguousAt = Number(sessionStorage.getItem(`subscript_ambiguous_send:${id}`) || 0);
+            if (ambiguousAt && Date.now() - ambiguousAt < AMBIGUOUS_SEND_HOLD_MS) {
+                paymentSubmissionGuardRef.current = false;
+                setVerificationError(AMBIGUOUS_SEND_MESSAGE);
+                return;
+            }
+        } catch {
+            /* Storage denied: the server-side outcome-pending marker still guards a second charge. */
+        }
         setVerificationError(null);
         setVerificationStatus(null);
         if (cannotPayLink) {
@@ -1619,10 +1712,20 @@ export default function PublicPayClient({
                 body: JSON.stringify({ clientIntentId })
             }, { operation: "Pay checkout", details: { merchant: linkData.merchant_address, amountUsdc: formatUnits(BigInt(linkData.amount_usdc), 6), paymentLinkId: linkData.id, clientIntentId } });
             const data = await res.json().catch(() => ({}));
-            if (res.status === 409 && data.code === "ATTEMPT_RELEASED") {
-                /* Terminal attempt UUID — rotate so the next click reserves a fresh attempt. */
+            if (res.status === 409 && (data.code === "ATTEMPT_RELEASED" || data.code === "ATTEMPT_FOREIGN")) {
+                /* Terminal or foreign attempt UUID — rotate so the next click reserves a fresh attempt. */
                 rotateAttemptId();
                 throw new Error("This checkout attempt expired. Press Pay again to start a fresh attempt.");
+            }
+            if (res.status === 502 || data.code === "PAYMENT_OUTCOME_PENDING") {
+                /* The custody provider timed out, so the transfer may have gone through. Block paying
+                   again from this browser for the same window the server enforces. */
+                try {
+                    sessionStorage.setItem(`subscript_ambiguous_send:${id}`, String(Date.now()));
+                } catch {
+                    /* The server-side outcome-pending marker still refuses a second charge. */
+                }
+                throw new Error(data.code === "PAYMENT_OUTCOME_PENDING" ? data.error : AMBIGUOUS_SEND_MESSAGE);
             }
             if (!res.ok || !data.success || !data.txHash) {
                 throw new Error(data.error || "Payment could not be completed.");

@@ -114,7 +114,7 @@ async function fixture() {
         "@/lib/vault/onchain": onchain, "@/lib/contracts/constants": constants, "@/lib/payments/settlementReceiptRecovery": settlement,
         "@/lib/custody": { deterministicIdempotencyKey: value => crypto.createHash("sha256").update(value).digest("hex"), CirclePaymasterPolicyError },
         "@/lib/sponsor/sponsorship": { requireSponsoredGas: async () => {}, isSponsoredGasError: () => false }, "@/lib/prisma": { prisma },
-        "@/lib/network/registry": { assertFinancialNetworkReady() {} }, "@/lib/accountHalt": { haltGuard: async () => null },
+        "@/lib/network/registry": { assertFinancialNetworkReady() {} }, "@/lib/accountHalt": { haltGuard: async () => null }, "@/lib/platform/systemSettings": { areUsageVaultsEnabled: async () => true },
         "@/lib/merchants/identity": { isCommitSlug: () => false }, "@/lib/kyc/tier": { getAccountKycTier: async () => ({ tier: 1 }) },
         "@/lib/vault/commitRecovery": recovery,
     });

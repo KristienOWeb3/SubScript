@@ -154,23 +154,27 @@ test("the on-chain period floor is respected", () => {
     assert.equal(terms.code, "INVALID_PERIOD");
 });
 
-test("the upgrade route revokes before it creates, and can be recovered by resume", () => {
+test("the upgrade route replaces atomically and asks the chain what happened on error", () => {
     const route = source("src/app/api/user/subscription/upgrade/route.ts");
 
-    /* Cancel-then-create, not the reverse. The contract's duplicate guard is keyed on the full
-       (subscriber, merchant, amount, period, tokens) tuple, so a NEW amount/period is not a duplicate
-       and creating first would leave TWO chargeable authorizations — executePayment is permissionless,
-       so that is real money regardless of what the database says. */
-    const cancelAt = route.indexOf("cancelFromEmbedded");
-    const createAt = route.indexOf("subscribeFromEmbedded(");
-    assert.ok(cancelAt > 0 && createAt > cancelAt, "cancel must precede create");
+    /* One replaceSubscription, never a separate cancel and create. Two transactions could strand the
+       subscriber with none (crash in between) or two (create first) chargeable authorizations. */
+    assert.doesNotMatch(route, /cancelFromEmbedded/);
+    assert.doesNotMatch(route, /subscribeFromEmbedded\(/);
+    assert.match(route, /replaceFromEmbedded\(/);
+    /* Old contracts without the atomic replace are refused before anything is signed. */
+    assert.ok(route.indexOf("supportsReplaceSubscriptions()") < route.indexOf("replaceFromEmbedded("));
+    assert.match(route, /CONTRACT_UPGRADE_REQUIRED/);
 
-    /* If the create fails the subscriber holds nothing but has paid nothing, and the row must be
-       written the way resume expects to find it — canceled with paid time left. Leaving the mirror
-       claiming ACTIVE against a revoked chain state is what strands them. */
-    assert.match(route, /mirrorSubscriptionCancelAtPeriodEnd/);
-    assert.match(route, /UPGRADE_CREATE_FAILED/);
-    assert.match(route, /resume it from your dashboard/);
+    /* On a provider error the old authorization's on-chain state decides: still active means nothing
+       moved (retryable, attempt marked FAILED); otherwise recover rather than invite a second try. */
+    assert.match(route, /if \(after\?\.isActive\) \{\s*\n\s*await markAttempt\("FAILED"\);/);
+    assert.match(route, /if \(existingAttempt\.status !== "FAILED"\) return \{ status: "ATTEMPT_EXISTS" as const \};/);
+    assert.doesNotMatch(route, /resume it from your dashboard/);
+
+    /* Credit is priced on value actually paid, and the new row records what was carried in. */
+    assert.match(route, /creditBasis,\s*\n\s*\}\);/);
+    assert.match(route, /carriedCredit: \{ micros: terms\.unusedCreditMicros, since: new Date\(\) \}/);
 
     /* The new authorization is mirrored BEFORE the old row is closed: it is the one that can move
        money, so it must never exist on-chain without a row the keeper can bill. */
@@ -182,6 +186,8 @@ test("the upgrade route revokes before it creates, and can be recovered by resum
     assert.match(route, /customer-subscription:\$\{subscriber\}:\$\{merchant\}/);
     /* The replaced subscription is derived from the session, never accepted from the request. */
     assert.doesNotMatch(route, /body\.fromSubscriptionId/);
-    /* Reached from a merchant's own site, so a subscription-checkout id must resolve too. */
-    assert.match(route, /readSubscriptionCheckoutMeta/);
+    /* Reached from a merchant's own site, so a subscription-checkout id must resolve too. The resolver
+       is shared with the downgrade route. */
+    assert.match(route, /resolveUpgradeTarget/);
+    assert.match(source("src/lib/subscriptions/planTarget.ts"), /readSubscriptionCheckoutMeta/);
 });
