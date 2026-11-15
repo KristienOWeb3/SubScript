@@ -23,6 +23,7 @@ export async function mirrorSubscriptionCreated({
     externalReference,
     sourceCheckoutId,
     planId,
+    carriedCredit,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
@@ -48,6 +49,9 @@ export async function mirrorSubscriptionCreated({
     sourceCheckoutId?: string | null;
     /* Canonical merchant plan attribution for dashboard reporting. */
     planId?: string | null;
+    /* Unused value carried in from the authorization this one replaced (upgrade, downgrade,
+       resume) and when it was carried. Feeds the paid-value credit basis for later upgrades. */
+    carriedCredit?: { micros: bigint; since: Date } | null;
 }) {
     const merchant = merchantAddress.toLowerCase();
     const sub = subscriber.toLowerCase();
@@ -85,6 +89,9 @@ export async function mirrorSubscriptionCreated({
     const merchantReference = externalReference?.trim() || null;
     const checkoutSource = sourceCheckoutId?.trim().toLowerCase() || null;
     const canonicalPlanId = planId?.trim() || null;
+    const carried = carriedCredit && carriedCredit.micros > BigInt(0)
+        ? { carriedCreditUsdcMicros: carriedCredit.micros, carriedCreditSince: carriedCredit.since }
+        : {};
 
         /* The subscriptions.merchant_address FK requires a merchants row. */
     await prisma.merchant.upsert({
@@ -110,6 +117,7 @@ export async function mirrorSubscriptionCreated({
                 sourceCheckoutId: checkoutSource,
                 minCommitmentUntil: commitmentUntil,
                 ...promoSnapshot,
+                ...carried,
                 updatedAt: now,
             },
             create: {
@@ -129,6 +137,7 @@ export async function mirrorSubscriptionCreated({
                 sourceCheckoutId: checkoutSource,
                 minCommitmentUntil: commitmentUntil,
                 ...promoSnapshot,
+                ...carried,
             },
     });
 

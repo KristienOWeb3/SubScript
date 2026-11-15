@@ -25,6 +25,7 @@ import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { haltGuard } from "@/lib/accountHalt";
+import { creditBasisForRow, unusedWindowValueMicros } from "@/lib/subscriptions/planChange";
 
 export const maxDuration = 120;
 
@@ -94,7 +95,8 @@ async function handlePOST(request: Request) {
                 code: "CHAIN_READ_FAILED",
             }, { status: 503 });
         }
-        const paidThroughAt = new Date(Number(await getSubscriptionPaidThrough(subscriptionId, onChain)) * 1000);
+        const paidThroughSeconds = await getSubscriptionPaidThrough(subscriptionId, onChain);
+        const paidThroughAt = new Date(Number(paidThroughSeconds) * 1000);
 
         /* Branch 1: the revocation never landed, so the original authorization is still live. Clearing
            the cancellation is the whole job — minting a second authorization would leave the
@@ -192,6 +194,15 @@ async function handlePOST(request: Request) {
         const custodial = isCustodialWallet(await getWalletCustody(subscriber));
         const externalTxHash = typeof body.txHash === "string" ? body.txHash : null;
         const firstPaymentSeconds = BigInt(Math.floor(terms.firstChargeAt.getTime() / 1000));
+        /* Unused paid value of the window being resumed, carried onto the new row. Best-effort: a
+           failed read only means a later upgrade during this window credits less, so it must not
+           block the resume itself. */
+        const resumeCarriedMicros = await creditBasisForRow(subscriptionId, onChain, paidThroughSeconds, row)
+            .then((basis) => unusedWindowValueMicros(basis, paidThroughSeconds, BigInt(Math.floor(Date.now() / 1000))))
+            .catch((basisError: unknown) => {
+                console.error("[subscription/resume] credit basis read failed:", basisError);
+                return BigInt(0);
+            });
         if (!custodial && !externalTxHash) {
             return NextResponse.json({
                 requiresWalletResume: true,
@@ -270,6 +281,10 @@ async function handlePOST(request: Request) {
             externalReference: row.externalReference,
             sourceCheckoutId: row.sourceCheckoutId,
             planId: row.planId,
+            /* The deferred window is time the subscriber already paid for on the old authorization.
+               Record its unused value so an upgrade during it credits that time, rather than
+               reading the new authorization's free sequence 0 as a $0 trial. */
+            carriedCredit: { micros: resumeCarriedMicros, since: new Date() },
         });
         } catch (mirrorError) {
             /* The new authorization is live on-chain and can move money, but has no row the keeper

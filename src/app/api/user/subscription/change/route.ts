@@ -34,7 +34,20 @@ import { haltGuard } from "@/lib/accountHalt";
 
 export const maxDuration = 150;
 
+/* Retired 2026-11-14. This path charged the proration first and then called modifySubscription,
+   which reverts on any period change. That left a paid proration with no plan change and nothing
+   refunding it. No UI calls it. Plan changes now go through /api/user/subscription/upgrade
+   (immediate) and /api/user/subscription/downgrade (next renewal), both as one atomic
+   replaceSubscription. The body below is kept so reconciliation records it created still resolve. */
+const CHANGE_ROUTE_RETIRED = true;
+
 async function handlePOST(request: Request) {
+    if (CHANGE_ROUTE_RETIRED) {
+        return NextResponse.json({
+            error: "This endpoint is retired. Use /api/user/subscription/upgrade or /api/user/subscription/downgrade.",
+            code: "ENDPOINT_RETIRED",
+        }, { status: 410 });
+    }
     let changeClaimKey: string | null = null;
     let proratedTxHashForRecovery: string | null = null;
     let modifyTxHashForRecovery: string | null = null;

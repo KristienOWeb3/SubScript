@@ -14,6 +14,9 @@ const SUB_ABI = [
     "function createSubscriptionWithIntroductoryTerms(address merchant, uint256 amount, uint256 period, uint256 introductoryAmount, uint256 introductoryCycles) returns (uint256)",
     "function createSubscriptionWithDeferredFirstPayment(address merchant, uint256 amount, uint256 period, uint256 firstPayment) returns (uint256)",
     "function supportsDeferredSubscriptions() pure returns (bool)",
+    "function supportsReplaceSubscriptions() pure returns (bool)",
+    "function replaceSubscription(uint256 oldSubId, uint256 newAmount, uint256 newPeriod, uint256 chargeNow, uint256 firstPaymentAt, uint256 introCycles) returns (uint256)",
+    "event SubscriptionReplaced(uint256 indexed oldSubId, uint256 indexed newSubId, uint256 chargeNow, uint256 firstPaymentAt)",
     "function paidThrough(uint256) view returns (uint256)",
     "function executionBitmaps(uint256,uint256) view returns (uint256)",
     "function cancelSubscription(uint256 subId)",
@@ -81,6 +84,122 @@ export async function supportsDeferredSubscriptions(): Promise<boolean> {
         if ((error as { code?: string })?.code === "CALL_EXCEPTION") return false;
         throw error;
     }
+}
+
+/* PSA v3 capability: atomic cancel-and-create for plan changes. Older deployments revert on the
+   probe, which reads as "not supported" so callers can fail closed. */
+export async function supportsReplaceSubscriptions(): Promise<boolean> {
+    const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+    try {
+        return Boolean(await c.supportsReplaceSubscriptions());
+    } catch (error) {
+        if ((error as { code?: string })?.code === "CALL_EXCEPTION") return false;
+        throw error;
+    }
+}
+
+/**
+ * Cash the chain charged (or will charge) for one billing sequence: the introductory amount while
+ * a promotion lasts (sequence 0 is the signup payment), the regular amount after. Deployments that
+ * predate chargeAmountFor had no introductory pricing, so they fall back to the flat amount. Any
+ * other read failure throws, because guessing a paid value would misprice credit.
+ */
+export async function readChargeAmountFor(subId: string | bigint, sequence: bigint, fallbackAmount: bigint): Promise<bigint> {
+    const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+    try {
+        return BigInt(await c.chargeAmountFor(BigInt(subId), sequence));
+    } catch (error) {
+        if ((error as { code?: string })?.code !== "CALL_EXCEPTION") throw error;
+        return fallbackAmount;
+    }
+}
+
+export type ReplaceTerms = {
+    newAmount: bigint;
+    newPeriod: bigint;
+    /** > 0 charges now (upgrade). 0 defers the first charge to firstPaymentAt (downgrade). */
+    chargeNow: bigint;
+    firstPaymentAt: bigint;
+    introCycles: bigint;
+};
+
+/** Contract arguments for a replace, shared by the custodial signer and the external-wallet path. */
+export function replaceSubscriptionArgs(oldSubId: string | bigint, terms: ReplaceTerms) {
+    return [BigInt(oldSubId), terms.newAmount, terms.newPeriod, terms.chargeNow, terms.firstPaymentAt, terms.introCycles] as const;
+}
+
+function replacedSubIdFrom(receipt: ethers.TransactionReceipt | null, oldSubId: string | bigint): string | null {
+    const iface = new ethers.Interface(SUB_ABI);
+    for (const log of receipt?.logs || []) {
+        try {
+            if (log.address.toLowerCase() !== STANDARD_CONTRACT_ADDRESS.toLowerCase()) continue;
+            const parsed = iface.parseLog(log);
+            if (parsed?.name === "SubscriptionReplaced" && BigInt(parsed.args.oldSubId) === BigInt(oldSubId)) {
+                return parsed.args.newSubId.toString();
+            }
+        } catch {
+            /* not our event */
+        }
+    }
+    return null;
+}
+
+/**
+ * Atomically replace a subscription from the embedded wallet: the old authorization is cancelled
+ * and the new one created in ONE transaction, so there is no window where the subscriber holds
+ * neither (the cancel-then-create gap) or both.
+ */
+export async function replaceFromEmbedded(
+    walletAddress: string,
+    oldSubId: string | bigint,
+    terms: ReplaceTerms,
+    idempotencyKey: string,
+) {
+    const custody = await getWalletCustody(walletAddress);
+    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(terms.newAmount, terms.newPeriod));
+    const { txHash } = await custody.executeContract({
+        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        abi: SUB_ABI,
+        functionName: "replaceSubscription",
+        args: [...replaceSubscriptionArgs(oldSubId, terms)],
+        idempotencyKey,
+    });
+    const receipt = await fetchReceipt(txHash);
+    return { txHash, subId: replacedSubIdFrom(receipt, oldSubId) };
+}
+
+/**
+ * Verify an externally signed replaceSubscription. It must have succeeded, been sent by the
+ * subscriber to the standard contract, called replaceSubscription with exactly the quoted terms,
+ * and emitted SubscriptionReplaced for this old subscription.
+ */
+export async function verifyExternalReplaceTx(input: {
+    txHash: string;
+    subscriber: string;
+    oldSubId: string | bigint;
+    terms: ReplaceTerms;
+}): Promise<{ txHash: string; subId: string }> {
+    const provider = readProvider();
+    const [tx, receipt] = await Promise.all([
+        provider.getTransaction(input.txHash),
+        provider.getTransactionReceipt(input.txHash),
+    ]);
+    if (!tx || !receipt) throw new Error("Plan change transaction not found on-chain yet. Try again in a few seconds.");
+    if (receipt.status !== 1) throw new Error("Plan change transaction reverted on-chain.");
+    if ((tx.from || "").toLowerCase() !== input.subscriber.toLowerCase()) {
+        throw new Error("Transaction sender does not match your wallet.");
+    }
+    if (!tx.to || tx.to.toLowerCase() !== STANDARD_CONTRACT_ADDRESS.toLowerCase()) {
+        throw new Error("Transaction is not a SubScript plan change.");
+    }
+    const parsed = new ethers.Interface(SUB_ABI).parseTransaction({ data: tx.data, value: tx.value });
+    const expected = replaceSubscriptionArgs(input.oldSubId, input.terms);
+    if (parsed?.name !== "replaceSubscription" || expected.some((value, i) => BigInt(parsed.args[i]) !== value)) {
+        throw new Error("This transaction does not match the quoted plan change.");
+    }
+    const subId = replacedSubIdFrom(receipt, input.oldSubId);
+    if (!subId) throw new Error("The plan change did not emit the expected replacement event.");
+    return { txHash: input.txHash, subId };
 }
 
 /* Introductory terms recorded on-chain at creation (cycles = 0 => none). Used by the

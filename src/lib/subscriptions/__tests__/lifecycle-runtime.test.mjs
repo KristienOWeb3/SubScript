@@ -54,6 +54,7 @@ function routeStubs() {
             subscribeFromEmbedded: async (...args) => { calls.creates.push(args); return { txHash: "0xcreated", subId: "2" }; },
         },
         "@/lib/sponsor/sponsorship": { requireSponsoredGas: async () => { calls.sponsorship++; } },
+        "@/lib/subscriptions/planChange": { creditBasisForRow: async () => ({ valueMicros: 0n, windowSeconds: 1n }), unusedWindowValueMicros: () => 0n },
         "@/lib/subscriptions/mirror": {
             mirrorSubscriptionCancelAtPeriodEnd: async (x) => { calls.mirror.push(x); return true; },
             mirrorSubscriptionCanceled: noop,

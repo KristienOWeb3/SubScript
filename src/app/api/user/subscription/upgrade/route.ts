@@ -5,30 +5,20 @@ import type { VerifiedSessionToken } from "@/lib/auth";
 import { subscriptionUpgradeSnapshot } from "@/lib/auth/subscriptionUpgradeAuthorization";
 /* Upgrade a subscription to a higher-rate plan, settled from the hosted subscription checkout.
  *
- * Not an in-place modify. `modifySubscription` rejects a rate reduction by cross-multiplying the new
- * terms against the authorization's CURRENT on-chain period, and after a resume that period is the
- * short bridge period rather than the plan cadence — so a genuine upgrade (20 USDC/30d to 40 USDC/30d
- * with 14 days left: `40 * 14 < 20 * 30`) reverts on-chain, and the bridge period can never be
- * restored because restoring it reads as a reduction too. So an upgrade revokes the old authorization
- * and mints a fresh one at the new plan's real terms, where no such comparison exists.
+ * One atomic `replaceSubscription` (PSA v3): the old authorization is cancelled and the new one
+ * created in the same transaction. The old route did cancel-then-create as two transactions, and a
+ * crash between them left the subscriber with no authorization while the database still said ACTIVE.
+ * An in-place `modifySubscription` is still not an option, because it refuses any period change.
  *
- * The subscriber pays the new plan's price minus credit for the time they already paid for, taken as
- * the new authorization's sequence-0 charge. See lib/subscriptions/upgradeCheckout for the arithmetic
- * and why it is NOT proratedUpgradeDelta.
- *
- * Ordering is cancel-then-create, deliberately. `executePayment` is permissionless, so an authorization
- * left `isActive` stays chargeable no matter what the database says — and the contract's duplicate
- * guard is keyed on the full (subscriber, merchant, amount, period, tokens) tuple, so a NEW
- * amount/period is not a duplicate and both authorizations would be live at once. Creating first would
- * leave the subscriber holding two chargeable authorizations; cancelling first can only leave them
- * holding none, which `/api/user/subscription/resume` recovers for free because cancellation leaves the
- * authorization struct (and its paid-through date) intact.
+ * The subscriber pays the new plan's price minus credit for unused paid time, taken as the new
+ * authorization's sequence-0 charge. The credit is priced on value actually paid for the current
+ * window, never on the list price. See lib/subscriptions/upgradeCheckout and planChange.
  *
  * GET previews the terms for the checkout page. The money math is computed server-side in both verbs
- * from the same resolver, so the figure the subscriber is shown is the figure that gets charged — the
- * client never derives it.
+ * from the same resolver, so the figure the subscriber is shown is the figure that gets charged.
  *
- * Server-signed from the embedded wallet; gas covered by SubScript.
+ * Custodial wallets are server-signed (gas covered by SubScript). External wallets get the exact call
+ * to sign, then post the hash, which is verified against the quoted terms.
  */
 import { NextResponse } from "next/server";
 import crypto from "crypto";
@@ -38,19 +28,23 @@ import { sanitizeInput } from "@/utils/security";
 import { prisma } from "@/lib/prisma";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import {
-    cancelFromEmbedded,
+    findActiveOnChainSubscriptionIdOrNull,
     getSubscriptionOnChain,
     getSubscriptionPaidThrough,
-    subscribeFromEmbedded,
+    horizonAllowance,
+    replaceFromEmbedded,
+    replaceSubscriptionArgs,
+    supportsReplaceSubscriptions,
+    verifyExternalReplaceTx,
+    type ReplaceTerms,
 } from "@/lib/subscriptions/onchain";
+import { creditBasisForRow } from "@/lib/subscriptions/planChange";
+import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
+import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
-import {
-    mirrorSubscriptionCreated,
-    mirrorSubscriptionCancelAtPeriodEnd,
-} from "@/lib/subscriptions/mirror";
+import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { onActiveContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
-import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
-import { checkoutExpiresAt, isCheckoutExpired } from "@/lib/subscriptions/apiSubscriptionView";
+import { resolveUpgradeTarget, type UpgradeTarget, type Refusal } from "@/lib/subscriptions/planTarget";
 import {
     upgradeCheckoutTerms,
     type UpgradeCheckoutTerms,
@@ -64,19 +58,6 @@ import { deterministicIdempotencyKey } from "@/lib/custody";
 
 export const maxDuration = 120;
 
-type UpgradeTarget = {
-    /** The id the caller arrived with — a plan id or a subscription-checkout id. */
-    id: string;
-    merchantAddress: string;
-    name: string;
-    amountUsdc: bigint;
-    periodSeconds: bigint;
-    /** Set when the target was a checkout session rather than a catalog plan. */
-    checkoutSessionId: string | null;
-    /** The catalog plan this target belongs to, when one exists, for the mirror's plan_id. */
-    planId: string | null;
-};
-
 type ResolvedUpgrade = {
     merchant: string;
     target: UpgradeTarget;
@@ -89,99 +70,6 @@ type ResolvedUpgrade = {
     terms: UpgradeCheckoutTerms;
 };
 
-type Refusal = { ok: false; status: number; body: Record<string, unknown> };
-
-/**
- * Resolve the plan being upgraded to, from either identifier the customer can arrive with.
- *
- * A business that links its own pricing page at SubScript sends customers to `/subscribe/<id>`, and
- * that id is a catalog plan for a dashboard-published plan but a `payment_links` row for one created
- * through `POST /api/v1/subscriptions`. Accepting only the former meant an upgrade started from the
- * merchant's own site — the entry point this flow exists for — failed with "Plan not found".
- */
-async function resolveUpgradeTarget(
-    id: string,
-    subscriber: string,
-): Promise<{ ok: true; value: UpgradeTarget } | Refusal> {
-    const plan = await prisma.merchantPlan.findUnique({ where: { id } });
-    if (plan) {
-        assertAuthorizedFinancialRecord("plans", {
-            id: plan.id, merchant_address: plan.merchantAddress, amount_usdc: plan.amountUsdc.toString(),
-            period_seconds: plan.periodSeconds.toString(), min_commitment_seconds: plan.minCommitmentSeconds.toString(),
-            active: plan.active, target_subscriber: plan.targetSubscriber,
-            source_checkout_id: plan.sourceCheckoutId, updated_at: plan.updatedAt,
-        });
-        if (!plan.active) {
-            return { ok: false, status: 404, body: { error: "Plan not found or inactive" } };
-        }
-        if (plan.targetSubscriber && plan.targetSubscriber.toLowerCase() !== subscriber) {
-            return { ok: false, status: 403, body: { error: "This plan is assigned to another subscriber" } };
-        }
-        return {
-            ok: true,
-            value: {
-                id: plan.id,
-                merchantAddress: plan.merchantAddress,
-                name: plan.name,
-                amountUsdc: BigInt(plan.amountUsdc),
-                periodSeconds: BigInt(plan.periodSeconds),
-                checkoutSessionId: plan.sourceCheckoutId ?? null,
-                planId: plan.id,
-            },
-        };
-    }
-
-    const checkout = await prisma.paymentLink.findUnique({ where: { id } });
-    const meta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
-    if (!checkout || !meta || !checkout.active || !["PENDING", "PROCESSING"].includes(checkout.status)) {
-        return { ok: false, status: 404, body: { error: "Plan not found or inactive" } };
-    }
-    assertAuthorizedFinancialRecord("links", {
-        id: checkout.id, merchant_address: checkout.merchantAddress, beneficiary_address: checkout.beneficiaryAddress,
-        amount_usdc: checkout.amountUsdc.toString(), state_snapshot: checkout.stateSnapshot,
-        active: checkout.active, expires_at: checkout.expiresAt, max_uses: checkout.maxUses,
-        settlement_chain_id: checkout.settlementChainId.toString(), deleted_at: checkout.deletedAt,
-        link_kind: checkout.linkKind, sandbox_mode: checkout.sandboxMode, simulation_only: checkout.simulationOnly,
-    });
-    if (meta.subscriber && meta.subscriber !== subscriber) {
-        return {
-            ok: false,
-            status: 403,
-            body: { error: "This subscription checkout is assigned to another subscriber" },
-        };
-    }
-    if (isCheckoutExpired(checkout)) {
-        return {
-            ok: false,
-            status: 410,
-            body: {
-                error: "This subscription offer has expired. Ask the merchant for a new checkout link.",
-                code: "CHECKOUT_EXPIRED",
-                expiresAt: checkoutExpiresAt(checkout).toISOString(),
-            },
-        };
-    }
-
-    /* A checkout published as a catalog plan should still record that plan on the new mirror row, so
-       the upgraded subscription stays attributable to the same plan the merchant manages. */
-    const linkedPlan = await prisma.merchantPlan.findUnique({
-        where: { sourceCheckoutId: checkout.id },
-        select: { id: true },
-    }).catch(() => null);
-
-    return {
-        ok: true,
-        value: {
-            id: checkout.id,
-            merchantAddress: checkout.merchantAddress,
-            name: checkout.title,
-            amountUsdc: BigInt(checkout.amountUsdc),
-            periodSeconds: subscriptionCheckoutPeriod(meta),
-            checkoutSessionId: checkout.id,
-            planId: linkedPlan?.id ?? null,
-        },
-    };
-}
 
 /**
  * Everything both verbs need, resolved from the caller's session and the target id alone.
@@ -257,7 +145,12 @@ async function resolveUpgrade(
 
     const newAmountMicros = target.amountUsdc;
     const newPeriodSeconds = target.periodSeconds;
-    const paidThroughAt = new Date(Number(await getSubscriptionPaidThrough(fromSubscriptionId, onChain)) * 1000);
+    const paidThroughSeconds = await getSubscriptionPaidThrough(fromSubscriptionId, onChain);
+    const paidThroughAt = new Date(Number(paidThroughSeconds) * 1000);
+    /* Credit is priced on what was actually paid for the current window: the cash the chain charged
+       for this sequence plus any value carried in from a replaced authorization. Pricing it on the
+       list amount credited trial and intro-price subscribers for time they never paid for. */
+    const creditBasis = await creditBasisForRow(fromSubscriptionId, onChain, paidThroughSeconds, current);
     const terms = upgradeCheckoutTerms({
         /* Old terms come from the CHAIN: after a resume the mirror deliberately holds the plan cadence
            while the chain holds the shorter bridge period, and the credit owed is a function of what
@@ -268,6 +161,7 @@ async function resolveUpgrade(
         newAmountMicros,
         newPeriodSeconds,
         now: quotedAt,
+        creditBasis,
     });
 
     if (!terms.ok) {
@@ -415,15 +309,51 @@ async function handlePOST(request: Request) {
             merchant, target, current, fromSubscriptionId, onChain, newAmountMicros, newPeriodSeconds, paidThroughAt, terms,
         } = resolved.value;
 
+        /* The atomic replace needs PSA v3. Refuse before anything is claimed or signed, so an old
+           deployment can never fall back to the cancel-then-create path that could strand a
+           subscriber with no authorization. */
+        if (!await supportsReplaceSubscriptions()) {
+            return NextResponse.json({
+                error: "Plan upgrades need the updated subscription contract, which isn't live yet. Your current plan is unchanged.",
+                code: "CONTRACT_UPGRADE_REQUIRED",
+            }, { status: 503 });
+        }
+
+        const replaceTerms: ReplaceTerms = {
+            newAmount: newAmountMicros,
+            newPeriod: newPeriodSeconds,
+            /* Charged now as the new authorization's sequence 0. With no credit it equals the new
+               amount, which the contract requires to go through without introductory terms. */
+            chargeNow: terms.dueTodayMicros,
+            firstPaymentAt: BigInt(0),
+            introCycles: terms.useIntroductoryTerms ? BigInt(1) : BigInt(0),
+        };
+
+        /* External wallets sign the same replace themselves. The first call returns exactly what to
+           sign, and the second carries the hash, which is verified against these quoted terms. */
+        const custodial = isCustodialWallet(await getWalletCustody(subscriber));
+        const externalTxHash = typeof body.txHash === "string" ? body.txHash : null;
+        if (!custodial && !externalTxHash) {
+            return NextResponse.json({
+                requiresWalletSignature: true,
+                contractAddress: STANDARD_CONTRACT_ADDRESS,
+                functionName: "replaceSubscription",
+                args: replaceSubscriptionArgs(fromSubscriptionId, replaceTerms).map(String),
+                allowanceUsdcMicros: horizonAllowance(newAmountMicros, newPeriodSeconds).toString(),
+                chargedNowUsdc: formatUsdcFromMicros(terms.dueTodayMicros),
+                error: "Confirm the plan change in your connected wallet.",
+            }, { status: 409 });
+        }
+        if (!custodial && !/^0x[0-9a-fA-F]{64}$/.test(externalTxHash || "")) {
+            return NextResponse.json({ error: "A valid confirmed plan-change transaction hash is required." }, { status: 400 });
+        }
+
         /* Serialize against the subscribe/resume paths on the SAME key, so a fast double-submit or a
            concurrent subscribe cannot both pass their duplicate checks before either has mirrored. */
         const lockKey = `customer-subscription:${subscriber}:${merchant}`;
         const idempotencyKey = `upgrade:${current.contractAddress}:${fromSubscriptionId}:${target.id}`;
-        /* The provider key is the same seed in the UUID shape Circle requires — it rejects anything
-           else with a bare `400 API parameter invalid`. Kept separate from `idempotencyKey` so the
-           attempt row stays human-readable while the persisted `providerIdempotencyKey` is exactly
-           what Circle was sent, which is what reconciliation matches on. Sending the raw seed here
-           failed AFTER the old authorization had already been revoked. */
+        /* The provider key is the same seed in the UUID shape Circle requires. It rejects anything
+           else with a bare `400 API parameter invalid`. */
         const providerIdempotencyKey = deterministicIdempotencyKey(idempotencyKey);
         const requestFingerprint = crypto
             .createHash("sha256")
@@ -439,7 +369,16 @@ async function handlePOST(request: Request) {
             const existingAttempt = await tx.subscriptionAttempt.findUnique({
                 where: { merchantAddress_idempotencyKey: { merchantAddress: merchant, idempotencyKey } },
             });
-            if (existingAttempt) return { status: "ATTEMPT_EXISTS" as const };
+            if (existingAttempt) {
+                /* A replace that provably never landed (the old authorization was still active
+                   afterwards) is retryable. Anything else is in flight or done. */
+                if (existingAttempt.status !== "FAILED") return { status: "ATTEMPT_EXISTS" as const };
+                await tx.subscriptionAttempt.update({
+                    where: { merchantAddress_idempotencyKey: { merchantAddress: merchant, idempotencyKey } },
+                    data: { status: "PREPARED", requestFingerprint },
+                });
+                return { status: "NEW" as const };
+            }
 
             await tx.subscriptionAttempt.create({
                 data: {
@@ -469,114 +408,130 @@ async function handlePOST(request: Request) {
                 code: "UPGRADE_IN_PROGRESS",
             }, { status: 409 });
         }
+        const markAttempt = (status: string, txHashValue?: string | null) => prisma.subscriptionAttempt.update({
+            where: { merchantAddress_idempotencyKey: { merchantAddress: merchant, idempotencyKey } },
+            data: {
+                status,
+                ...(txHashValue ? { txHash: txHashValue } : {}),
+                ...(status === "PAID" ? { completedAt: new Date() } : {}),
+            },
+        }).catch(() => {});
 
-        /* Shares the `subscribe` budget: an upgrade mints an authorization exactly as a subscribe does,
-           so it belongs in the same per-action daily bucket. */
-        await requireSponsoredGas({ wallet: subscriber, action: "subscribe", requestKey: idempotencyKey });
-
-        /* 1. Revoke the old authorization. Nothing has moved yet, so a failure here is a clean retry. */
-        const revocationTxHash = await cancelFromEmbedded(subscriber, fromSubscriptionId);
-
-        /* 2. Mint the new authorization, charging only what is due today. */
-        let txHash: string;
+        /* One transaction: the old authorization is cancelled and the new one created atomically, so
+           the subscriber can never be left holding neither (the old cancel-then-create gap) or both. */
+        let txHash: string | null;
         let newSubscriptionId: string | null;
-        try {
-            const created = await subscribeFromEmbedded(
-                subscriber,
-                merchant,
-                newAmountMicros,
-                newPeriodSeconds,
-                providerIdempotencyKey,
-                /* The credit is expressed as the sequence-0 charge. With no credit dueToday EQUALS the
-                   new amount, and the contract rejects `_introductoryAmount >= _amount` — so that case
-                   goes through the plain create, which charges the same figure. */
-                terms.useIntroductoryTerms
-                    ? { introAmountUsdc: terms.dueTodayMicros, introCycles: 1 }
-                    : null,
-            );
-            txHash = created.txHash;
-            newSubscriptionId = created.subId;
-        } catch (createError) {
-            /* The old authorization is revoked and the new one did not land. The subscriber has paid
-               nothing extra and still owns their paid period, so record the row the way `resume` expects
-               to find it — canceled with paid time left — and point them at it. Leaving the mirror
-               claiming ACTIVE against a revoked chain state is the one outcome that strands them: the
-               keeper reads it as cancelled on-chain and can never bill it. */
-            await mirrorSubscriptionCancelAtPeriodEnd({
-                subscriptionId: fromSubscriptionId,
-                merchantAddress: merchant,
-                subscriber,
-                amountUsdc: onChain.amount,
-                periodSeconds: onChain.period,
-                nextPaymentSeconds: BigInt(Math.floor(paidThroughAt.getTime() / 1000)),
-                revocationTxHash,
-                revocationPending: false,
-            }).catch((mirrorError) =>
-                console.error("[subscription/upgrade] recovery mirror failed:", mirrorError),
-            );
-            await recordPaymentReconciliationRequired({
-                dedupeKey: `subscription-upgrade-create:${fromSubscriptionId}:${target.id}`,
-                kind: "SUBSCRIPTION_LOCAL_MIRROR",
-                message: "upgrade revoked the old authorization but the new one could not be created",
-                context: { fromSubscriptionId, planId: target.id, merchant, subscriber },
-                error: createError,
-            }).catch(() => {});
-            const accessUntil = paidThroughAt;
-            return NextResponse.json({
-                error: `The upgrade didn't complete and you were not charged. Your ${formatUsdcFromMicros(onChain.amount)} USDC plan is still active until ${accessUntil.toISOString().slice(0, 10)} — resume it from your dashboard, then try again.`,
-                code: "UPGRADE_CREATE_FAILED",
-                accessUntil: accessUntil.toISOString(),
-            }, { status: 502 });
+        if (!custodial) {
+            try {
+                ({ txHash, subId: newSubscriptionId } = await verifyExternalReplaceTx({
+                    txHash: externalTxHash!, subscriber, oldSubId: fromSubscriptionId, terms: replaceTerms,
+                }));
+            } catch (verifyError) {
+                await markAttempt("FAILED");
+                return NextResponse.json({
+                    error: verifyError instanceof Error ? verifyError.message : "We couldn't verify that plan change.",
+                    code: "EXTERNAL_REPLACE_UNVERIFIED",
+                }, { status: 400 });
+            }
+        } else {
+            /* Shares the `subscribe` budget: an upgrade mints an authorization exactly as a subscribe
+               does, so it belongs in the same per-action daily bucket. */
+            await requireSponsoredGas({ wallet: subscriber, action: "subscribe", requestKey: idempotencyKey });
+            try {
+                ({ txHash, subId: newSubscriptionId } = await replaceFromEmbedded(
+                    subscriber, fromSubscriptionId, replaceTerms, providerIdempotencyKey,
+                ));
+            } catch (replaceError) {
+                /* The replace is atomic, so the chain answers what happened. Old authorization still
+                   active: nothing moved, and the upgrade can simply be retried. Anything else means
+                   it landed (or the read failed), so recover rather than invite a second attempt. */
+                const after = await getSubscriptionOnChain(fromSubscriptionId);
+                if (after?.isActive) {
+                    await markAttempt("FAILED");
+                    return NextResponse.json({
+                        error: "The upgrade didn't go through and you weren't charged. Your current plan is unchanged, so you can try again.",
+                        code: "UPGRADE_FAILED",
+                    }, { status: 502 });
+                }
+                console.error("[subscription/upgrade] replace returned an error but may have landed:", replaceError);
+                txHash = null;
+                newSubscriptionId = after
+                    ? await findActiveOnChainSubscriptionIdOrNull(subscriber, merchant).catch(() => null)
+                    : null;
+            }
         }
 
         if (!newSubscriptionId) {
             await recordPaymentReconciliationRequired({
-                dedupeKey: `subscription-upgrade-id:${fromSubscriptionId}:${txHash.toLowerCase()}`,
+                dedupeKey: `subscription-upgrade-id:${fromSubscriptionId}:${target.id}`,
                 kind: "SUBSCRIPTION_LOCAL_MIRROR",
-                message: "upgrade authorization confirmed on-chain but its subscription id could not be recovered",
-                context: { fromSubscriptionId, planId: target.id, merchant, subscriber, txHash: txHash.toLowerCase() },
+                message: "upgrade replace may have landed on-chain but the new subscription id could not be recovered",
+                context: { fromSubscriptionId, planId: target.id, merchant, subscriber, txHash: txHash?.toLowerCase() ?? null },
             }).catch(() => {});
+            await markAttempt("RECONCILIATION_REQUIRED", txHash);
             return NextResponse.json({
-                error: "Your upgrade is on-chain but still reconciling. Refresh in a moment — do not submit it again.",
+                error: "Your upgrade is on-chain but still reconciling. Refresh in a moment and don't submit it again.",
                 code: "RECONCILIATION_PENDING",
                 txHash,
             }, { status: 202 });
         }
 
-        /* 3. Record the new authorization BEFORE closing the old row. It is the one that can move money,
-              so it must never exist on-chain without a mirror row the keeper can bill. Unlike a resume
-              bridge, the on-chain period and the mirror cadence match here, so this subscription stays
-              upgradeable afterwards. */
+        /* Record the new authorization BEFORE closing the old row. It is the one that can move money,
+           so it must never exist on-chain without a mirror row the keeper can bill. Its next charge is
+           read from the chain rather than the quote, which can be up to 10 minutes older. */
+        const createdOnChain = await getSubscriptionOnChain(newSubscriptionId);
+        const nextChargeAt = createdOnChain
+            ? new Date(Number(createdOnChain.nextPayment) * 1000)
+            : terms.firstRegularChargeAt;
         const commitmentRemainingSeconds = current.minCommitmentUntil
             ? Math.max(0, Math.floor((current.minCommitmentUntil.getTime() - Date.now()) / 1000))
             : 0;
-        await mirrorSubscriptionCreated({
-            subscriptionId: newSubscriptionId,
-            merchantAddress: merchant,
-            subscriber,
-            amountUsdc: newAmountMicros,
-            periodSeconds: newPeriodSeconds,
-            beneficiaryAddress: current.beneficiaryAddress,
-            /* Preserved rather than restarted: upgrading must not newly lock in a subscriber whose
-               original commitment window was already partly served. */
-            minCommitmentSeconds: BigInt(commitmentRemainingSeconds),
-            /* Credit for time already paid for is not an introductory offer. Recording it as one would
-               make pricingPhaseFor report the subscriber as mid-promotion and quote the wrong next
-               charge. */
-            promotion: null,
-            anchorNextPaymentSeconds: BigInt(Math.floor(terms.firstRegularChargeAt.getTime() / 1000)),
-            externalReference: current.externalReference,
-            sourceCheckoutId: target.checkoutSessionId ?? current.sourceCheckoutId,
-            planId: target.planId ?? current.planId,
-        });
+        try {
+            await mirrorSubscriptionCreated({
+                subscriptionId: newSubscriptionId,
+                merchantAddress: merchant,
+                subscriber,
+                amountUsdc: newAmountMicros,
+                periodSeconds: newPeriodSeconds,
+                beneficiaryAddress: current.beneficiaryAddress,
+                /* Preserved rather than restarted: upgrading must not newly lock in a subscriber whose
+                   original commitment window was already partly served. */
+                minCommitmentSeconds: BigInt(commitmentRemainingSeconds),
+                /* Credit for time already paid for is not an introductory offer. Recording it as one
+                   would make pricingPhaseFor report the subscriber as mid-promotion. */
+                promotion: null,
+                anchorNextPaymentSeconds: BigInt(Math.floor(nextChargeAt.getTime() / 1000)),
+                externalReference: current.externalReference,
+                sourceCheckoutId: target.checkoutSessionId ?? current.sourceCheckoutId,
+                planId: target.planId ?? current.planId,
+                /* The credit is part of what this first window is worth. A later upgrade prices its
+                   own credit on cash plus this, so the subscriber is not shorted. */
+                carriedCredit: { micros: terms.unusedCreditMicros, since: new Date() },
+            });
+        } catch (mirrorError) {
+            await recordPaymentReconciliationRequired({
+                dedupeKey: `subscription-upgrade-mirror:${fromSubscriptionId}:${newSubscriptionId}`,
+                kind: "SUBSCRIPTION_LOCAL_MIRROR",
+                message: "upgrade replaced the authorization on-chain but the new mirror row could not be written",
+                context: { fromSubscriptionId, newSubscriptionId, planId: target.id, merchant, subscriber, txHash },
+                error: mirrorError,
+            }).catch(() => {});
+            await markAttempt("RECONCILIATION_REQUIRED", txHash);
+            return NextResponse.json({
+                error: "Your upgrade went through but is still being recorded. Refresh in a moment and don't submit it again.",
+                code: "RECONCILIATION_PENDING",
+                subscriptionId: newSubscriptionId,
+                txHash,
+            }, { status: 202 });
+        }
 
-        /* 4. Close the old run. Two rows claiming ACTIVE for one (subscriber, merchant) would have the
-              keeper charge a revoked authorization, fail, and eventually report a payment failure that
-              never happened. */
+        /* Close the old run. Two rows claiming ACTIVE for one (subscriber, merchant) would have the
+           keeper charge a replaced authorization, fail, and report a payment failure that never
+           happened. */
         try {
             await prisma.subscription.update({
                 where: subscriptionKey(current.subscriptionId, current.contractAddress),
-                data: { status: "CANCELED", revocationPending: false, revocationTxHash, updatedAt: new Date() },
+                data: { status: "CANCELED", revocationPending: false, revocationTxHash: txHash, updatedAt: new Date() },
             });
         } catch (closeError) {
             await recordPaymentReconciliationRequired({
@@ -588,10 +543,7 @@ async function handlePOST(request: Request) {
             }).catch(() => {});
         }
 
-        await prisma.subscriptionAttempt.update({
-            where: { merchantAddress_idempotencyKey: { merchantAddress: merchant, idempotencyKey } },
-            data: { status: "PAID", txHash, completedAt: new Date() },
-        }).catch(() => {});
+        await markAttempt("PAID", txHash);
 
         await emitUpgradeSignals({
             merchant,
@@ -603,10 +555,12 @@ async function handlePOST(request: Request) {
             periodSeconds: newPeriodSeconds,
             chargedMicros: terms.dueTodayMicros,
             creditMicros: terms.unusedCreditMicros,
-            nextBillingDate: terms.firstRegularChargeAt,
+            nextBillingDate: nextChargeAt,
             externalReference: current.externalReference,
-            sourceCheckoutId: current.sourceCheckoutId,
+            /* The checkout this subscription now belongs to, matching the new mirror row. */
+            sourceCheckoutId: target.checkoutSessionId ?? current.sourceCheckoutId,
             beneficiaryAddress: current.beneficiaryAddress,
+            planId: target.planId ?? current.planId,
             txHash,
         });
 
@@ -619,7 +573,7 @@ async function handlePOST(request: Request) {
             /* Stated explicitly: the credit applied and what actually left the wallet. */
             creditAppliedUsdc: formatUsdcFromMicros(terms.unusedCreditMicros),
             chargedNowUsdc: formatUsdcFromMicros(terms.dueTodayMicros),
-            nextChargeAt: terms.firstRegularChargeAt.toISOString(),
+            nextChargeAt: nextChargeAt.toISOString(),
             txHash,
         }, { status: 200 });
     } catch (error: any) {
@@ -648,7 +602,8 @@ async function emitUpgradeSignals(params: {
     externalReference: string | null;
     sourceCheckoutId: string | null;
     beneficiaryAddress: string | null;
-    txHash: string;
+    planId: string | null;
+    txHash: string | null;
 }) {
     await createSubscriptionStartedDm({
         merchantAddress: params.merchant,
@@ -673,7 +628,7 @@ async function emitUpgradeSignals(params: {
                 amountUsdcMicros: params.amountUsdc,
                 subscriber: params.subscriber,
                 merchantAddress: params.merchant,
-                txHash: params.txHash,
+                txHash: params.txHash ?? undefined,
                 beneficiary: params.beneficiaryAddress,
                 externalReference: params.externalReference,
                 sourceCheckoutId: params.sourceCheckoutId,
@@ -682,6 +637,8 @@ async function emitUpgradeSignals(params: {
             /* Upgrade-specific fields, in the dual snake_case + camelCase form the other builders emit.
                The id changes because an upgrade mints a new authorization, which is why merchants are
                told to key entitlements on merchantCustomerId. */
+            plan_id: params.planId,
+            planId: params.planId,
             previous_subscription_id: `sub_${params.previousSubscriptionId}`,
             previousSubscriptionId: `sub_${params.previousSubscriptionId}`,
             effective: "immediate",

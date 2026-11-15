@@ -462,6 +462,15 @@ node scripts/verify-mainnet-readiness.mjs --json
 
 ### 9.2 Live Progress Log
 
+Plan changes on PSA v3 (2026-11-14, branch `kristien/one-time-pay-hardening`). These need the v3 contract deployed. Until then the routes return 503 `CONTRACT_UPGRADE_REQUIRED` before signing anything.
+- Upgrades now go through a single atomic `replaceSubscription` (`replaceFromEmbedded` / `verifyExternalReplaceTx` in `src/lib/subscriptions/onchain.ts`). The old cancel-then-create path is gone. On a provider error, the old sub's on-chain `isActive` decides: still active means retryable (the attempt is marked FAILED and can be reclaimed), otherwise the route recovers.
+- New `/api/user/subscription/downgrade` (GET preview, POST). It does a replace with `chargeNow=0, firstPaymentAt=paidThrough` for cheaper plans or interval switches at an equal or lower rate.
+- `/api/user/subscription/change` returns 410.
+- Upgrade credit is now priced on value actually paid: `chargeAmountFor(current sequence)` plus carried credit for sequence 0 (`creditBasisFor` / `creditBasisForRow`). Before this, list-price credit let trial and intro subscribers drain merchants.
+- Migration `20261114190000_subscription_carried_credit.sql` adds `subscriptions.carried_credit_usdc_micros` and `carried_credit_since`. They're written by upgrade, downgrade and resume.
+- The checkout page offers "switch at next renewal" for custodial users. External-wallet plan changes are supported server-side (`requiresWalletSignature` with exact args), but the page has no wallet-signing UI yet. It refuses external wallets today, subscribe included.
+Tests: `plan-change-credit.test.mjs`. 889/889 across the app suites, and `tsc` is clean.
+
 One-time checkout hardening (2026-11-14, branch `kristien/one-time-pay-hardening`). Before this, a payment could move on-chain while settlement refused it, leaving it unrecorded. The trigger was a hold reaped (`reserve_payment_link_checkout_attempt`, 600s) before `/verify` landed: expired session, the 10/min IP limit, a closed tab, a wallet that threw after broadcasting, or a Circle timeout. The fixes:
 - Migration `20261114170000_late_bind_released_checkout_attempts.sql`. `claim_payment_link_settlement_durable` now late-binds a RELEASED attempt with no hash. It retakes capacity even past `max_uses`, then sets new columns `over_capacity` and `late_bound_at`. FAILED_TERMINAL stays refused. The reservation resumes any attempt with a bound hash before reporting RELEASED. It also adds table `chain_scan_cursors`.
 - `cron/reconcile` runs `sweepOrphanedCheckoutPayments` (`src/lib/payments/orphanedCheckoutSweeper.ts`) before the job drain. It walks Router `DepositWithMemo` logs in 9k-block chunks from the cursor (head minus 3) and claims deposits whose memo matches an unbound merchant attempt. Peer requests aren't covered, because they have no memo.

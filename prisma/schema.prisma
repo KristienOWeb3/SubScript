@@ -308,6 +308,11 @@ model Subscription {
   introAmountUsdc         BigInt?   @map("intro_amount_usdc")
   introCycles             Int?      @map("intro_cycles")
   firstRegularPaymentAt   DateTime? @map("first_regular_payment_at")
+  // Unused value carried into sequence 0 from the authorization this one replaced (upgrade,
+  // downgrade, resume). Upgrade credit is priced on value actually paid, never list price.
+  // See supabase/migrations/20261114190000_subscription_carried_credit.sql.
+  carriedCreditUsdcMicros BigInt    @default(0) @map("carried_credit_usdc_micros")
+  carriedCreditSince      DateTime? @map("carried_credit_since")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @default(now()) @map("updated_at")
 
