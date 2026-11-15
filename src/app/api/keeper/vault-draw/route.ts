@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getKeeperSigner, syncVaultMirror, VAULT_ABI } from "@/lib/vault/onchain";
 import { SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { withPgClient } from "@/lib/serverPg";
+import { areUsageVaultsEnabled } from "@/lib/platform/systemSettings";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
@@ -52,6 +53,13 @@ async function runVaultDraw(request: Request) {
         }
         if (!isAuthorized(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        /* Admin breaker (Admin > System > Usage-based vaults). Off means nothing is drawn from
+           anyone's escrow. 200 rather than an error, so the scheduler doesn't alarm while an
+           operator has it paused on purpose. Due cycles are simply picked up on a later run. */
+        if (!await areUsageVaultsEnabled()) {
+            return NextResponse.json({ success: true, skipped: "Usage-based vaults are paused by an admin" }, { status: 200 });
         }
 
         return await withPgClient(async (client) => {

@@ -21,6 +21,7 @@ import { haltGuard } from "@/lib/accountHalt";
 import { isCommitSlug } from "@/lib/merchants/identity";
 import { getAccountKycTier } from "@/lib/kyc/tier";
 import { advanceAuthorizedVaultCommit, commitIntentOutcome, COMMIT_ENVIRONMENT, isCurrentCommitNetwork, observeWithin, reconcileVaultCommitIntent } from "@/lib/vault/commitRecovery";
+import { areUsageVaultsEnabled } from "@/lib/platform/systemSettings";
 
 export const maxDuration = 120;
 
@@ -43,6 +44,14 @@ async function handlePOST(request: Request) {
            spend platform gas budget on a commit that policy will reject. */
         const held = await haltGuard(wallet);
         if (held) return held;
+        /* Admin breaker: no new money goes into usage vaults while they're paused. Existing
+           vaults can still be withdrawn, cancelled and reclaimed through their own routes. */
+        if (!await areUsageVaultsEnabled()) {
+            return NextResponse.json({
+                error: "New vault commitments are paused right now. Your existing vaults aren't affected, and you can still withdraw.",
+                code: "USAGE_VAULTS_PAUSED",
+            }, { status: 503 });
+        }
         const tierInfo = await getAccountKycTier(wallet);
         if (tierInfo.tier < 1) {
             return NextResponse.json(

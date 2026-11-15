@@ -51,6 +51,7 @@ type SystemSettings = {
   checkoutEnabled: boolean;
   reconciliationEnabled: boolean;
   sponsorEmergencyStop: boolean;
+  usageVaultsEnabled: boolean;
   updatedAt: string | null;
   updatedBy: string | null;
 };
@@ -104,6 +105,12 @@ const SWITCHES: Array<{
     title: "Payment reconciliation",
     onLabel: "Running",
     offLabel: "Paused",
+  },
+  {
+    field: "usageVaultsEnabled",
+    title: "Usage-based vaults",
+    onLabel: "Running",
+    offLabel: "Stopped",
   },
 ];
 

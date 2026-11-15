@@ -11,6 +11,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
  *   checkout_enabled         api/premium/checkout
  *   reconciliation_enabled   lib/payments/reconciliationWorker
  *   sponsor_emergency_stop   lib/sponsor/gas + lib/sponsor/sponsorship
+ *   usage_vaults_enabled     api/keeper/vault-draw, api/user/vault/report-usage,
+ *                            api/user/vault/commit, api/user/vault/topup
  *
  * Six further columns exist on the table (premium_enabled, private_routing_enabled,
  * deposits_enabled, batch_payouts_enabled, sbt_minting_enabled, webhook_dispatch_enabled) and
@@ -37,6 +39,7 @@ export type SystemSettings = {
     checkoutEnabled: boolean;
     reconciliationEnabled: boolean;
     sponsorEmergencyStop: boolean;
+    usageVaultsEnabled: boolean;
     updatedAt: string | null;
     updatedBy: string | null;
 };
@@ -50,6 +53,7 @@ export type SystemSettingsPatch = Partial<
         | "checkoutEnabled"
         | "reconciliationEnabled"
         | "sponsorEmergencyStop"
+        | "usageVaultsEnabled"
     >
 >;
 
@@ -59,6 +63,7 @@ const COLUMN_BY_FIELD: Record<keyof SystemSettingsPatch, string> = {
     checkoutEnabled: "checkout_enabled",
     reconciliationEnabled: "reconciliation_enabled",
     sponsorEmergencyStop: "sponsor_emergency_stop",
+    usageVaultsEnabled: "usage_vaults_enabled",
 };
 
 /** Human labels for the audit trail and the change email. Kept beside the columns they name. */
@@ -68,6 +73,7 @@ export const SYSTEM_SETTING_LABELS: Record<keyof SystemSettingsPatch, string> = 
     checkoutEnabled: "Premium checkout",
     reconciliationEnabled: "Payment reconciliation",
     sponsorEmergencyStop: "Sponsored-gas emergency stop",
+    usageVaultsEnabled: "Usage-based vaults",
 };
 
 const SELECT_COLUMNS = `${Object.values(COLUMN_BY_FIELD).join(", ")}, updated_at, updated_by`;
@@ -81,6 +87,7 @@ function mapRow(row: SettingsRow): SystemSettings {
         checkoutEnabled: row.checkout_enabled === true,
         reconciliationEnabled: row.reconciliation_enabled === true,
         sponsorEmergencyStop: row.sponsor_emergency_stop === true,
+        usageVaultsEnabled: row.usage_vaults_enabled === true,
         updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
         updatedBy: typeof row.updated_by === "string" ? row.updated_by : null,
     };
@@ -167,6 +174,28 @@ export async function isSponsorEmergencyStopped(): Promise<boolean> {
         return settings.sponsorEmergencyStop;
     } catch (error) {
         console.error("[system-settings] sponsor stop read failed; continuing to sponsor:", error);
+        return false;
+    }
+}
+
+/**
+ * The usage-vault breaker. FAILS CLOSED.
+ *
+ * Off means no usage is drawn from anyone's escrow, no new usage is reported, and no new money
+ * goes into a vault. An unreadable row reads as off: a skipped draw is retried on the next keeper
+ * run and a refused report or commit is retried by its caller, while a draw that should not have
+ * happened can't be taken back. Withdraw, cancel and reclaim never consult this, so a user can
+ * always get their escrow out.
+ *
+ * `cached` is for the high-frequency report path only. The keeper and commits read uncached so a
+ * flip takes effect on their very next call.
+ */
+export async function areUsageVaultsEnabled(options?: { cached?: boolean }): Promise<boolean> {
+    try {
+        const settings = options?.cached ? await readSystemSettings({ cached: true }) : await fetchSettings();
+        return settings.usageVaultsEnabled;
+    } catch (error) {
+        console.error("[system-settings] usage-vault breaker read failed; treating vaults as paused:", error);
         return false;
     }
 }
