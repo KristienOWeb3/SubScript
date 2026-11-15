@@ -49,9 +49,15 @@ export type OnChainSubscription = {
     isActive: boolean;
 };
 
-export async function getSubscriptionOnChain(subId: string | bigint): Promise<OnChainSubscription | null> {
+/* Every read and write below takes an optional contract so a subscription minted by an older PSA
+   (see legacySubscriptionContracts) is serviced on the contract that holds it. Omitted, it is the
+   active deployment. */
+export async function getSubscriptionOnChain(
+    subId: string | bigint,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
+): Promise<OnChainSubscription | null> {
     try {
-        const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+        const c = new ethers.Contract(contractAddress, SUB_ABI, readProvider());
         const s = await c.subscriptions(BigInt(subId));
         if (String(s.subscriber ?? s[0]).toLowerCase() === ethers.ZeroAddress) return null;
         return {
@@ -70,8 +76,9 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
 export async function getSubscriptionPaidThrough(
     subId: string | bigint,
     terms: OnChainSubscription,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
 ): Promise<bigint> {
-    const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+    const c = new ethers.Contract(contractAddress, SUB_ABI, readProvider());
     return readSubscriptionPaidThrough(c as unknown as Parameters<typeof readSubscriptionPaidThrough>[0],
         BigInt(subId), terms, BigInt(Math.floor(Date.now() / 1000)));
 }
@@ -104,8 +111,13 @@ export async function supportsReplaceSubscriptions(): Promise<boolean> {
  * predate chargeAmountFor had no introductory pricing, so they fall back to the flat amount. Any
  * other read failure throws, because guessing a paid value would misprice credit.
  */
-export async function readChargeAmountFor(subId: string | bigint, sequence: bigint, fallbackAmount: bigint): Promise<bigint> {
-    const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+export async function readChargeAmountFor(
+    subId: string | bigint,
+    sequence: bigint,
+    fallbackAmount: bigint,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
+): Promise<bigint> {
+    const c = new ethers.Contract(contractAddress, SUB_ABI, readProvider());
     try {
         return BigInt(await c.chargeAmountFor(BigInt(subId), sequence));
     } catch (error) {
@@ -207,9 +219,10 @@ export async function verifyExternalReplaceTx(input: {
    source when the original request context is gone. Null on RPC error. */
 export async function getIntroductoryTermsOnChain(
     subId: string | bigint,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
 ): Promise<{ introAmountUsdc: bigint; introCycles: number } | null> {
     try {
-        const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+        const c = new ethers.Contract(contractAddress, SUB_ABI, readProvider());
         const terms = await c.introductoryTerms(BigInt(subId));
         const cycles = Number(terms.cycles ?? terms[1]);
         if (!Number.isFinite(cycles) || cycles <= 0) return null;
@@ -551,17 +564,21 @@ export async function verifyExternalDeferredSubscriptionTx(input: {
     return verified;
 }
 
-export async function cancelFromEmbedded(walletAddress: string, subId: string | bigint) {
+export async function cancelFromEmbedded(
+    walletAddress: string,
+    subId: string | bigint,
+    contractAddress: string = STANDARD_CONTRACT_ADDRESS,
+) {
     const custody = await getWalletCustody(walletAddress);
     const { txHash } = await custody.executeContract({
-        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        contractAddress,
         abi: SUB_ABI,
         functionName: "cancelSubscription",
         args: [BigInt(subId)],
         /* Idempotent by subId: cancelling the same sub twice is a no-op, so a retried cancel
            after a timed-out response must not submit a second transaction. Shared with the
            execute-tx cancel path via the custody helper so both derive the identical key. */
-        idempotencyKey: cancelSubscriptionIdempotencyKey(STANDARD_CONTRACT_ADDRESS, subId),
+        idempotencyKey: cancelSubscriptionIdempotencyKey(contractAddress, subId),
     });
     return txHash;
 }

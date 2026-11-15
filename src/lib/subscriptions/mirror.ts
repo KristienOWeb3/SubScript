@@ -200,10 +200,13 @@ export async function mirrorSubscriptionModified({
     }
 }
 
-export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint) {
+export async function mirrorSubscriptionCanceled(
+    subscriptionId: string | bigint,
+    contractAddress: string = activeSubscriptionContract(),
+) {
     try {
         await prisma.subscription.update({
-            where: subscriptionKey(subscriptionId),
+            where: subscriptionKey(subscriptionId, contractAddress),
             data: { status: "CANCELED", updatedAt: new Date() },
         });
     } catch (err) {
@@ -227,7 +230,10 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
     nextPaymentSeconds,
     revocationTxHash = null,
     revocationPending = false,
+    contractAddress = activeSubscriptionContract(),
 }: {
+    /* The PSA holding this subscription. A legacy contract's rows are cancelled in place. */
+    contractAddress?: string;
     subscriptionId: string | bigint;
     merchantAddress: string;
     subscriber: string;
@@ -257,7 +263,7 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
             create: { walletAddress: merchant },
         });
         await prisma.subscription.upsert({
-        where: subscriptionKey(id),
+        where: subscriptionKey(id, contractAddress),
             update: {
                 status: "ACTIVE",
                 kind: "CUSTOMER",
@@ -271,7 +277,7 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
             },
             create: {
                 subscriptionId: id,
-                contractAddress: activeSubscriptionContract(),
+                contractAddress: contractAddress.toLowerCase(),
                 merchantAddress: merchant,
                 subscriber: sub,
                 status: "ACTIVE",

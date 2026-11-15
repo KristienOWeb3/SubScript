@@ -16,6 +16,7 @@ import { createDmAndNotify } from "@/lib/dms/notifications";
 import { sendWinbackOfferDm } from "@/lib/dms/lifecycle";
 import { findWinbackPromotion } from "@/lib/subscriptions/promotions";
 import { activeSubscriptionContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
+import { resolveSubscriberRowContract } from "@/lib/subscriptions/rowContract";
 import {
     sendSubscriptionCanceledEmail,
     sendSubscriptionCancellationNeedsSignatureEmail,
@@ -37,14 +38,23 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "A valid subscriptionId is required" }, { status: 400 });
         }
 
+        /* Ids restart at 1 on every PSA redeploy, so resolve which contract this caller's
+           subscription lives on (the active one, or a legacy one not yet migrated). Everything
+           below reads, cancels and records on that contract. */
+        const contract = await resolveSubscriberRowContract(
+            subscriptionId,
+            wallet,
+            typeof body.contractAddress === "string" ? body.contractAddress : null,
+        ) ?? activeSubscriptionContract();
+
         /* Only the subscriber may cancel. */
-        const sub = await getSubscriptionOnChain(subscriptionId);
+        const sub = await getSubscriptionOnChain(subscriptionId, contract);
         if (!sub || sub.subscriber !== wallet.toLowerCase()) {
             return NextResponse.json({ error: "Subscription not found for this account" }, { status: 404 });
         }
 
         const mirrored = await prisma.subscription.findUnique({
-            where: subscriptionKey(subscriptionId),
+            where: subscriptionKey(subscriptionId, contract),
             select: {
                 beneficiaryAddress: true,
                 externalReference: true,
@@ -61,7 +71,7 @@ export async function POST(request: Request) {
            off-chain: the mirror row stays ACTIVE with cancel_at_period_end until paid-through, and
            the keeper finalizes the local status and final webhook when that paid period ends. */
         const nowSec = BigInt(Math.floor(Date.now() / 1000));
-        const paidThrough = await getSubscriptionPaidThrough(subscriptionId, sub);
+        const paidThrough = await getSubscriptionPaidThrough(subscriptionId, sub, contract);
         if (paidThrough > nowSec) {
             let revocationTxHash: string | null = null;
             let requiresWalletCancellation = false;
@@ -75,7 +85,7 @@ export async function POST(request: Request) {
                         action: "subscription_cancel",
                         requestKey: `cancel:${subscriptionId}`,
                     });
-                    revocationTxHash = await cancelFromEmbedded(wallet, subscriptionId);
+                    revocationTxHash = await cancelFromEmbedded(wallet, subscriptionId, contract);
                 }
             } catch (revokeError: any) {
                 const message = String(revokeError?.message || revokeError || "");
@@ -88,6 +98,7 @@ export async function POST(request: Request) {
             }
 
             const recorded = await mirrorSubscriptionCancelAtPeriodEnd({
+                contractAddress: contract,
                 subscriptionId,
                 merchantAddress: sub.merchant,
                 subscriber: wallet.toLowerCase(),
@@ -120,7 +131,7 @@ export async function POST(request: Request) {
                 merchantAddress: sub.merchant,
                 accessUntil,
                 requestedAt: new Date(Number(nowSec) * 1000),
-                contractAddress: activeSubscriptionContract(),
+                contractAddress: contract,
             };
 
             /* Distinct scheduled event now; the final subscription.canceled fires at entitlement
@@ -309,7 +320,7 @@ export async function POST(request: Request) {
                     action: "subscription_cancel",
                     requestKey: `cancel:${subscriptionId}`,
                 });
-                txHash = await cancelFromEmbedded(wallet, subscriptionId);
+                txHash = await cancelFromEmbedded(wallet, subscriptionId, contract);
             }
         } catch (revokeError: any) {
             const message = String(revokeError?.message || revokeError || "");
@@ -324,6 +335,7 @@ export async function POST(request: Request) {
 
         if (requiresWalletCancellation) {
             const recorded = await mirrorSubscriptionCancelAtPeriodEnd({
+                contractAddress: contract,
                 subscriptionId,
                 merchantAddress: sub.merchant,
                 subscriber: wallet.toLowerCase(),
@@ -346,7 +358,7 @@ export async function POST(request: Request) {
                 merchantAddress: sub.merchant,
                 accessUntil,
                 requestedAt: new Date(Number(nowSec) * 1000),
-                contractAddress: activeSubscriptionContract(),
+                contractAddress: contract,
             };
 
             await createDmAndNotify({
@@ -388,7 +400,7 @@ export async function POST(request: Request) {
         const confirmedTxHash = txHash;
 
         /* Reflect the cancellation in the dashboard mirror (best-effort). */
-        await mirrorSubscriptionCanceled(subscriptionId);
+        await mirrorSubscriptionCanceled(subscriptionId, contract);
 
         try {
             await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.canceled", subscriptionWebhookData({
@@ -402,7 +414,7 @@ export async function POST(request: Request) {
                 externalReference: mirrored?.externalReference ?? null,
                 sourceCheckoutId: mirrored?.sourceCheckoutId ?? null,
                 reason: "Canceled by subscriber",
-            }), `customer-canceled:${activeSubscriptionContract()}:${subscriptionId}:${confirmedTxHash?.toLowerCase() || "already-revoked"}`);
+            }), `customer-canceled:${contract}:${subscriptionId}:${confirmedTxHash?.toLowerCase() || "already-revoked"}`);
         } catch (webhookError) {
             console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
         }
@@ -451,7 +463,7 @@ export async function POST(request: Request) {
                     periodSeconds: mirrored?.billingIntervalSeconds ?? sub.period,
                     merchantAddress: sub.merchant,
                     requestedAt: new Date(),
-                    contractAddress: activeSubscriptionContract(),
+                    contractAddress: contract,
                 },
                 cancellationTxHash: confirmedTxHash,
             });

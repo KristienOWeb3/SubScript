@@ -26,6 +26,7 @@ import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliati
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { haltGuard } from "@/lib/accountHalt";
 import { creditBasisForRow, unusedWindowValueMicros } from "@/lib/subscriptions/planChange";
+import { resolveSubscriberRowContract } from "@/lib/subscriptions/rowContract";
 
 export const maxDuration = 120;
 
@@ -62,7 +63,15 @@ async function handlePOST(request: Request) {
         }
 
         const subscriber = wallet.toLowerCase();
-        const row = await prisma.subscription.findUnique({ where: subscriptionKey(subscriptionId) });
+        /* A legacy-contract subscription resumes ONTO the active contract: the old authorization is
+           read on its own contract, and the restored one is minted by the active PSA. Resume is
+           therefore also how a subscriber on a browser wallet migrates themselves after a redeploy. */
+        const rowContract = await resolveSubscriberRowContract(
+            subscriptionId,
+            subscriber,
+            typeof body.contractAddress === "string" ? body.contractAddress : null,
+        ) ?? STANDARD_CONTRACT_ADDRESS.toLowerCase();
+        const row = await prisma.subscription.findUnique({ where: subscriptionKey(subscriptionId, rowContract) });
         if (!row || row.kind !== "CUSTOMER" || (row.subscriber || "").toLowerCase() !== subscriber) {
             return NextResponse.json({ error: "Subscription not found for this account" }, { status: 404 });
         }
@@ -88,14 +97,14 @@ async function handlePOST(request: Request) {
 
         /* The chain is authoritative for what was paid for: cancelling flips isActive but leaves the
            authorization struct intact, so confirmed settlement evidence records the paid-through date. */
-        const onChain = await getSubscriptionOnChain(subscriptionId);
+        const onChain = await getSubscriptionOnChain(subscriptionId, rowContract);
         if (!onChain) {
             return NextResponse.json({
                 error: "We couldn't read this subscription on-chain. Try again in a moment.",
                 code: "CHAIN_READ_FAILED",
             }, { status: 503 });
         }
-        const paidThroughSeconds = await getSubscriptionPaidThrough(subscriptionId, onChain);
+        const paidThroughSeconds = await getSubscriptionPaidThrough(subscriptionId, onChain, rowContract);
         const paidThroughAt = new Date(Number(paidThroughSeconds) * 1000);
 
         /* Branch 1: the revocation never landed, so the original authorization is still live. Clearing
@@ -115,7 +124,7 @@ async function handlePOST(request: Request) {
                     code: "REVOCATION_IN_PROGRESS",
                 }, { status: 409 });
             }
-            const underLease = await getSubscriptionOnChain(subscriptionId);
+            const underLease = await getSubscriptionOnChain(subscriptionId, rowContract);
             if (!underLease) {
                 await releaseRevocationLeaseForResume(row.contractAddress, row.subscriptionId, claim);
                 return NextResponse.json({

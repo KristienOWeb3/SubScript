@@ -28,11 +28,14 @@ export async function creditBasisForRow(
     subscriptionId: string | bigint,
     onChain: OnChainSubscription,
     paidThroughSeconds: bigint,
-    row: { carriedCreditUsdcMicros?: bigint | number | null; carriedCreditSince?: Date | null },
+    row: { carriedCreditUsdcMicros?: bigint | number | null; carriedCreditSince?: Date | null; contractAddress?: string | null },
 ): Promise<CreditBasis> {
     const carried = carriedFromRow(row);
     const sequence = currentSequenceFor(onChain.nextPayment, paidThroughSeconds, onChain.period);
-    const charged = await readChargeAmountFor(subscriptionId, sequence, onChain.amount);
+    /* Read on the contract that minted the row: a legacy subscription's sequences live there. */
+    const charged = row.contractAddress
+        ? await readChargeAmountFor(subscriptionId, sequence, onChain.amount, row.contractAddress)
+        : await readChargeAmountFor(subscriptionId, sequence, onChain.amount);
     return creditBasisFor({
         sequence,
         sequenceChargeMicros: charged,

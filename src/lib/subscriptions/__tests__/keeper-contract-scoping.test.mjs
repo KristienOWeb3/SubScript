@@ -14,7 +14,14 @@ const CHAIN_READING_KEEPERS = [
     "src/lib/subscriptions/driftHealer.ts",
 ];
 
-const SCOPE = '.eq("contract_address", activeSubscriptionContract())';
+/* Since the PSA v3 cutover the keepers run one pass per billable contract (the active PSA plus any
+   legacy PSA still holding live subscriptions), so a pass scopes to its own `billingContract`. The
+   last test in this file pins where that variable comes from. */
+const SCOPES = [
+    '.eq("contract_address", activeSubscriptionContract())',
+    '.eq("contract_address", billingContract)',
+];
+const SCOPE = SCOPES.join(" or ");
 
 /**
  * Walks a Supabase builder chain and reports every `subscriptions` filter on subscription_id that
@@ -34,7 +41,7 @@ function unscopedSubscriptionIdFilters(text) {
         if (!/^\.eq\("subscription_id",/.test(line)) return;
         if (line.startsWith("*")) return; /* prose inside a block comment */
         if (table !== "subscriptions") return;
-        if (lines[index - 1] !== SCOPE) offenders.push({ line: index + 1, text: line });
+        if (!SCOPES.includes(lines[index - 1])) offenders.push({ line: index + 1, text: line });
     });
 
     return offenders;
@@ -47,7 +54,7 @@ function subscriptionReads(text) {
     lines.forEach((line, index) => {
         if (lines[index - 1] !== '.from("subscriptions")') return;
         if (!line.startsWith(".select(")) return;
-        reads.push({ line: index + 1, scoped: lines[index + 1] === SCOPE });
+        reads.push({ line: index + 1, scoped: SCOPES.includes(lines[index + 1]) });
     });
     return reads;
 }
@@ -93,7 +100,7 @@ test("each keeper imports the one sanctioned source for the active contract addr
     for (const path of CHAIN_READING_KEEPERS) {
         assert.match(
             source(path),
-            /import \{[^}]*activeSubscriptionContract[^}]*\} from "@\/lib\/subscriptions\/contractBinding"/,
+            /import \{[^}]*(?:activeSubscriptionContract|billableSubscriptionContracts)[^}]*\} from "@\/lib\/subscriptions\/contractBinding"/,
             `${path} must take the address from contractBinding, not a literal.`,
         );
         assert.doesNotMatch(
@@ -109,7 +116,8 @@ test("the billing-claims table and RPCs enforce composite contract scoping", () 
        to prevent cross-contract generation claim collisions. All RPCs require p_contract_address. */
     const billing = source("src/app/api/cron/customer-billing/route.ts");
     assert.match(billing, /Composite scoping: `subscription_billing_claims`/);
-    assert.match(billing, /p_contract_address:\s*activeSubscriptionContract\(\)/);
+    assert.match(billing, /p_contract_address:\s*billingContract/);
+    assert.doesNotMatch(billing, /p_contract_address:\s*activeSubscriptionContract\(\)/);
     const migration = source("supabase/migrations/20260917120000_composite_subscription_billing_claims.sql");
     assert.match(migration, /PRIMARY KEY \(contract_address, subscription_id, sequence_id\)/);
     assert.match(migration, /p_contract_address TEXT/);
@@ -168,7 +176,7 @@ test("revocation claims are keyed on (contract_address, subscription_id), never 
         "fail_subscription_revocation_claim",
     ]) {
         const call = keeper.slice(keeper.indexOf(`"${rpc}"`), keeper.indexOf(`"${rpc}"`) + 300);
-        assert.match(call, /p_contract_address: activeSubscriptionContract\(\)/, `${rpc} call must pass the active contract`);
+        assert.match(call, /p_contract_address: billingContract/, `${rpc} call must pass the pass's contract`);
     }
 });
 
@@ -190,7 +198,7 @@ test("lifecycle dedupe keys carry the contract, so a redeployed id can't collide
             for (const rest of uses) {
                 assert.match(
                     rest,
-                    /^\$\{(?:activeSubscriptionContract\(\)|row\.contractAddress|params\.contractAddress\.toLowerCase\(\))\}:/,
+                    /^\$\{(?:activeSubscriptionContract\(\)|billingContract|args\.billingContract|contract|row\.contractAddress|params\.contractAddress\.toLowerCase\(\))\}:/,
                     `${path}: ${prefix}:${rest} must start with the contract address`,
                 );
             }
@@ -201,8 +209,24 @@ test("lifecycle dedupe keys carry the contract, so a redeployed id can't collide
 test("the keeper revisits PAST_DUE rows on the active contract", () => {
     const keeper = source("src/app/api/cron/customer-billing/route.ts");
     const pass = keeper.slice(keeper.indexOf("PAST_DUE revisit"));
-    assert.match(pass, /\.eq\("contract_address", activeSubscriptionContract\(\)\)\s*\.eq\("kind", "CUSTOMER"\)\s*\.eq\("status", "PAST_DUE"\)/);
+    assert.match(pass, /\.eq\("contract_address", billingContract\)\s*\.eq\("kind", "CUSTOMER"\)\s*\.eq\("status", "PAST_DUE"\)/);
     assert.match(pass, /status: "CANCELED", revocation_pending: false/);
     assert.match(pass, /revocation_pending: true/);
     assert.match(pass, /past-due-closed/);
+});
+
+test("billingContract only ever comes from the billable-contract list", () => {
+    /* The SCOPES above trust `billingContract`, so pin its origin: the keeper loops
+       billableSubscriptionContracts() and binds nothing else to that name, and the healer's per-contract
+       pass is only called from the same list. A legacy contract is therefore always one an operator
+       allowlisted in LEGACY_SUBSCRIPTION_CONTRACTS, never a value from a request or a row. */
+    const keeper = source("src/app/api/cron/customer-billing/route.ts");
+    assert.match(keeper, /for \(const billingContract of billableSubscriptionContracts\(\)\) \{/);
+    assert.equal((keeper.match(/(?:const|let) billingContract\b/g) || []).length, 1);
+    const healer = source("src/lib/subscriptions/driftHealer.ts");
+    assert.match(healer, /const \[active, \.\.\.legacy\] = billableSubscriptionContracts\(\);/);
+    assert.equal((healer.match(/healSubscriptionDriftOn\(/g) || []).length, 2, "one definition, one call from the loop");
+    const binding = source("src/lib/subscriptions/contractBinding.ts");
+    assert.match(binding, /process\.env\.LEGACY_SUBSCRIPTION_CONTRACTS/);
+    assert.match(binding, /\.filter\(\(value\) => value !== active && value !== SENTINEL_CONTRACT_ADDRESS\)/);
 });

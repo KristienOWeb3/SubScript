@@ -174,8 +174,10 @@ function subscribeHarness({ execute, pastDueRows = [], pastDueChain = null, prio
         },
         "@/lib/webhooks": { subscriptionWebhookData: (x) => x },
         "@/lib/payments/reconciliationEvents": { recordPaymentReconciliationRequired: noop },
+        "@/lib/subscriptions/rowContract": { resolveSubscriberRowContract: async () => null },
         "@/lib/subscriptions/contractBinding": {
             activeSubscriptionContract: () => CONTRACT,
+            billableSubscriptionContracts: () => [CONTRACT],
             onActiveContract: () => ({ contractAddress: CONTRACT }),
             subscriptionKey: (id) => ({ id }),
         },
@@ -363,7 +365,8 @@ function resumeHarness({ chainReads, claimRows = [{ subscription_id: 1n }], clea
         "@/lib/sponsor/sponsorship": { requireSponsoredGas: noop },
         "@/lib/subscriptions/planChange": { creditBasisForRow: async () => ({ valueMicros: 0n, windowSeconds: 1n }), unusedWindowValueMicros: () => 0n },
         "@/lib/subscriptions/mirror": { mirrorSubscriptionCreated: mirror || noop },
-        "@/lib/subscriptions/contractBinding": { subscriptionKey: (id) => ({ id }), activeSubscriptionContract: () => CONTRACT },
+        "@/lib/subscriptions/rowContract": { resolveSubscriberRowContract: async () => null },
+        "@/lib/subscriptions/contractBinding": { subscriptionKey: (id) => ({ id }), activeSubscriptionContract: () => CONTRACT, billableSubscriptionContracts: () => [CONTRACT] },
         "@/lib/subscriptions/resumeBridge": { resumeBridgeTerms },
         "@/lib/dms/lifecycle": { sendReactivatedDm: noop },
         "@/lib/subscriptions/webhookDelivery": {

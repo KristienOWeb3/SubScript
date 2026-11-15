@@ -60,7 +60,8 @@ function routeStubs() {
             mirrorSubscriptionCanceled: noop,
             mirrorSubscriptionCreated: async (x) => { calls.mirror.push(x); },
         },
-        "@/lib/subscriptions/contractBinding": { subscriptionKey: (id) => ({ id }), activeSubscriptionContract: () => "0xcontract" },
+        "@/lib/subscriptions/rowContract": { resolveSubscriberRowContract: async () => null },
+        "@/lib/subscriptions/contractBinding": { subscriptionKey: (id) => ({ id }), activeSubscriptionContract: () => "0xcontract", billableSubscriptionContracts: () => ["0xcontract"] },
         "@/lib/subscriptions/resumeBridge": { resumeBridgeTerms },
         "@/lib/dms/lifecycle": { sendReactivatedDm: noop, sendWinbackOfferDm: noop },
         "@/lib/subscriptions/webhookDelivery": { dispatchDurableSubscriptionWebhook: noop },
@@ -166,7 +167,8 @@ test("actual healer preserves scheduled access and emits cancellation only after
             "@/lib/subscriptions/webhookDelivery": { dispatchDurableSubscriptionWebhook: async (_, event) => events.push(event) },
             "@/lib/webhooks": { subscriptionWebhookData: (x) => x },
             "@/lib/dms/notifications": {},
-            "@/lib/subscriptions/contractBinding": { activeSubscriptionContract: () => "0xcontract" },
+            "@/lib/subscriptions/rowContract": { resolveSubscriberRowContract: async () => null },
+            "@/lib/subscriptions/contractBinding": { activeSubscriptionContract: () => "0xcontract", billableSubscriptionContracts: () => ["0xcontract"] },
             "./entitlement": { preservesScheduledEntitlement },
         };
         await load("src/lib/subscriptions/driftHealer.ts", stubs).healSubscriptionDrift({ from: query });

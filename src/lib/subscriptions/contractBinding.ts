@@ -50,6 +50,45 @@ export function activeSubscriptionContract(): string {
     return STANDARD_CONTRACT_ADDRESS.toLowerCase();
 }
 
+/**
+ * Older PSA deployments that still hold live subscriptions, lowercased.
+ *
+ * A PSA redeploy cannot move existing authorizations: they stay on the contract that minted them
+ * and stay chargeable there. Until every one has been migrated to the active contract (or has
+ * ended), the keeper, cancel and resume paths must keep acting on them against THEIR contract.
+ * Configured, not hardcoded: LEGACY_SUBSCRIPTION_CONTRACTS is a comma-separated address list.
+ * The active contract and the sentinel are never treated as legacy.
+ */
+export function legacySubscriptionContracts(): string[] {
+    const active = activeSubscriptionContract();
+    return [...new Set(
+        (process.env.LEGACY_SUBSCRIPTION_CONTRACTS || "")
+            .split(",")
+            .map((value) => value.trim().toLowerCase())
+            .filter((value) => /^0x[0-9a-f]{40}$/.test(value))
+            .filter((value) => value !== active && value !== SENTINEL_CONTRACT_ADDRESS),
+    )];
+}
+
+/** Every contract whose subscriptions are still billed and serviced: active first, then legacy. */
+export function billableSubscriptionContracts(): string[] {
+    return [activeSubscriptionContract(), ...legacySubscriptionContracts()];
+}
+
+/** True when a row's contract is the active one or an allowlisted legacy one. */
+export function isBillableContract(contractAddress: string | null | undefined): boolean {
+    return billableSubscriptionContracts().includes((contractAddress ?? "").toLowerCase());
+}
+
+/**
+ * Where-fragment for reads that should see live subscriptions on ANY billable contract, e.g. a
+ * subscriber's own cancel or resume of a not-yet-migrated subscription. Chain reads for such a
+ * row must then go to the row's own contract_address, never to the active contract.
+ */
+export function onBillableContracts(): { contractAddress: { in: string[] } } {
+    return { contractAddress: { in: billableSubscriptionContracts() } };
+}
+
 /** True for a row stranded by a redeploy that predates the contract-address column. */
 export function isSentinelContract(contractAddress: string | null | undefined): boolean {
     return (contractAddress ?? "").toLowerCase() === SENTINEL_CONTRACT_ADDRESS;

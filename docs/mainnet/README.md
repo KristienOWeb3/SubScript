@@ -207,6 +207,45 @@ This section details every manual action you as an operator must perform yoursel
 
 ---
 
+### 3.1 PSA v3 cutover runbook (subscription contract redeploy)
+
+Run this on testnet first, then on mainnet with the **same bytecode**. The PSA can't be upgraded in place, so a redeploy creates a new contract, and existing subscriptions have to be moved onto it. Code support is in `src/lib/subscriptions/contractBinding.ts` (legacy allowlist), `src/lib/subscriptions/contractMigration.ts` (migration job) and `POST /api/internal/subscription-migration`.
+
+**Before you start**
+- [ ] PR with PSA v3 and the payments hardening is merged and deployed. Its migrations apply on build.
+- [ ] Contract owner is the Safe multisig, not `0x59e6…`. On mainnet, set each role explicitly (see the open blocker in §2).
+- [ ] Gas sponsor wallet funded for about 3 transactions per custodial subscriber to migrate, plus normal traffic.
+
+**1. Deploy v3 (operator, owner key)**
+- [ ] `npx hardhat run scripts/deploy-standard.js --network <arcTestnet|arcMainnet>` (USDC-only constructor: `paymentToken, treasury`).
+- [ ] Verify on the explorer, and confirm that `supportsDeferredSubscriptions()` and `supportsReplaceSubscriptions()` both return `true`.
+
+**2. Point the app at it (one release)**
+- [ ] Vercel: set `NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS=<new>`, and set `LEGACY_SUBSCRIPTION_CONTRACTS=<old>` (add to it, never replace, if older generations are still live).
+- [ ] In the **same** release, add a migration that moves the column DEFAULT (`activate_premium_merchant` inserts without naming the column):
+  ```sql
+  ALTER TABLE public.subscriptions ALTER COLUMN contract_address SET DEFAULT '<new address, lowercase>';
+  ```
+- [ ] Mainnet only: per-environment chain defaults (`payment_links.settlement_chain_id`, `api_keys.settlement_chain_id`, `chain_id` in init) → `5042`.
+- [ ] Deploy. Run `tsx --test src/lib/subscriptions/__tests__/keeper-contract-scoping.test.mjs`.
+- [ ] Trigger `cron/customer-billing` once and confirm the response covers both contracts. Old subscriptions must still renew.
+
+**3. Migrate subscriptions (operator)**
+- [ ] Dry run:
+  ```bash
+  curl -X POST $BASE/api/internal/subscription-migration -H "Authorization: Bearer $KEEPER_SECRET" -d '{"dryRun":true,"limit":200}'
+  ```
+  Review `WOULD_MIGRATE` and each `SKIPPED` reason.
+- [ ] Real run in batches with `"dryRun":false`. Each subscription gets its replacement created on v3 (nothing charged, first charge at the old paid-through date), then the old one is cancelled. If that cancel fails, the replacement is rolled back.
+- [ ] Any `FAILED` row has a reconciliation event. Check the admin reconciliation queue before the next batch.
+- [ ] Re-run daily. `IN_PROMOTION` and `RENEWS_TOO_SOON` rows become eligible later.
+- [ ] `EXTERNAL_WALLET` rows can't be signed for. They keep billing on the legacy contract, and the subscriber moves by cancelling and then resuming, which mints on v3.
+
+**4. Retire the old contract**
+- [ ] When the job reports nothing left and no ACTIVE rows remain on it, remove it from `LEGACY_SUBSCRIPTION_CONTRACTS`.
+
+**Rollback:** before step 3, revert `NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS` and the DEFAULT migration. After step 3, don't roll back the address. Migrated subscriptions live on v3, so keep both contracts billable instead.
+
 ## 4. 12-Domain Security, Invariants & Compliance Audit Checklist
 
 ### Domain 1: Smart Contracts & Formal Invariants
@@ -461,6 +500,14 @@ node scripts/verify-mainnet-readiness.mjs --json
 > 3. Keep updates concise, factual, and strictly focused on actionable operational facts.
 
 ### 9.2 Live Progress Log
+
+PSA v3 cutover tooling (2026-11-15, branch `kristien/psa-v3-migration`):
+- The keeper (`cron/customer-billing`) now runs one pass per billable contract. So does the drift healer. Every read, write, charge and cancel in a pass is scoped to that pass's `billingContract`.
+- `LEGACY_SUBSCRIPTION_CONTRACTS` sets the billable contracts, so old subscriptions keep renewing after the address switch.
+- Cancel and resume resolve the caller's own row contract (`rowContract.ts`). Resume of a legacy row mints on v3.
+- New `POST /api/internal/subscription-migration` runs `contractMigration.ts`. Dry run is the default. It creates on v3 with a deferred first charge, cancels the old one, and rolls back on failure.
+- It skips external wallets, promos, renewals within 1h, and cancelled subscriptions.
+- The runbook is §3.1. Tests: `contract-migration.test.mjs`.
 
 Plan changes on PSA v3 (2026-11-14, branch `kristien/one-time-pay-hardening`). These need the v3 contract deployed. Until then the routes return 503 `CONTRACT_UPGRADE_REQUIRED` before signing anything.
 - Upgrades now go through a single atomic `replaceSubscription` (`replaceFromEmbedded` / `verifyExternalReplaceTx` in `src/lib/subscriptions/onchain.ts`). The old cancel-then-create path is gone. On a provider error, the old sub's on-chain `isActive` decides: still active means retryable (the attempt is marked FAILED and can be reclaimed), otherwise the route recovers.

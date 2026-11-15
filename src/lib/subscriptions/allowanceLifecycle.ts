@@ -70,6 +70,9 @@ export async function extendAllowanceForCustodial(args: {
     subscriber: string;
     amountMicros: bigint;
     periodSeconds: bigint;
+    /* The PSA that bills this subscription. A legacy contract is a different spender, so its
+       approval has to be extended on it, not on the active deployment. */
+    spender?: string;
 }): Promise<ExtensionOutcome> {
     const { subscriber, amountMicros, periodSeconds } = args;
     if (amountMicros <= BigInt(0)) return { extended: false, reason: "not_needed" };
@@ -85,7 +88,7 @@ export async function extendAllowanceForCustodial(args: {
     const target = horizonAllowance(amountMicros, periodSeconds);
     try {
         const custody = await custodyFor(subscriber);
-        await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, target);
+        await ensureUsdcAllowance(custody, args.spender ?? STANDARD_CONTRACT_ADDRESS, target);
         return { extended: true, approvedMicros: target };
     } catch (err) {
         /* Never fatal to the caller: a failed extension leaves the existing allowance intact,
